@@ -1,0 +1,90 @@
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+
+const serverDir = path.resolve(__dirname);
+const appRoot = process.env.APP_ROOT
+  ? path.resolve(process.env.APP_ROOT)
+  : path.resolve(serverDir, '..');
+
+const config = {
+  nodeEnv: process.env.NODE_ENV || 'development',
+  isProduction: process.env.NODE_ENV === 'production',
+  port: Number(process.env.PORT) || 3000,
+  host: process.env.HOST || '0.0.0.0',
+  publicUrl: String(process.env.PUBLIC_URL || '').replace(/\/$/, ''),
+  appRoot,
+  serverDir,
+  frontendDir: process.env.FRONTEND_DIR
+    ? path.resolve(process.env.FRONTEND_DIR)
+    : path.join(appRoot, 'index.html'),
+  dbPath: process.env.DB_PATH
+    ? path.resolve(process.env.DB_PATH)
+    : path.join(serverDir, 'ecom.db'),
+  uploadsDir: process.env.UPLOADS_DIR
+    ? path.resolve(process.env.UPLOADS_DIR)
+    : path.join(serverDir, 'uploads'),
+  brandingUploadsDir: process.env.BRANDING_UPLOADS_DIR
+    ? path.resolve(process.env.BRANDING_UPLOADS_DIR)
+    : path.join(appRoot, 'index.html', 'uploads'),
+  logDir: process.env.LOG_DIR
+    ? path.resolve(process.env.LOG_DIR)
+    : path.join(appRoot, 'logs'),
+  sessionSecret: process.env.SESSION_SECRET || '',
+  cookieSecure: process.env.COOKIE_SECURE === '1',
+  adminEmail: process.env.ADMIN_EMAIL || '',
+  adminPassword: process.env.ADMIN_PASSWORD || '',
+  adminName: process.env.ADMIN_NAME || 'Site Admin',
+  testBase: process.env.TEST_BASE || '',
+  jsonBodyLimit: process.env.JSON_BODY_LIMIT || '12mb',
+  defaultSocialLinksJson: process.env.DEFAULT_SOCIAL_LINKS_JSON || '',
+};
+
+function resolveSessionSecret() {
+  if (config.sessionSecret) return config.sessionSecret;
+  if (config.isProduction) {
+    throw new Error('SESSION_SECRET is required when NODE_ENV=production');
+  }
+  return 'dev-insecure-session-secret-change-me';
+}
+
+function resolveTestBase() {
+  const base = config.testBase || `http://127.0.0.1:${config.port}`;
+  return base.replace(/\/$/, '');
+}
+
+function parseDefaultSocialLinks() {
+  const raw = config.defaultSocialLinksJson.trim();
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function ensurePortableDirs() {
+  const dirs = [
+    config.logDir,
+    config.uploadsDir,
+    path.join(config.uploadsDir, 'avatars'),
+    path.join(config.uploadsDir, 'receipts'),
+    path.join(config.uploadsDir, 'report-proofs'),
+    path.join(config.uploadsDir, 'payment-qr'),
+    config.brandingUploadsDir,
+    path.dirname(config.dbPath),
+  ];
+  for (const dir of dirs) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+}
+
+module.exports = {
+  ...config,
+  resolveSessionSecret,
+  resolveTestBase,
+  parseDefaultSocialLinks,
+  ensurePortableDirs,
+};

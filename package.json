@@ -1,0 +1,25 @@
+{
+  "name": "ecom-site",
+  "version": "1.0.0",
+  "description": "",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js/server.js",
+    "start:prod": "node --env-file=.env server.js/server.js",
+    "build": "node scripts/prepare-production.js",
+    "test:workflows": "node server.js/test-workflows.js",
+    "tunnel": "node server.js/tunnel.js"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "express": "^5.2.1",
+    "express-session": "^1.18.1"
+  }
+}

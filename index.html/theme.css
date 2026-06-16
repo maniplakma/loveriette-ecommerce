@@ -1,0 +1,103 @@
+/* Theme accents — colors come from the palette variables in style.css,
+   which flip automatically between dark (:root) and light (.light-mode). */
+
+/* Light-mode fine-tuning that the variables don't fully cover */
+html.light-mode .top-nav,
+body.light-mode .top-nav {
+  box-shadow: none;
+}
+
+html.light-mode .nav-inner,
+body.light-mode .nav-inner {
+  box-shadow: none;
+}
+
+html.light-mode .product-card,
+html.light-mode .card,
+html.light-mode .info-card,
+body.light-mode .product-card,
+body.light-mode .card,
+body.light-mode .info-card {
+  box-shadow: 0 4px 18px rgba(141, 123, 104, 0.12);
+}
+
+html.light-mode .product-card-media,
+body.light-mode .product-card-media {
+  background: linear-gradient(160deg, var(--surface-color) 0%, var(--background-color) 55%, var(--tint-color) 100%);
+}
+
+/* Nav active — underline style (see style.css) */
+.nav-pill.active {
+  background: transparent;
+  color: var(--accent) !important;
+  border-color: transparent;
+}
+
+.contact-icon {
+  background: var(--tint);
+  color: var(--accent);
+}
+
+/* New buyer — accent highlight (guest / not logged in) */
+body.is-new-buyer .nav-inner {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+body.is-new-buyer .nav-signup {
+  position: relative;
+  background: var(--btn-bg);
+  box-shadow: 0 4px 18px rgba(141, 123, 104, 0.4);
+  animation: new-buyer-glow 2.5s ease-in-out infinite;
+}
+
+body.is-new-buyer .nav-signup::after {
+  content: 'New';
+  position: absolute;
+  top: -7px;
+  right: -6px;
+  padding: 0.1rem 0.4rem;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--on-primary);
+  background: var(--accent-2);
+  border-radius: 999px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+body.is-new-buyer .site-header .store-btn {
+  background: var(--btn-bg);
+  border: none;
+  color: var(--on-primary);
+  font-weight: 600;
+  box-shadow: 0 3px 14px color-mix(in srgb, var(--primary-color) 28%, transparent);
+}
+
+@keyframes new-buyer-glow {
+  0%, 100% { box-shadow: 0 4px 18px rgba(141, 123, 104, 0.4); }
+  50% { box-shadow: 0 4px 26px rgba(141, 123, 104, 0.6); }
+}
+
+.nav-admin-link {
+  display: inline-block;
+  padding: 0.45rem 0.95rem;
+  border-radius: 999px;
+  background: var(--btn-bg);
+  color: var(--on-primary) !important;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: none;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.2);
+  transition: opacity 0.2s;
+}
+
+.nav-admin-link:hover {
+  opacity: 0.9;
+}
+
+.theme-toggle,
+.theme-toggle-floating {
+  display: none !important;
+}

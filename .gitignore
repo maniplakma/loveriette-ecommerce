@@ -1,0 +1,15 @@
+node_modules/
+.env
+*.log
+logs/
+.DS_Store
+Thumbs.db
+tunnel-live.txt
+tunnel-output.txt
+PUBLIC-LINK.txt
+
+# Database and user uploads (migrate separately on VPS)
+server.js/ecom.db
+server.js/ecom.db.*
+server.js/uploads/
+index.html/uploads/

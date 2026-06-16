@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <title>My Account — loveriette</title>
+  <style id="dash-welcome-critical">
+    /* Inline: full-screen loader before external CSS loads */
+    #buyer-dash-main[hidden] { display: none !important; }
+    .buyer-dash-layout.buyer-dash-account-loading .buyer-dash-sidebar { display: none !important; visibility: hidden !important; }
+    .dash-account-load-screen {
+      position: fixed;
+      inset: 0;
+      z-index: 500;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg, var(--background-color, #fff5f8));
+      padding: max(2rem, env(safe-area-inset-top)) 1.25rem max(2rem, env(safe-area-inset-bottom));
+      box-sizing: border-box;
+      opacity: 1;
+      transition: opacity 0.35s ease;
+    }
+    .dash-account-load-screen.is-fading { opacity: 0; pointer-events: none; }
+    .dash-account-load-screen[hidden] { display: none !important; }
+    .dash-welcome-loader-inner { width: min(100%, 280px); max-width: 100%; text-align: center; }
+    .dash-welcome-spinner {
+      width: 48px; height: 48px; margin: 0 auto 1.15rem;
+      border: 3px solid color-mix(in srgb, var(--primary-color, #ff4081) 22%, transparent);
+      border-top-color: var(--primary-color, #ff4081);
+      border-right-color: color-mix(in srgb, var(--secondary-color, #ffb6c1) 55%, var(--primary-color, #ff4081));
+      border-radius: 50%;
+      animation: dash-welcome-spin 0.85s linear infinite;
+    }
+    @keyframes dash-welcome-spin { to { transform: rotate(360deg); } }
+    .dash-welcome-progress-track {
+      height: 6px; border-radius: 999px; overflow: hidden; margin-bottom: 0.45rem;
+      background: color-mix(in srgb, var(--secondary-color, #ffb6c1) 28%, var(--bg, #fff5f8));
+    }
+    .dash-welcome-progress-bar {
+      height: 100%; width: 0%; border-radius: 999px;
+      background: linear-gradient(90deg, var(--secondary-color, #ffb6c1), var(--primary-color, #ff4081));
+      transition: width 0.2s ease;
+    }
+    .dash-welcome-progress-pct {
+      font-size: 0.9rem; font-weight: 700; color: var(--primary-color, #ff4081);
+      margin: 0 0 0.65rem; font-variant-numeric: tabular-nums;
+    }
+    .dash-welcome-loader-text { color: var(--text-muted, #d6336c); margin: 0; font-size: 0.92rem; }
+    @media (max-width: 640px) {
+      .dash-welcome-loader-inner { width: min(100%, 240px); }
+      .dash-welcome-spinner { width: 42px; height: 42px; }
+    }
+  </style>
+  <link rel="stylesheet" href="style.css?v=20260615brand-gloss">
+  <link rel="stylesheet" href="mobile.css?v=20260615theme-hero">
+  <link rel="stylesheet" href="theme.css">
+  <script src="theme.js"></script>
+  <script src="theme-colors.js?v=20260614persist"></script>
+</head>
+<body class="buyer-dashboard-page light-mode">
+  <div class="buyer-dash-layout buyer-dash-account-loading" id="buyer-dash-layout">
+    <div class="dash-account-load-screen" id="dash-account-load-screen" aria-busy="true" aria-live="polite">
+      <div class="dash-welcome-loader-inner">
+        <div class="dash-welcome-spinner" aria-hidden="true"></div>
+        <div class="dash-welcome-progress-track">
+          <div class="dash-welcome-progress-bar" id="dash-welcome-progress-bar"></div>
+        </div>
+        <p class="dash-welcome-progress-pct" id="dash-welcome-progress-pct">0%</p>
+        <p class="dash-welcome-loader-text">Loading your account…</p>
+      </div>
+    </div>
+    <aside class="buyer-dash-sidebar" id="buyer-dash-sidebar" aria-hidden="true">
+      <a href="index.html" class="buyer-dash-brand store-brand">
+        <span class="buyer-dash-brand-text">
+          <span class="store-brand-name buyer-dash-brand-name brand-wordmark">loveriette</span>
+          <span class="buyer-dash-brand-sub">STORE</span>
+        </span>
+      </a>
+
+      <nav class="buyer-dash-nav" id="buyer-dash-nav">
+        <button type="button" class="buyer-dash-nav-btn active" data-panel="dashboard">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+          Dashboard
+        </button>
+        <button type="button" class="buyer-dash-nav-btn" data-panel="active-purchases">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          My Purchases
+        </button>
+        <button type="button" class="buyer-dash-nav-btn" data-panel="wallet">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1" fill="currentColor" stroke="none"/></svg>
+          Wallet Activity
+        </button>
+        <button type="button" class="buyer-dash-nav-btn" data-panel="email-access">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+          Email Access
+        </button>
+        <button type="button" class="buyer-dash-nav-btn" data-panel="reports">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          Reports &amp; Refunds
+        </button>
+        <button type="button" class="buyer-dash-nav-btn" data-panel="settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+          Settings
+        </button>
+        <button type="button" class="buyer-dash-nav-btn" data-panel="notifications">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          Notifications
+        </button>
+        <button type="button" class="buyer-dash-nav-btn" data-panel="updates">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M3 11v2a4 4 0 0 0 4 4h10a4 4 0 0 0 4-4v-2"/><path d="M12 3 3 8v2l9 5 9-5V8l-9-5z"/></svg>
+          Updates
+        </button>
+        <button type="button" class="buyer-dash-nav-btn" data-panel="chat-seller">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          Chat Seller
+        </button>
+        <button type="button" class="buyer-dash-nav-btn" data-panel="vouch-seller">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 2l3.09 6.26L20 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l4.91-1.01L12 2z"/></svg>
+          Vouch Seller
+        </button>
+      </nav>
+
+      <div class="buyer-dash-sidebar-foot">
+        <a href="index.html#products" class="buyer-dash-foot-link">Browse products</a>
+        <button type="button" class="buyer-dash-foot-link logout-btn">Logout</button>
+      </div>
+    </aside>
+
+    <main class="buyer-dash-main" id="buyer-dash-main" hidden>
+      <header class="buyer-dash-sticky-head">
+        <button type="button" class="buyer-dash-menu-toggle" id="buyer-dash-menu-toggle" aria-label="Open menu">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
+        <span class="buyer-dash-sticky-title" id="buyer-dash-sticky-title">Dashboard</span>
+      </header>
+
+      <section class="buyer-dash-panel active" id="panel-dashboard">
+        <div class="dash-welcome-area" id="dash-welcome-area">
+          <header class="buyer-dash-panel-head">
+            <h1>Dashboard</h1>
+            <p>Welcome back, <span id="dash-welcome-name">—</span></p>
+          </header>
+          <div class="buyer-dash-stats buyer-dash-stats-hero" id="dash-stats"></div>
+          <div class="buyer-dash-section">
+            <div class="buyer-dash-section-head">
+              <h2>Recent Activity</h2>
+              <button type="button" class="buyer-dash-view-all" data-goto="wallet">View All</button>
+            </div>
+            <div class="dashboard-order-list" id="dash-recent-orders"></div>
+            <p class="dashboard-empty" id="dash-recent-empty" hidden>No orders yet.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="buyer-dash-panel" id="panel-active-purchases" hidden>
+        <header class="buyer-dash-panel-head">
+          <h1>My Purchases</h1>
+          <p>View credentials for your completed orders.</p>
+        </header>
+        <div class="buyer-purchase-stats info-card" id="purchase-stats" hidden></div>
+        <div class="buyer-purchase-list" id="active-purchases-list"></div>
+        <p class="dashboard-empty" id="active-purchases-empty" hidden>No purchases yet.</p>
+      </section>
+
+      <section class="buyer-dash-panel" id="panel-wallet" hidden>
+        <header class="buyer-dash-panel-head">
+          <h1>Transaction History</h1>
+          <p>A complete ledger of your payments, orders, and billing activity.</p>
+        </header>
+        <div class="buyer-wallet-stats" id="wallet-stats"></div>
+        <div class="buyer-wallet-filters info-card">
+          <label class="buyer-wallet-filter">
+            <span>Search</span>
+            <input type="search" id="wallet-search" placeholder="Service, Ref No., ID…">
+          </label>
+          <label class="buyer-wallet-filter">
+            <span>From date</span>
+            <input type="date" id="wallet-from">
+          </label>
+          <label class="buyer-wallet-filter">
+            <span>To date</span>
+            <input type="date" id="wallet-to">
+          </label>
+        </div>
+        <div class="buyer-wallet-list" id="wallet-list"></div>
+        <p class="dashboard-empty" id="wallet-empty" hidden>No transactions yet.</p>
+      </section>
+
+      <section class="buyer-dash-panel" id="panel-reports" hidden>
+        <header class="buyer-dash-panel-head">
+          <h1>Reports &amp; Refunds</h1>
+          <p>Track submitted reports and admin responses.</p>
+        </header>
+        <div class="buyer-reports-list" id="buyer-reports-list"></div>
+        <p class="dashboard-empty" id="buyer-reports-empty" hidden>No reports yet.</p>
+      </section>
+
+      <section class="buyer-dash-panel" id="panel-email-access" hidden>
+        <header class="buyer-dash-panel-head buyer-email-head">
+          <div>
+            <h1>Email Fetcher</h1>
+            <p>Fetch latest email (1 msg) for your purchased accounts.</p>
+          </div>
+        </header>
+        <div class="buyer-email-fetcher info-card">
+          <div class="buyer-email-fetch-row">
+            <label class="buyer-email-select-wrap">
+              <span class="buyer-email-label">Selected</span>
+              <select id="email-account-select" class="buyer-email-select">
+                <option value="">Select account…</option>
+              </select>
+            </label>
+            <button type="button" class="btn-primary buyer-email-fetch-btn" id="email-fetch-btn">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Fetch
+            </button>
+          </div>
+          <div class="buyer-email-result" id="email-fetch-result">
+            <div class="buyer-email-empty" id="email-fetch-empty">
+              <div class="buyer-email-empty-icon">📥</div>
+              <strong>No email loaded</strong>
+              <p>Select an account first.</p>
+            </div>
+            <div class="buyer-email-loaded" id="email-fetch-loaded" hidden>
+              <div class="buyer-email-meta">
+                <div><span>From</span><strong id="email-from">—</strong></div>
+                <div><span>Subject</span><strong id="email-subject">—</strong></div>
+                <div><span>Date</span><strong id="email-date">—</strong></div>
+              </div>
+              <pre class="buyer-email-body" id="email-body"></pre>
+            </div>
+          </div>
+        </div>
+        <div class="buyer-email-guide info-card">
+          <h2>How to use Email Fetcher</h2>
+          <ol class="buyer-email-guide-steps">
+            <li>
+              <strong>Select your account</strong>
+              <p>Choose the email/account you want to fetch from the dropdown above.</p>
+            </li>
+            <li>
+              <strong>Trigger the email first</strong>
+              <p>Before fetching, open the service (Netflix, Canva, etc.) and sign in with your purchased account. If you need a verification code, OTP, or login link, request it on that site first — this sends the email to the inbox.</p>
+            </li>
+            <li>
+              <strong>Fetch the email</strong>
+              <p>Return here and click <strong>Fetch</strong>. The latest message for that account will appear below (verification codes, login links, etc.).</p>
+            </li>
+            <li>
+              <strong>Changing password</strong>
+              <p>Same process: change the password on the service first, then fetch here to read the confirmation or security email.</p>
+            </li>
+          </ol>
+          <p class="buyer-email-guide-tip">Tip: If nothing appears, wait a few seconds after requesting the code on the service, then fetch again.</p>
+          <p class="dashboard-empty" id="email-fetcher-no-accounts" hidden>No purchased accounts yet. Complete a purchase and wait for admin approval, then your account emails will appear in the dropdown.</p>
+        </div>
+      </section>
+
+      <section class="buyer-dash-panel" id="panel-settings" hidden>
+        <header class="buyer-dash-panel-head">
+          <h1>Account Settings</h1>
+          <p>Manage your profile, security, and preferences.</p>
+        </header>
+        <div id="settings-loading" class="dashboard-loading">Loading settings…</div>
+        <div id="settings-content" hidden>
+
+          <form class="buyer-settings-section info-card" id="settings-profile-form">
+            <h2>Profile Information</h2>
+            <div class="buyer-settings-avatar-row">
+              <div class="buyer-settings-avatar" id="settings-avatar-preview">?</div>
+              <div>
+                <label class="buyer-settings-file">
+                  <input type="file" id="settings-avatar-input" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+                  <span class="btn-view">Upload photo</span>
+                </label>
+                <button type="button" class="buyer-settings-link" id="settings-avatar-remove">Remove</button>
+              </div>
+            </div>
+            <div class="buyer-settings-grid">
+              <label><span>Full Name</span><input type="text" id="settings-name-input" required maxlength="80"></label>
+              <label><span>Username</span><input type="text" id="settings-username-input" maxlength="24" placeholder="your_username"></label>
+              <label><span>Email Address</span><input type="email" id="settings-email-input" required maxlength="120"></label>
+              <label><span>Phone Number</span><input type="tel" id="settings-phone-input" maxlength="32" placeholder="+63…"></label>
+              <label><span>Country</span><input type="text" id="settings-country-input" maxlength="64"></label>
+              <label><span>Timezone</span>
+                <select id="settings-timezone-input">
+                  <option value="">Select timezone</option>
+                  <option value="Asia/Manila">Asia/Manila (PHT)</option>
+                  <option value="Asia/Singapore">Asia/Singapore</option>
+                  <option value="UTC">UTC</option>
+                  <option value="America/New_York">America/New_York</option>
+                  <option value="Europe/London">Europe/London</option>
+                </select>
+              </label>
+              <label class="buyer-settings-readonly"><span>Account Created</span><input type="text" id="settings-created-input" readonly></label>
+            </div>
+            <button type="submit" class="btn-primary">Save Profile</button>
+          </form>
+
+          <form class="buyer-settings-section info-card" id="settings-password-form">
+            <h2>Security Settings</h2>
+            <p class="buyer-settings-meta" id="settings-last-login">Last login: —</p>
+            <div class="buyer-settings-grid">
+              <label><span>Current Password</span><input type="password" id="settings-current-password" autocomplete="current-password"></label>
+              <label><span>New Password</span><input type="password" id="settings-new-password" autocomplete="new-password"></label>
+              <label><span>Confirm New Password</span><input type="password" id="settings-confirm-password" autocomplete="new-password"></label>
+            </div>
+            <p class="buyer-settings-hint">Min 8 characters, include letters and numbers.</p>
+            <div class="buyer-settings-actions">
+              <button type="submit" class="btn-primary">Change Password</button>
+              <button type="button" class="btn-view" id="settings-logout-all">Logout All Devices</button>
+            </div>
+          </form>
+
+          <form class="buyer-settings-section info-card" id="settings-social-form">
+            <h2>Social Links</h2>
+            <div class="buyer-settings-grid">
+              <label><span>Facebook</span><input type="url" id="settings-social-facebook" placeholder="https://facebook.com/…"></label>
+              <label><span>Instagram</span><input type="url" id="settings-social-instagram" placeholder="https://instagram.com/…"></label>
+              <label><span>TikTok</span><input type="url" id="settings-social-tiktok" placeholder="https://tiktok.com/@…"></label>
+              <label><span>X (Twitter)</span><input type="url" id="settings-social-twitter" placeholder="https://x.com/…"></label>
+              <label><span>YouTube</span><input type="url" id="settings-social-youtube" placeholder="https://youtube.com/…"></label>
+              <label><span>Telegram</span><input type="text" id="settings-social-telegram" placeholder="@username"></label>
+              <label><span>Discord</span><input type="text" id="settings-social-discord" placeholder="username"></label>
+            </div>
+            <button type="submit" class="btn-primary">Save Social Links</button>
+          </form>
+
+          <form class="buyer-settings-section info-card" id="settings-preferences-form">
+            <h2>Account Preferences</h2>
+            <p class="buyer-settings-hint">Order notifications appear in your dashboard. Email delivery uses these saved preferences when enabled.</p>
+            <div class="buyer-settings-toggles">
+              <label class="buyer-settings-toggle"><input type="checkbox" id="settings-notify-email"> Email notifications</label>
+              <label class="buyer-settings-toggle"><input type="checkbox" id="settings-notify-orders" checked> In-app order notifications</label>
+              <label class="buyer-settings-toggle"><input type="checkbox" id="settings-notify-marketing"> Store announcements via email</label>
+            </div>
+            <div class="buyer-settings-grid">
+              <label><span>Language</span>
+                <select id="settings-language">
+                  <option value="en">English</option>
+                  <option value="fil">Filipino</option>
+                  <option value="es">Español</option>
+                </select>
+              </label>
+            </div>
+            <button type="submit" class="btn-primary">Save Preferences</button>
+          </form>
+
+          <div class="buyer-settings-section info-card" id="settings-purchase-summary">
+            <h2>Purchase Settings</h2>
+            <dl class="buyer-settings-stats">
+              <div><dt>Total Orders</dt><dd id="settings-total-orders">0</dd></div>
+              <div><dt>Completed Orders</dt><dd id="settings-completed-orders">0</dd></div>
+              <div><dt>Total Spent</dt><dd id="settings-total-spent">₱0.00</dd></div>
+              <div><dt>Account Status</dt><dd id="settings-account-status">—</dd></div>
+            </dl>
+          </div>
+
+          <div class="buyer-settings-section info-card">
+            <h2>Support</h2>
+            <div class="buyer-settings-actions">
+              <a href="contact.html" class="btn-view">Contact Support</a>
+              <button type="button" class="btn-view" id="settings-submit-ticket">Submit Ticket</button>
+              <button type="button" class="btn-view buyer-action-report" id="settings-report-issue">Report Issue</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="buyer-dash-panel" id="panel-notifications" hidden>
+        <header class="buyer-dash-panel-head">
+          <h1>Notifications</h1>
+          <p>Updates about your orders.</p>
+        </header>
+        <div class="buyer-notif-list" id="notif-list"></div>
+        <p class="dashboard-empty" id="notif-empty" hidden>No notifications yet.</p>
+      </section>
+
+      <section class="buyer-dash-panel" id="panel-updates" hidden>
+        <header class="buyer-dash-panel-head">
+          <h1>Updates</h1>
+          <p>Store announcements.</p>
+        </header>
+        <div id="buyer-updates-list"></div>
+        <p class="dashboard-empty" id="updates-empty" hidden>No updates yet.</p>
+      </section>
+
+      <section class="buyer-dash-panel" id="panel-chat-seller" hidden>
+        <header class="buyer-dash-panel-head">
+          <h1>Chat Seller</h1>
+          <p>Message our team — replies appear here and in the admin panel.</p>
+        </header>
+        <div class="buyer-chat-card info-card">
+          <div class="buyer-chat-messages" id="seller-chat-messages"></div>
+          <form class="buyer-chat-compose" id="seller-chat-form">
+            <input type="text" id="seller-chat-input" placeholder="Type your message..." autocomplete="off" maxlength="2000">
+            <button type="submit" class="btn-primary buyer-chat-send">Send</button>
+          </form>
+        </div>
+      </section>
+
+      <section class="buyer-dash-panel" id="panel-vouch-seller" hidden>
+        <header class="buyer-dash-panel-head">
+          <h1>Vouch Seller</h1>
+          <p>How to send your vouch and keep your warranty valid.</p>
+        </header>
+        <div class="buyer-vouch-card info-card" id="vouch-seller-content">
+          <p class="dashboard-loading">Loading vouch guide…</p>
+        </div>
+      </section>
+
+      <p class="dashboard-error" id="dashboard-error" hidden></p>
+    </main>
+  </div>
+
+  <div class="buyer-modal-overlay" id="purchase-detail-modal" hidden>
+    <div class="buyer-modal buyer-purchase-modal" role="dialog" aria-labelledby="purchase-modal-title">
+      <header class="buyer-modal-head">
+        <h2 id="purchase-modal-title">Order Details</h2>
+        <button type="button" class="buyer-modal-close" id="purchase-modal-close" aria-label="Close">&times;</button>
+      </header>
+      <div class="buyer-modal-body" id="purchase-modal-body">
+        <p class="dashboard-loading">Loading credentials…</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="buyer-modal-overlay" id="report-issue-modal" hidden>
+    <div class="buyer-modal buyer-report-modal" role="dialog" aria-labelledby="report-modal-title">
+      <header class="buyer-modal-head">
+        <h2 id="report-modal-title">Report Issue</h2>
+        <button type="button" class="buyer-modal-close" id="report-modal-close" aria-label="Close">&times;</button>
+      </header>
+      <form class="buyer-modal-body" id="report-issue-form">
+        <input type="hidden" id="report-order-number">
+        <input type="hidden" id="report-stock-item-id">
+        <div class="buyer-report-shared-fields">
+          <p class="buyer-report-form-label">Your details</p>
+          <label class="buyer-report-field"><span>name :</span><input type="text" id="report-name"></label>
+          <p class="buyer-report-error" id="report-error-name" hidden></p>
+          <label class="buyer-report-field"><span>remaining days :</span><input type="text" id="report-remaining" placeholder="e.g. 25 days"></label>
+          <p class="buyer-report-error" id="report-error-remaining" hidden></p>
+          <label class="buyer-report-field"><span>subscription/product :</span><input type="text" id="report-subscription" placeholder="e.g. Netflix Premium, Canva Pro"></label>
+          <p class="buyer-report-error" id="report-error-subscription" hidden></p>
+        </div>
+        <div class="buyer-report-tabs">
+          <button type="button" class="buyer-report-tab active" data-rtab="report">Report</button>
+          <button type="button" class="buyer-report-tab" data-rtab="refund">Refund</button>
+        </div>
+        <div class="buyer-report-panel active" data-rpanel="report">
+          <p class="buyer-report-form-label">report form :</p>
+          <label class="buyer-report-field"><span>issue :</span><textarea id="report-issue" rows="3" placeholder="What's wrong with this account?"></textarea></label>
+          <p class="buyer-report-error" id="report-error-issue" hidden></p>
+        </div>
+        <div class="buyer-report-panel" data-rpanel="refund" hidden>
+          <p class="buyer-report-form-label">refund form :</p>
+          <label class="buyer-report-field"><span>issue :</span><textarea id="refund-issue" rows="3" placeholder="Why are you requesting a refund?"></textarea></label>
+          <p class="buyer-report-error" id="report-error-refund-issue" hidden></p>
+          <label class="buyer-report-field"><span>bank acc for refund :</span><input type="text" id="refund-bank" placeholder="Bank name, account number, account name"></label>
+          <p class="buyer-report-error" id="report-error-refund-bank" hidden></p>
+        </div>
+        <div class="buyer-report-target-section">
+          <p class="buyer-report-form-label">Select item(s) to report</p>
+          <p class="buyer-report-target-hint">Choose the specific account or profile affected. Reporting one profile flags all profiles on that credential.</p>
+          <div id="report-target-list" class="buyer-report-target-list"></div>
+          <p class="buyer-report-error" id="report-error-targets" hidden></p>
+        </div>
+        <div class="buyer-report-proof-section">
+          <p class="buyer-report-form-label">Upload proof (required)</p>
+          <p class="buyer-report-proof-warning">Minimum 2 photos. Upload a screenshot of your vouch — <strong>no vouch = voided</strong>.</p>
+
+          <div class="buyer-report-upload">
+            <label class="buyer-report-upload-label">Vouch screenshot <span class="buyer-report-required">required</span></label>
+            <input type="file" id="report-proof-vouch" accept="image/*" hidden>
+            <button type="button" class="btn-upload" id="report-vouch-select">Select vouch screenshot…</button>
+            <div class="buyer-report-upload-preview" id="report-vouch-preview"></div>
+            <p class="buyer-report-error" id="report-error-vouch" hidden></p>
+          </div>
+
+          <div class="buyer-report-upload">
+            <label class="buyer-report-upload-label">Additional proof <span class="buyer-report-required">min 1 photo</span></label>
+            <input type="file" id="report-proof-extra" accept="image/*" multiple hidden>
+            <button type="button" class="btn-upload" id="report-extra-select">Select photos…</button>
+            <div class="buyer-report-upload-preview" id="report-extra-preview"></div>
+            <p class="buyer-report-error" id="report-error-extra" hidden></p>
+          </div>
+        </div>
+        <footer class="buyer-modal-foot">
+          <button type="button" class="btn-view" id="report-cancel-btn">Cancel</button>
+          <button type="submit" class="btn-primary buyer-report-submit">Submit Report</button>
+        </footer>
+      </form>
+    </div>
+  </div>
+
+  <div class="buyer-modal-overlay" id="ticket-modal" hidden>
+    <div class="buyer-modal" role="dialog">
+      <header class="buyer-modal-head">
+        <h2>Submit Support Ticket</h2>
+        <button type="button" class="buyer-modal-close" id="ticket-modal-close">&times;</button>
+      </header>
+      <form class="buyer-modal-body" id="ticket-form">
+        <label class="buyer-report-field"><span>Subject</span><input type="text" id="ticket-subject" required maxlength="120"></label>
+        <label class="buyer-report-field"><span>Message</span><textarea id="ticket-body" rows="4" required maxlength="4000"></textarea></label>
+        <footer class="buyer-modal-foot">
+          <button type="button" class="btn-view" id="ticket-cancel">Cancel</button>
+          <button type="submit" class="btn-primary">Submit Ticket</button>
+        </footer>
+      </form>
+    </div>
+  </div>
+
+  <script src="notifications.js"></script>
+  <script src="toast.js"></script>
+  <script src="branding.js"></script>
+  <script src="badges.js"></script>
+  <script src="dashboard.js?v=20260615store-updates"></script>
+  <script src="mobile.js?v=20260615vouch"></script>
+  <script src="settings.js"></script>
+</body>
+</html>
