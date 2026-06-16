@@ -7,6 +7,8 @@
     "start": "node server.js/server.js",
     "start:prod": "node --env-file=.env server.js/server.js",
     "build": "node scripts/prepare-production.js",
+    "reset-admin": "node scripts/reset-admin.js",
+    "show-admin": "node scripts/show-admin.js",
     "test:workflows": "node server.js/test-workflows.js",
     "tunnel": "node server.js/tunnel.js"
   },
