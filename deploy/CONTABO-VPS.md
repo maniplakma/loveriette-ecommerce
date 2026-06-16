@@ -27,7 +27,7 @@ Deploy **only** to `/var/www/ecommerce`. **Do not** change `/var/www/ezyshell` o
 |----------|----------|-----------------|
 | `NODE_ENV` | Yes | `production` |
 | `PORT` | Yes | `3001` (must match PM2/Nginx) |
-| `HOST` | Yes | `127.0.0.1` (Nginx proxies; do not expose Node publicly) |
+| `HOST` | Yes | `0.0.0.0` (listen on all interfaces; use with UFW + Nginx) |
 | `SESSION_SECRET` | Yes | `openssl rand -hex 32` |
 | `COOKIE_SECURE` | Yes after SSL | `0` for HTTP only; `1` after HTTPS |
 | `ADMIN_EMAIL` | First boot only | Seeds admin if DB has no admin |
@@ -209,7 +209,7 @@ nano .env
 ```env
 NODE_ENV=production
 PORT=3001
-HOST=127.0.0.1
+HOST=0.0.0.0
 
 SESSION_SECRET=PASTE_OUTPUT_OF_openssl_rand_hex_32
 COOKIE_SECURE=0
@@ -295,11 +295,39 @@ pm2 save
 
 ---
 
-## Step 12 — Verify app on port 3001 (before Nginx)
+## Step 12 — Firewall (UFW) + verify app on port 3001
+
+Allow external access on port **3001** (direct Node) and **80/443** (Nginx):
+
+```bash
+sudo ufw allow OpenSSH
+sudo ufw allow 3001/tcp comment 'ecommerce Node'
+sudo ufw allow 'Nginx Full' comment 'HTTP/HTTPS'
+sudo ufw enable
+sudo ufw status numbered
+```
+
+Or run the bundled script (also installs/configures Nginx):
+
+```bash
+cd /var/www/ecommerce
+chmod +x deploy/setup-external-access.sh
+SHOP_DOMAIN=shop.yourdomain.com ./deploy/setup-external-access.sh
+```
+
+For **IP-only** access on port 80 (no domain yet):
+
+```bash
+ENABLE_IP_DEFAULT=1 ./deploy/setup-external-access.sh
+```
+
+Verify locally and externally:
 
 ```bash
 curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:3001/
 curl -s http://127.0.0.1:3001/branding | head -c 200
+# From another machine (replace VPS IP):
+curl -s -o /dev/null -w "%{http_code}\n" http://YOUR_VPS_IP:3001/
 ```
 
 Expected: HTTP `200` and JSON with `name`, `logoUrl`.
@@ -341,7 +369,8 @@ sudo systemctl reload nginx
 | Layer | Port | Notes |
 |-------|------|-------|
 | Public HTTP | `80` / `443` | Nginx |
-| ecommerce Node | `127.0.0.1:3001` | PM2 process `ecommerce` |
+| Direct Node (optional) | `0.0.0.0:3001` | `HOST=0.0.0.0` + UFW `3001/tcp` |
+| ecommerce Node (Nginx upstream) | `127.0.0.1:3001` | loopback on same VPS |
 | ezyshell Node | `127.0.0.1:3000` (typical) | unchanged |
 
 ---
@@ -385,7 +414,7 @@ Expected: `88 passed, 0 failed`.
 ## Verification checklist (after deployment)
 
 - [ ] `pm2 status` shows `ecommerce` **online** and ezyshell process still **online**
-- [ ] `curl http://127.0.0.1:3001/` returns `200`
+- [ ] `curl http://YOUR_VPS_IP:3001/` returns `200` (external, if UFW allows 3001)
 - [ ] Browser: `http://shop.yourdomain.com` loads storefront
 - [ ] Login / signup works
 - [ ] Admin panel `/admin.html` loads

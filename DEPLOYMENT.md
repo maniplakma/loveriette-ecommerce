@@ -105,7 +105,7 @@ nano .env
 |----------|----------|---------|-------------|
 | `NODE_ENV` | Recommended | — | Set to `production` |
 | `PORT` | No | `3000` | HTTP port for Express |
-| `HOST` | No | `0.0.0.0` | Use `127.0.0.1` behind Nginx |
+| `HOST` | No | `0.0.0.0` | Bind all interfaces for external access |
 | `SESSION_SECRET` | **Yes** | dev fallback | Long random string for sessions |
 | `COOKIE_SECURE` | **Yes** (HTTPS) | off | Set `1` when using HTTPS |
 | `ADMIN_EMAIL` | First deploy | `admin@loveriette.com` | Admin login email (seed only) |

@@ -12,6 +12,7 @@ const config = {
   nodeEnv: process.env.NODE_ENV || 'development',
   isProduction: process.env.NODE_ENV === 'production',
   port: Number(process.env.PORT) || 3000,
+  // 0.0.0.0 = listen on all interfaces (external access via VPS IP:PORT)
   host: process.env.HOST || '0.0.0.0',
   publicUrl: String(process.env.PUBLIC_URL || '').replace(/\/$/, ''),
   appRoot,

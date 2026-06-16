@@ -14,7 +14,7 @@ Central module: [`server.js/config.js`](../../server.js/config.js)
 |----------|----------|---------|---------|
 | `NODE_ENV` | Recommended | `development` | `production` on VPS |
 | `PORT` | No | `3000` | HTTP port Node listens on |
-| `HOST` | No | `0.0.0.0` | Bind address (`127.0.0.1` behind Nginx) |
+| `HOST` | No | `0.0.0.0` | Bind address (`0.0.0.0` = all interfaces) |
 | `PUBLIC_URL` | No | — | Public site URL for logs (no trailing slash) |
 | `SESSION_SECRET` | **Yes in production** | — | Session encryption |
 | `COOKIE_SECURE` | After SSL | `0` | Set `1` with HTTPS |
