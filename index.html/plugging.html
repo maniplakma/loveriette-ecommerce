@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en" class="light-mode">
+<head>
+  <base href="/">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Telegram message auto forwarder — plug and relay messages across your channels.">
+  <title>Plugging — loveriette</title>
+  <link rel="stylesheet" href="/style.css?v=20260626platform">
+  <link rel="stylesheet" href="/mobile.css?v=20260626platform">
+  <link rel="stylesheet" href="/theme.css">
+  <link rel="stylesheet" href="/platform.css?v=20260627icons">
+  <link rel="stylesheet" href="/plugging.css?v=2">
+  <link rel="stylesheet" href="/plugging-plans.css?v=1">
+  <script src="/theme.js"></script>
+  <script src="/theme-colors.js"></script>
+  <script src="/api-cache.js"></script>
+  <script src="/share-utils.js"></script>
+</head>
+<body class="light-mode">
+  <nav class="top-nav"><div class="nav-inner"><ul class="nav-left"></ul><ul class="nav-right">
+    <li class="auth-guest"><a href="/login.html" class="nav-link">Sign In</a></li>
+    <li class="auth-user" hidden><a href="/dashboard.html" class="nav-link">My Account</a></li>
+  </ul></div></nav>
+
+  <div class="service-hero service-hero--flirty">
+    <div class="service-hero-flirt">
+      <span class="service-hero-flirt-shadow" aria-hidden="true">plug & play</span>
+      <h1 class="service-hero-flirt-title">
+        <span class="service-hero-flirt-bold">telegram</span>
+        <span class="service-hero-flirt-script">plugging</span>
+      </h1>
+    </div>
+    <p class="service-hero-flirt-tagline" id="plugging-hero-sub">connect your telegram, set your source and targets — the forwarder runs on your account, instantly. no admin setup needed.</p>
+    <p class="service-hero-flirt-tagline plugging-self-service-note">fully yours in the workspace — connect, forward, and go. that's it, babe ♡</p>
+  </div>
+
+  <section class="platform-section plugging-workspace-section">
+    <div class="plugging-ws-box">
+      <div class="plugging-ws-main">
+        <h2>Enter Workspace</h2>
+        <p>Paste your access key to connect your Telegram account and run the auto forwarder yourself.</p>
+        <label class="plugging-ws-label" for="hero-access-key">Access Key</label>
+        <input id="hero-access-key" class="plugging-ws-input" placeholder="PLG-XXXX-XXXX" autocomplete="off" spellcheck="false">
+        <div class="plugging-ws-actions">
+          <button type="button" class="btn-primary-platform" id="hero-enter-workspace">Enter Workspace</button>
+          <a href="/plugging/status" class="btn-outline-platform">Check Order Status</a>
+        </div>
+        <p id="hero-ws-error" class="plugging-ws-error" hidden></p>
+      </div>
+      <aside class="plugging-ws-guide">
+        <h3>How to use</h3>
+        <ol>
+          <li><span>1</span> Get your access key after payment is approved</li>
+          <li><span>2</span> Enter the key above and open workspace</li>
+          <li><span>3</span> Add your Telegram number and verify OTP</li>
+          <li><span>4</span> Set source &amp; targets, then start forwarding</li>
+        </ol>
+      </aside>
+    </div>
+  </section>
+
+  <main class="plugging-catalog nf-plans-page">
+    <div class="nf-plans-step">
+      <h2>Plugging Plans</h2>
+      <p>Choose the right plan for you — then pick your duration inside</p>
+    </div>
+    <div class="nf-plans-row" id="plugging-products"></div>
+    <p class="empty-state" id="plugging-products-empty" hidden>No plans available yet.</p>
+  </main>
+
+  <section class="platform-section">
+    <div class="platform-section-head"><h2>FAQ</h2></div>
+    <div class="faq-list" id="plugging-faq"></div>
+  </section>
+
+  <div class="plugging-share-section">
+    <div id="plugging-share"></div>
+  </div>
+
+  <footer class="site-footer">
+    <p class="footer-copy">© 2026 LOVERIETTE. ALL RIGHTS RESERVED.</p>
+  </footer>
+
+  <script src="/badges.js"></script>
+  <script src="/nav.js"></script>
+  <script src="/mobile.js"></script>
+  <script src="/platform-nav.js"></script>
+  <script src="/product-icons.js"></script>
+  <script src="/plugging-plan-cards.js"></script>
+  <script src="/plugging.js?v=4"></script>
+</body>
+</html>

@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <base href="/">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Order Status — Plugging</title>
+  <link rel="stylesheet" href="/theme.css">
+  <link rel="stylesheet" href="/plugging-flow.css?v=1">
+  <script src="/theme.js"></script>
+</head>
+<body class="plug-flow-body">
+  <div class="plug-flow-wrap">
+    <div class="plug-flow-layout">
+      <div class="plug-flow-card">
+        <div class="plug-flow-icon" aria-hidden="true">📋</div>
+        <h1>Order Status</h1>
+        <p class="plug-flow-sub">Track your plugging subscription and access key.</p>
+        <div class="plug-flow-steps" aria-hidden="true">
+          <span class="plug-flow-step done"></span>
+          <span class="plug-flow-step done"></span>
+          <span class="plug-flow-step active"></span>
+          <span class="plug-flow-step"></span>
+        </div>
+        <p class="plug-pay-order" id="status-ref"></p>
+        <div id="status-badge-wrap"></div>
+        <div class="plug-status-details" id="status-box"></div>
+        <div id="access-key-box" class="plug-key-box" hidden>
+          <p>Your Access Key</p>
+          <code class="plug-key-code" id="access-key"></code>
+          <p class="plug-key-hint">Save this key — you'll need it to enter the workspace.</p>
+          <a href="/plugging/workspace" class="plug-flow-btn plug-flow-btn-primary" style="text-decoration:none">Open Workspace →</a>
+        </div>
+        <button type="button" class="plug-flow-btn plug-flow-btn-ghost" id="refresh-status" style="width:100%">↻ Refresh Status</button>
+        <p class="plug-flow-links"><a href="/plugging">← Back to Plugging</a> · <a href="/plugging/workspace">Enter Workspace</a></p>
+      </div>
+      <aside class="plug-guide-panel">
+        <h2>What's next?</h2>
+        <ol class="plug-guide-list">
+          <li>
+            <span class="plug-guide-num">✓</span>
+            <div><strong>Order submitted</strong><p>Your subscription order has been created.</p></div>
+          </li>
+          <li>
+            <span class="plug-guide-num">✓</span>
+            <div><strong>Payment received</strong><p>Receipt uploaded — waiting for admin approval.</p></div>
+          </li>
+          <li class="current">
+            <span class="plug-guide-num">3</span>
+            <div><strong>Get access key</strong><p>Once approved, your PLG key appears here automatically.</p></div>
+          </li>
+          <li>
+            <span class="plug-guide-num">4</span>
+            <div><strong>Go to workspace</strong><p>Enter your key, connect Telegram, and start forwarding.</p></div>
+          </li>
+        </ol>
+      </aside>
+    </div>
+  </div>
+  <script src="/plugging-status.js"></script>
+</body>
+</html>

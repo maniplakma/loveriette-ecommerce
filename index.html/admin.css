@@ -253,10 +253,6 @@ body.light-mode {
 }
 
 .admin-brand-name {
-  font-weight: 700;
-  font-size: 12px;
-  color: var(--font-color);
-  font-family: var(--brand-font, system-ui, sans-serif);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

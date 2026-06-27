@@ -257,13 +257,13 @@ const defaultSettings = {
   loyalty_enabled: '1',
   loyalty_earn_rate: '0.25',
   loyalty_redeem_rate: '100',
-  theme_light_primary: '#8d7b68',
-  theme_dark_primary: '#a29bfe',
+  theme_light_primary: '#e50914',
+  theme_dark_primary: '#ff3b3b',
   theme_force_mode: 'light',
-  theme_bg: '#f1dec9',
-  theme_font: '#4a3c2e',
-  theme_primary: '#8d7b68',
-  theme_secondary: '#a4907c',
+  theme_bg: '#080404',
+  theme_font: '#f0ecec',
+  theme_primary: '#e50914',
+  theme_secondary: '#ff3b3b',
   theme_colorhunt_url: '',
   store_display_name: 'loveriette shop',
   store_brand_name: 'loveriette',
@@ -279,31 +279,31 @@ const defaultSettings = {
   tingi_min_qty: '2',
   tingi_max_qty: '50',
   tingi_hold_days: '10',
-  payment_instructions_text: 'Payment is accepted via QR only.\nPlease send the exact amount or your order may be rejected.\nMake sure you are paying to the correct QR code.\nUploaded receipts only — downloaded or edited receipts will not be accepted.',
+  payment_instructions_text: 'pay via QR only, babe — send the exact amount or we can\'t approve your order.\nmake sure you\'re paying the right QR code, love.\nuploaded receipts only — edited or downloaded screenshots won\'t fly.\nwe\'ll review it fast once you confirm ♡',
   order_guide_steps: JSON.stringify([
     {
       number: '1',
-      title: 'Choose a product',
-      description: 'Select your desired subscription plan from our catalog.',
-      bullets: ['Open Products from the menu', 'Pick a product and variant (e.g. 1 Month)']
+      title: 'pick your premium',
+      description: 'browse our catalog and find something that speaks to you.',
+      bullets: ['open shop from the menu', 'choose a product and variant (e.g. 1 month)']
     },
     {
       number: '2',
-      title: 'Add to cart',
-      description: 'Place the product in your cart or go straight to checkout.',
-      bullets: ['Click Purchase → on the plan card', 'Or use the cart icon to add items first']
+      title: 'add to cart',
+      description: 'drop it in your cart — or go straight to checkout if you\'re ready.',
+      bullets: ['tap purchase on the plan card', 'or use the cart icon to collect a few first']
     },
     {
       number: '3',
-      title: 'Checkout & pay',
-      description: 'Complete payment via GCash or your chosen method.',
-      bullets: ['Enter your email on checkout', 'Upload your payment receipt screenshot', 'Confirm your order']
+      title: 'checkout & pay',
+      description: 'complete payment via GCash or your chosen method.',
+      bullets: ['enter your email at checkout', 'upload your payment receipt screenshot', 'hit confirm — we\'ll take it from there']
     },
     {
       number: '4',
-      title: 'Get approved & receive',
-      description: 'We verify your payment, then deliver your account credentials.',
-      bullets: ['Wait for admin approval (usually quick)', 'Open My Account → Purchases for credentials', 'Contact support if you need help']
+      title: 'get approved & enjoy',
+      description: 'we verify your payment, then deliver your credentials with care.',
+      bullets: ['wait for approval — usually quick, babe', 'open my account → purchases for your details', 'message us anytime if you need help ♡']
     }
   ])
 };
@@ -311,6 +311,39 @@ const upsertSetting = db.prepare('INSERT INTO settings (key, value) VALUES (?, ?
 for (const [k, v] of Object.entries(defaultSettings)) {
   try { upsertSetting.run(k, v); } catch (_) { /* ignore */ }
 }
+
+try {
+  const getVal = (key) => db.prepare('SELECT value FROM settings WHERE key = ?').get(key)?.value;
+  const set = db.prepare(`
+    INSERT INTO settings (key, value) VALUES (?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+  `);
+  const cyberFlag = getVal('theme_cyber_noir_migrated');
+  const bg = (getVal('theme_bg') || '').toLowerCase();
+  const primary = (getVal('theme_primary') || '').toLowerCase();
+  if (!cyberFlag && bg === '#f1dec9' && (primary === '#8d7b68' || primary === '')) {
+    set.run('theme_bg', '#080404');
+    set.run('theme_font', '#f0ecec');
+    set.run('theme_primary', '#e50914');
+    set.run('theme_secondary', '#ff3b3b');
+    set.run('theme_light_primary', '#e50914');
+    set.run('theme_cyber_noir_migrated', '1');
+  }
+  if (!getVal('theme_cyber_noir_v2')) {
+    set.run('theme_bg', '#080404');
+    set.run('theme_font', '#f0ecec');
+    set.run('theme_primary', '#e50914');
+    set.run('theme_secondary', '#ff3b3b');
+    set.run('theme_light_primary', '#e50914');
+    set.run('theme_colorhunt_url', '');
+    set.run('theme_cyber_noir_v2', '1');
+  }
+  if (!getVal('flirty_copy_v1')) {
+    set.run('order_guide_steps', defaultSettings.order_guide_steps);
+    set.run('payment_instructions_text', defaultSettings.payment_instructions_text);
+    set.run('flirty_copy_v1', '1');
+  }
+} catch (_) { /* ignore */ }
 
 try {
   const guideSeed = defaultSettings.order_guide_steps;
@@ -782,18 +815,18 @@ for (const row of db.prepare('SELECT id, name FROM products').all()) {
 
 const seedFaqs = [
   {
-    question: 'How do I receive my account?',
-    answer: "After your payment is approved, your account details (Email, Password, PIN) will appear instantly in your My Account page under 'Purchases'.",
+    question: 'how do i get my account?',
+    answer: "once your payment is approved, your credentials (email, password, pin) appear instantly in my account → purchases. easy, babe ♡",
     sort_order: 1
   },
   {
-    question: 'Is there a warranty?',
-    answer: 'Yes! All accounts come with a 30-day warranty. If the account stops working, contact support for a replacement.',
+    question: 'is there a warranty?',
+    answer: 'yes, love — every account comes with a 30-day warranty. if something stops working, message us and we\'ll make it right.',
     sort_order: 2
   },
   {
-    question: 'Can I change the password?',
-    answer: 'For shared accounts (profiles), you cannot change the password or email. Doing so voids the warranty. For private accounts, you have full control.',
+    question: 'can i change the password?',
+    answer: 'for shared accounts, please don\'t change the email or password — it voids the warranty. private accounts? all yours to customize.',
     sort_order: 3
   }
 ];
@@ -865,48 +898,48 @@ if (contactCount === 0) {
 
 const seedTerms = [
   {
-    title: '1. Acceptance of Terms',
-    body: 'By accessing or using Loveriette, you agree to be bound by these Terms of Service. If you do not agree to these terms, please do not use our services.',
+    title: '1. acceptance of terms',
+    body: 'by using loveriette, you agree to these terms — if anything feels off, reach out before you continue, babe.',
     sort_order: 1
   },
   {
-    title: '2. Account Registration',
-    body: 'To make purchases, you must create an account with a valid email address. You are responsible for maintaining the confidentiality of your login credentials and for all activities under your account.',
+    title: '2. your account',
+    body: 'create an account with a valid email to shop with us. keep your login safe — you\'re responsible for activity under your account, love.',
     sort_order: 2
   },
   {
-    title: '3. Digital Products',
-    body: 'All products sold on Loveriette are digital goods (app accounts, subscriptions, tools, etc.). Once delivered, digital products are non-refundable unless the product is defective or not as described.',
+    title: '3. digital products',
+    body: 'everything we sell is digital — app accounts, subscriptions, tools, and more. once delivered, items are non-refundable unless defective or not as described.',
     sort_order: 3
   },
   {
-    title: '4. Payment & Delivery',
-    body: 'Payments are processed through our supported payment methods. After successful payment confirmation, digital products are delivered automatically to your account. Delivery times may vary depending on payment verification.',
+    title: '4. payment & delivery',
+    body: 'pay through our supported methods and upload your receipt. after we verify payment, your product is delivered to your account — timing depends on review speed.',
     sort_order: 4
   },
   {
-    title: '5. Prohibited Use',
-    body: 'You agree not to: resell or redistribute products without authorization, use our services for illegal activities, attempt to exploit or hack our systems, create multiple accounts to abuse promotions, or engage in fraudulent transactions.',
+    title: '5. play fair',
+    body: 'please don\'t resell without permission, abuse promos, run fraud, hack our systems, or use loveriette for anything illegal — we\'ll protect the community.',
     sort_order: 5
   },
   {
-    title: '6. Refund Policy',
-    body: 'Refunds are only issued if the product delivered is defective, incorrect, or not as described. Refund requests must be submitted within 24 hours of purchase. Loveriette reserves the right to deny refund requests that do not meet the criteria.',
+    title: '6. refunds',
+    body: 'refunds are for defective, incorrect, or misdescribed products only. request within 24 hours of purchase — we review each case with care.',
     sort_order: 6
   },
   {
-    title: '7. Limitation of Liability',
-    body: "Loveriette is provided 'as is' without warranties of any kind. We are not liable for any indirect, incidental, or consequential damages arising from the use of our services or products.",
+    title: '7. liability',
+    body: 'loveriette is provided as-is. we\'re not liable for indirect or consequential damages from using our services or products.',
     sort_order: 7
   },
   {
-    title: '8. Account Termination',
-    body: 'We reserve the right to suspend or terminate accounts that violate these terms, engage in fraudulent activity, or abuse our services, without prior notice.',
+    title: '8. account termination',
+    body: 'we may suspend or terminate accounts that break these terms, commit fraud, or abuse our services — no prior notice required in serious cases.',
     sort_order: 8
   },
   {
-    title: '9. Changes to Terms',
-    body: 'We may modify these Terms of Service at any time. Changes will be effective immediately upon posting. Continued use of our services after modifications constitutes acceptance of the updated terms.',
+    title: '9. changes to terms',
+    body: 'we may update these terms anytime. continued use after changes means you accept the updated version — check back when you visit, babe.',
     sort_order: 9
   },
   {
@@ -971,6 +1004,20 @@ if (termsCount === 0) {
     throw err;
   }
 }
+
+try {
+  const flirtyFaqFlag = db.prepare('SELECT value FROM settings WHERE key = ?').get('flirty_faq_terms_v1');
+  if (!flirtyFaqFlag) {
+    const faqUpd = db.prepare('UPDATE faqs SET question = ?, answer = ? WHERE sort_order = ?');
+    for (const f of seedFaqs) faqUpd.run(f.question, f.answer, f.sort_order);
+    const termUpd = db.prepare('UPDATE terms_sections SET title = ?, body = ? WHERE sort_order = ?');
+    for (const t of seedTerms) termUpd.run(t.title, t.body, t.sort_order);
+    db.prepare(`
+      INSERT INTO settings (key, value) VALUES (?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value
+    `).run('flirty_faq_terms_v1', '1');
+  }
+} catch (_) { /* ignore */ }
 
 const privacyCount = db.prepare('SELECT COUNT(*) AS count FROM privacy_sections').get().count;
 if (privacyCount === 0) {
@@ -1202,5 +1249,8 @@ function resetWebsiteData() {
 }
 
 db.resetWebsiteData = resetWebsiteData;
+
+const { initPlatformDb } = require('./platform-db');
+initPlatformDb(db);
 
 module.exports = db;

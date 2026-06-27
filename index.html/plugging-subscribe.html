@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <base href="/">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Subscribe — Plugging</title>
+  <link rel="stylesheet" href="/theme.css">
+  <link rel="stylesheet" href="/plugging-flow.css?v=1">
+  <script src="/theme.js"></script>
+  <script src="/api-cache.js"></script>
+</head>
+<body class="plug-flow-body">
+  <div class="plug-flow-wrap">
+    <div class="plug-flow-layout">
+      <div class="plug-flow-card">
+        <div class="plug-flow-icon" aria-hidden="true">⚡</div>
+        <h1>Subscribe to Plugging</h1>
+        <p class="plug-flow-sub">Enter your details to start your Telegram auto forwarder subscription.</p>
+        <div class="plug-flow-steps" aria-hidden="true">
+          <span class="plug-flow-step active"></span>
+          <span class="plug-flow-step"></span>
+          <span class="plug-flow-step"></span>
+          <span class="plug-flow-step"></span>
+        </div>
+        <div class="plug-flow-plan-badge" id="plan-summary">Loading plan…</div>
+        <form class="plug-flow-form" id="subscribe-form">
+          <label for="sub-name">Full Name *</label>
+          <input id="sub-name" name="name" type="text" required autocomplete="name">
+          <label for="sub-email">Email</label>
+          <input id="sub-email" name="email" type="email" placeholder="For order updates" autocomplete="email">
+          <input type="hidden" name="planId" id="plan-id">
+          <button type="submit" class="plug-flow-btn plug-flow-btn-primary">Continue to Payment →</button>
+        </form>
+        <p id="subscribe-error" class="plug-flow-error" hidden></p>
+        <p class="plug-flow-links"><a href="/plugging">← Back to Plugging</a></p>
+      </div>
+      <aside class="plug-guide-panel">
+        <h2>How it works</h2>
+        <ol class="plug-guide-list">
+          <li class="current">
+            <span class="plug-guide-num">1</span>
+            <div><strong>Choose a plan & subscribe</strong><p>Pick a package and enter your name to create an order.</p></div>
+          </li>
+          <li>
+            <span class="plug-guide-num">2</span>
+            <div><strong>Pay & upload receipt</strong><p>Send payment via your chosen method and upload proof.</p></div>
+          </li>
+          <li>
+            <span class="plug-guide-num">3</span>
+            <div><strong>Get your access key</strong><p>Once approved, you'll receive a key like PLG-XXXX-XXXX.</p></div>
+          </li>
+          <li>
+            <span class="plug-guide-num">4</span>
+            <div><strong>Enter workspace</strong><p>Connect your Telegram, set source & targets, and start forwarding.</p></div>
+          </li>
+        </ol>
+      </aside>
+    </div>
+  </div>
+  <script src="/plugging-subscribe.js"></script>
+</body>
+</html>

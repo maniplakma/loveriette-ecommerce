@@ -77,7 +77,7 @@ function renderProducts(products) {
     const card = document.createElement('article');
     card.className = 'product-card catalog-card';
     card.innerHTML = `
-      <a href="product.html?id=${product.id}" class="catalog-card-link">
+      <a href="${product.shareUrl || (product.slug ? `/product/${product.slug}` : `product.html?id=${product.id}`)}" class="catalog-card-link">
         <div class="catalog-card-head">
           <div class="catalog-card-icon">
             <div class="logo${product.icon ? ' has-icon' : ''}">${window.renderProductIcon ? window.renderProductIcon(product.icon, product.name, 'logo-img') : ''}</div>

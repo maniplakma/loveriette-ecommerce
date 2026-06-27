@@ -10,7 +10,9 @@
     "reset-admin": "node scripts/reset-admin.js",
     "show-admin": "node scripts/show-admin.js",
     "test:workflows": "node server.js/test-workflows.js",
-    "tunnel": "node server.js/tunnel.js"
+    "tunnel": "node server.js/tunnel.js",
+    "migrate:ezyshell": "node scripts/migrate-ezyshell.js",
+    "backup:local": "powershell -ExecutionPolicy Bypass -File scripts/backup-local.ps1"
   },
   "engines": {
     "node": ">=22.0.0"
@@ -22,6 +24,7 @@
   "dependencies": {
     "bcryptjs": "^3.0.2",
     "express": "^5.2.1",
-    "express-session": "^1.18.1"
+    "express-session": "^1.18.1",
+    "telegram": "^2.26.22"
   }
 }

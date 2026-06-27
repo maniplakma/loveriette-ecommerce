@@ -49,8 +49,10 @@ function initMobileNav() {
 
     const brand = document.createElement('a');
     brand.className = 'nav-brand store-brand';
-    brand.href = 'index.html';
-    brand.innerHTML = '<span class="store-brand-name brand-wordmark">loveriette</span>';
+    brand.href = '/';
+    brand.innerHTML = window.buildBrandWordmarkHtml
+      ? window.buildBrandWordmarkHtml('loveriette')
+      : '<span class="brand-wordmark-wrap"><span class="brand-wordmark-back" aria-hidden="true">loveriette</span><span class="brand-wordmark-front store-brand-name">loveriette</span></span>';
 
     const quick = document.createElement('ul');
     quick.className = 'nav-quick';

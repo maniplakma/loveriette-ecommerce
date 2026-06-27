@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+
+  <base href="/">
+
+  <meta charset="UTF-8">
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Plugging Payment — loveriette</title>
+
+  <link rel="stylesheet" href="style.css?v=20260626platform">
+
+  <link rel="stylesheet" href="theme.css">
+
+  <link rel="stylesheet" href="plugging-flow.css?v=2">
+
+  <script src="theme.js"></script>
+
+  <script src="theme-colors.js"></script>
+
+</head>
+
+<body class="plug-flow-body">
+
+  <div class="plug-flow-wrap">
+
+    <div class="plug-flow-layout">
+
+      <div class="plug-flow-card">
+
+        <div class="plug-flow-icon" aria-hidden="true">💳</div>
+
+        <h1>Almost yours, babe</h1>
+
+        <p class="plug-flow-sub">Send payment and show us your receipt — then we'll activate your plugging order.</p>
+
+        <div class="plug-flow-steps" aria-hidden="true">
+
+          <span class="plug-flow-step done"></span>
+
+          <span class="plug-flow-step active"></span>
+
+          <span class="plug-flow-step"></span>
+
+          <span class="plug-flow-step"></span>
+
+        </div>
+
+        <p class="plug-pay-order" id="order-line"></p>
+
+        <p class="plug-pay-amount" id="payment-amount"></p>
+
+
+
+        <label class="plug-flow-form" style="margin:0"><span style="display:block;font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--plug-muted);margin-bottom:0.4rem">Step 1 — pick how you'll pay</span></label>
+
+        <div class="plug-pay-methods" id="payment-methods"></div>
+
+        <p class="plug-pay-via" id="payment-via-line">Send via <strong id="payment-method-name"></strong></p>
+
+
+
+        <div class="plug-pay-instructions flirty-prose" id="payment-instructions"></div>
+
+
+
+        <div class="plug-pay-qr-wrap">
+
+          <div class="qr-box" id="qr-box">
+
+            <div class="qr-placeholder" id="qr-placeholder">
+
+              <span>QR Code</span>
+
+              <small>Scan to pay</small>
+
+            </div>
+
+            <img id="qr-image" alt="Payment QR code" hidden>
+
+          </div>
+
+          <p class="payment-account-number plug-pay-account" id="payment-account-number" hidden>
+
+            <span class="payment-account-label">Account number</span>
+
+            <strong id="payment-account-number-value"></strong>
+
+          </p>
+
+        </div>
+
+
+
+        <label class="plug-flow-form" style="margin:1rem 0 0"><span style="display:block;font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--plug-muted);margin-bottom:0.4rem">Step 2 — upload receipt <span style="color:var(--plug-accent)">*</span></span></label>
+
+        <div class="plug-upload-box">
+
+          <input type="file" id="receipt-file" accept="image/jpeg,image/png,image/webp,image/gif" hidden required>
+
+          <button type="button" class="plug-upload-btn" id="select-receipt">Select image…</button>
+
+          <span class="plug-file-name" id="file-name"></span>
+
+        </div>
+
+        <div class="plug-receipt-preview" id="receipt-preview" hidden>
+
+          <img id="receipt-preview-img" alt="Receipt preview">
+
+        </div>
+
+
+
+        <button type="button" class="plug-flow-btn plug-flow-btn-primary" id="submit-payment" disabled>Submit Payment</button>
+
+        <p class="plug-submit-hint" id="submit-hint">Pick a payment method first, gorgeous</p>
+
+        <p id="pay-error" class="plug-flow-error" hidden></p>
+
+        <p class="plug-flow-links"><a href="/plugging/status" id="status-link" hidden>Check order status</a></p>
+
+      </div>
+
+      <aside class="plug-guide-panel">
+
+        <h2>Payment tips</h2>
+
+        <ol class="plug-guide-list">
+
+          <li>
+
+            <span class="plug-guide-num">1</span>
+
+            <div><strong>Pick your method</strong><p>GCash, bank transfer — whatever works for you, babe.</p></div>
+
+          </li>
+
+          <li class="current">
+
+            <span class="plug-guide-num">2</span>
+
+            <div><strong>Send the exact amount</strong><p>Follow the instructions and pay the full total shown.</p></div>
+
+          </li>
+
+          <li>
+
+            <span class="plug-guide-num">3</span>
+
+            <div><strong>Upload a clear receipt</strong><p>Screenshot with date, amount, and reference — we need to see it.</p></div>
+
+          </li>
+
+          <li>
+
+            <span class="plug-guide-num">4</span>
+
+            <div><strong>Wait for our yes</strong><p>Once verified, your access key lands on the status page ♡</p></div>
+
+          </li>
+
+        </ol>
+
+      </aside>
+
+    </div>
+
+  </div>
+
+  <script src="flirty-copy.js"></script>
+
+  <script src="toast.js"></script>
+
+  <script src="plugging-payment.js?v=2"></script>
+
+</body>
+
+</html>
+

@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en" class="light-mode">
 <head>
+  <base href="/">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Payment — loveriette</title>
@@ -18,7 +19,7 @@
         <li><a href="index.html#products" class="nav-link">Products</a></li>
         <li><a href="faqs.html" class="nav-link">FAQs</a></li>
         <li><a href="guide.html" class="nav-link">Guide</a></li>
-        <li><a href="about.html" class="nav-link">About Us</a></li>
+        <li><a href="about.html" class="nav-link">About Me</a></li>
         <li><a href="contact.html" class="nav-link">Contact</a></li>
       </ul>
       <ul class="nav-right">
@@ -45,17 +46,17 @@
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
           <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
         </svg>
-        <span>Complete payment within <strong id="payment-countdown">30:00</strong></span>
+        <span>tick tock, love — complete payment within <strong id="payment-countdown">30:00</strong></span>
       </div>
       <p class="form-error checkout-error" id="payment-config-error" hidden></p>
 
       <div class="payment-layout">
         <section class="payment-panel">
-          <p class="step-label">Step 1: Choose payment method</p>
+          <p class="step-label">Step 1: pick how you'll spoil us</p>
           <div class="payment-methods" id="payment-methods"></div>
 
           <p class="payment-via" id="payment-via-line" hidden>
-            Send payment via <strong id="payment-method-name"></strong>
+            send your payment via <strong id="payment-method-name"></strong>
           </p>
           <p class="payment-amount" id="payment-amount"></p>
 
@@ -92,8 +93,8 @@
           </div>
 
           <div class="upload-section">
-            <label class="upload-section-label">Step 2: Upload receipt <span class="upload-required">(required)</span></label>
-            <p class="upload-section-hint">You must upload your payment screenshot before confirming. JPG, PNG, or WebP — max 4MB.</p>
+            <label class="upload-section-label">Step 2: show us your receipt <span class="upload-required">(required)</span></label>
+            <p class="upload-section-hint">upload your payment screenshot so we know it's you, babe — JPG, PNG, or WebP, max 4MB.</p>
             <div class="upload-box">
               <input type="file" id="receipt-file" accept="image/jpeg,image/png,image/webp,image/gif" hidden required>
               <button type="button" class="btn-upload" id="select-receipt">Select image...</button>
@@ -104,16 +105,16 @@
             </div>
             <p class="upload-error" id="receipt-upload-error" hidden></p>
             <button type="button" class="btn-confirm" id="confirm-order" disabled>Confirm Order</button>
-            <p class="upload-confirm-hint" id="confirm-hint">Select a receipt image to enable Confirm Order</p>
+            <p class="upload-confirm-hint" id="confirm-hint">pick a receipt image first — then we'll confirm your order ♡</p>
           </div>
 
           <p class="payment-continue-note">
-            You can <a href="index.html#products">continue shopping</a> while this order is pending — place as many orders as you need.
+            feel free to <a href="index.html#products">keep shopping</a> while this order is pending — spoil yourself all you want.
           </p>
         </section>
 
         <aside class="order-detail-panel">
-          <h2 class="order-detail-title">Order Detail</h2>
+          <h2 class="order-detail-title">your order</h2>
           <table class="order-table">
             <thead>
               <tr><th>Product</th><th>QTY</th><th>Subtotal</th></tr>
@@ -126,7 +127,7 @@
               <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
               <polyline points="22,6 12,13 2,6"/>
             </svg>
-            <span>Product delivered to <strong id="delivery-email"></strong></span>
+            <span>delivered straight to <strong id="delivery-email"></strong></span>
           </div>
 
           <dl class="order-meta">
@@ -152,13 +153,13 @@
 
           <p class="order-status">
             <span class="status-dot"></span>
-            <span id="order-status-text">Waiting for payment...</span>
+            <span id="order-status-text" class="order-status-text-flirty">waiting on your payment, babe...</span>
           </p>
         </aside>
       </div>
     </div>
 
-    <p class="empty-state" id="payment-error" hidden>Order not found.</p>
+    <p class="empty-state" id="payment-error" hidden>order not found — double-check your link, love.</p>
   </main>
 
   <footer class="site-footer">
@@ -169,12 +170,13 @@
     </div>
   </footer>
 
+  <script src="flirty-copy.js"></script>
   <script src="notifications.js"></script>
   <script src="toast.js"></script>
   <script src="branding.js"></script>
   <script src="badges.js"></script>
   <script src="nav.js"></script>
   <script src="mobile.js?v=20260614mobile"></script>
-  <script src="payment.js?v=20260615payment-steps"></script>
+  <script src="payment.js?v=20260626payment"></script>
 </body>
 </html>

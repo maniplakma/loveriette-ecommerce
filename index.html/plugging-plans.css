@@ -1,0 +1,343 @@
+/* Netflix-style plan picker — plugging catalog + product variants */
+.nf-plans-page {
+  --nf-card-bg: rgba(10, 2, 4, 0.82);
+  --nf-card-border: rgba(229, 9, 20, 0.2);
+  --nf-header-text: #fff;
+  --nf-tier-1: linear-gradient(145deg, #4a1520 0%, #2a0a10 100%);
+  --nf-tier-2: linear-gradient(145deg, #b20710 0%, #6b0408 100%);
+  --nf-tier-3: linear-gradient(145deg, #1a0808 0%, #0a0000 100%);
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 1rem 2.5rem;
+}
+
+.nf-plans-step {
+  text-align: center;
+  padding: 1.5rem 0 1.75rem;
+}
+
+.nf-plans-step h2 {
+  margin: 0 0 0.45rem;
+  font-size: clamp(1.35rem, 3vw, 1.75rem);
+  font-weight: 800;
+  color: var(--text, var(--theme-font, #4a3c2e));
+  line-height: 1.25;
+}
+
+.nf-plans-step p {
+  margin: 0;
+  font-size: 0.92rem;
+  color: var(--text-muted, var(--theme-secondary, #a4907c));
+  line-height: 1.5;
+}
+
+.nf-plans-step .nf-step-accent {
+  color: var(--accent-2, var(--theme-primary, #8d7b68));
+  font-weight: 700;
+}
+
+.nf-plans-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  align-items: stretch;
+}
+
+.nf-plans-row--variants {
+  max-width: 720px;
+  margin: 0 auto;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.nf-plans-row--related {
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+}
+
+.nf-plan-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 420px;
+  background: var(--nf-card-bg);
+  border: 2px solid var(--nf-card-border);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 8px 28px rgba(74, 60, 46, 0.08);
+  transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease;
+}
+
+.nf-plan-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 16px 40px rgba(74, 60, 46, 0.14);
+  border-color: rgba(45, 74, 56, 0.35);
+}
+
+.nf-plan-card.is-popular {
+  border-color: rgba(45, 74, 56, 0.45);
+  box-shadow: 0 12px 36px rgba(45, 74, 56, 0.16);
+}
+
+.nf-plan-ribbon {
+  position: absolute;
+  top: 14px;
+  right: -32px;
+  z-index: 2;
+  transform: rotate(35deg);
+  background: linear-gradient(90deg, #c9a227, #e8c547);
+  color: #1a1508;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.28rem 2.4rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.nf-plan-header {
+  padding: 1.35rem 1.15rem 1.1rem;
+  color: var(--nf-header-text);
+  text-align: center;
+}
+
+.nf-plan-card.tier-1 .nf-plan-header { background: var(--nf-tier-1); }
+.nf-plan-card.tier-2 .nf-plan-header { background: var(--nf-tier-2); }
+.nf-plan-card.tier-3 .nf-plan-header { background: var(--nf-tier-3); }
+
+.nf-plan-icon {
+  width: 44px;
+  height: 44px;
+  margin: 0 auto 0.65rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.nf-plan-icon .logo-img {
+  width: 26px;
+  height: 26px;
+  filter: brightness(0) invert(1);
+}
+
+.nf-plan-header h3 {
+  margin: 0 0 0.35rem;
+  font-size: 1.05rem;
+  font-weight: 800;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.nf-plan-meta {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.22rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+}
+
+.nf-plan-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 1.15rem 1.15rem 1.25rem;
+  gap: 0.85rem;
+}
+
+.nf-plan-tagline {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--text-muted, var(--theme-secondary, #a4907c));
+  min-height: 2.2em;
+}
+
+.nf-plan-divider {
+  height: 1px;
+  background: rgba(74, 60, 46, 0.1);
+  margin: 0;
+  border: none;
+}
+
+.nf-plan-price-block {
+  text-align: center;
+  padding: 0.15rem 0 0.05rem;
+}
+
+.nf-plan-price {
+  display: block;
+  font-size: clamp(1.55rem, 3vw, 1.85rem);
+  font-weight: 800;
+  color: var(--text, var(--theme-font, #4a3c2e));
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.nf-plan-period {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted, var(--theme-secondary, #a4907c));
+}
+
+.nf-plan-features {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.nf-plan-features li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--text, var(--theme-font, #4a3c2e));
+}
+
+.nf-check {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  color: #3d6b52;
+}
+
+.nf-plan-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 44px;
+  margin-top: auto;
+  padding: 0.7rem 1rem;
+  border-radius: 10px;
+  background: var(--btn-bg, var(--theme-primary, #8d7b68));
+  color: var(--on-primary, #fff) !important;
+  font-size: 0.88rem;
+  font-weight: 700;
+  text-decoration: none;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.15s;
+}
+
+.nf-plan-btn:hover {
+  opacity: 0.92;
+  transform: translateY(-1px);
+}
+
+.nf-plan-card.tier-2 .nf-plan-btn {
+  background: linear-gradient(145deg, #3d6b52, #2d4a38);
+}
+
+.nf-plan-card.tier-3 .nf-plan-btn {
+  background: linear-gradient(145deg, #1f3d30, #152820);
+}
+
+/* Compact cards — related products */
+.nf-plan-card.is-compact {
+  min-height: 0;
+}
+
+.nf-plan-card.is-compact .nf-plan-header {
+  padding: 1rem 0.85rem 0.85rem;
+}
+
+.nf-plan-card.is-compact .nf-plan-header h3 {
+  font-size: 0.92rem;
+}
+
+.nf-plan-card.is-compact .nf-plan-body {
+  padding: 0.85rem;
+  gap: 0.55rem;
+}
+
+.nf-plan-card.is-compact .nf-plan-features {
+  display: none;
+}
+
+.nf-plan-card.is-compact .nf-plan-tagline {
+  min-height: 0;
+  font-size: 0.72rem;
+}
+
+/* Product page layout */
+.plugging-product-page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 1.25rem 1rem 2.5rem;
+}
+
+.plugging-product-page .back-explore {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--text-muted, var(--theme-secondary, #a4907c));
+  text-decoration: none;
+}
+
+.plugging-product-page .back-explore:hover {
+  color: var(--accent-2, var(--theme-primary, #8d7b68));
+}
+
+.nf-product-about {
+  max-width: 640px;
+  margin: 0 auto 1.5rem;
+  padding: 1rem 1.15rem;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(141, 123, 104, 0.15);
+  text-align: center;
+}
+
+.nf-product-about p {
+  margin: 0;
+  font-size: 0.86rem;
+  line-height: 1.55;
+  color: var(--text-muted, var(--theme-secondary, #a4907c));
+}
+
+.nf-related-title {
+  text-align: center;
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 2rem 0 1rem;
+  color: var(--text, var(--theme-font, #4a3c2e));
+}
+
+@media (max-width: 900px) {
+  .nf-plans-row {
+    grid-template-columns: 1fr;
+    max-width: 380px;
+    margin: 0 auto;
+  }
+
+  .nf-plans-row--variants {
+    max-width: 380px;
+  }
+
+  .nf-plan-card {
+    min-height: 0;
+  }
+}
+
+@media (min-width: 901px) and (max-width: 1050px) {
+  .nf-plans-row--related {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

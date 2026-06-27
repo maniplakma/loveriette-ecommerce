@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en" class="light-mode">
+<head>
+  <base href="/">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Plugging Plan — loveriette</title>
+  <link rel="stylesheet" href="/style.css?v=20260626platform">
+  <link rel="stylesheet" href="/mobile.css?v=20260626platform">
+  <link rel="stylesheet" href="/theme.css">
+  <link rel="stylesheet" href="/platform.css?v=20260627icons">
+  <link rel="stylesheet" href="/plugging-plans.css?v=1">
+  <script src="/theme.js"></script>
+  <script src="/theme-colors.js"></script>
+  <script src="/api-cache.js"></script>
+  <script src="/share-utils.js"></script>
+</head>
+<body class="light-mode">
+  <nav class="top-nav"><div class="nav-inner"><ul class="nav-left"></ul><ul class="nav-right">
+    <li class="auth-guest"><a href="/login.html" class="nav-link">Sign In</a></li>
+    <li class="auth-user" hidden><a href="/dashboard.html" class="nav-link">My Account</a></li>
+  </ul></div></nav>
+
+  <main class="plugging-product-page nf-plans-page" id="plug-product-main" hidden>
+    <a href="/plugging" class="back-explore">← Back to Plugging Plans</a>
+
+    <div class="nf-plans-step">
+      <h2>Pick your duration for <span class="nf-step-accent" id="plug-step-name"></span></h2>
+      <p id="plug-step-sub">Compare variants and subscribe to start forwarding</p>
+    </div>
+
+    <div class="nf-product-about" id="plug-product-about">
+      <p id="plug-product-description"></p>
+    </div>
+
+    <div class="nf-plans-row nf-plans-row--variants" id="plug-plans-grid"></div>
+
+    <section id="plug-related-section" hidden>
+      <h3 class="nf-related-title title-alt">Other Plugging Products</h3>
+      <div class="nf-plans-row nf-plans-row--related" id="plug-related-grid"></div>
+    </section>
+  </main>
+
+  <p class="empty-state" id="plug-product-error" hidden style="text-align:center;padding:3rem 1rem">Product not found.</p>
+
+  <div id="plug-product-share"></div>
+
+  <footer class="site-footer"><p class="footer-copy">© 2026 LOVERIETTE. ALL RIGHTS RESERVED.</p></footer>
+
+  <script src="/nav.js"></script>
+  <script src="/mobile.js"></script>
+  <script src="/platform-nav.js"></script>
+  <script src="/product-icons.js"></script>
+  <script src="/plugging-plan-cards.js"></script>
+  <script src="/plugging-product.js?v=2"></script>
+</body>
+</html>

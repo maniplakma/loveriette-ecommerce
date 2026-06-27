@@ -1,8 +1,8 @@
 const STATUS_LABEL = {
-  approved: 'Approved',
-  pending: 'Pending approval',
+  approved: 'Approved — enjoy ♡',
+  pending: 'Pending review',
   pending_payment: 'Awaiting payment',
-  rejected: 'Rejected',
+  rejected: 'Declined',
   refunded: 'Refunded'
 };
 
@@ -236,6 +236,151 @@ let reportSelections = [];
 let buyerReportsData = [];
 let buyerReportsLoaded = false;
 let currentPurchaseContext = null;
+let servicesData = { plugging: [], loans: [], webtech: [] };
+let servicesLoaded = false;
+let servicesLoadPromise = null;
+
+const PLUGGING_STATUS = {
+  pending_payment: 'Awaiting payment',
+  pending_approval: 'Pending approval',
+  approved: 'Active',
+  rejected: 'Rejected'
+};
+
+const LOAN_STATUS = {
+  pending: 'Under review',
+  approved: 'Approved',
+  rejected: 'Rejected'
+};
+
+const WEBTECH_STATUS = {
+  new: 'New inquiry',
+  reviewed: 'In progress',
+  contacted: 'Contacted',
+  closed: 'Closed'
+};
+
+function serviceStatusBadge(status, map) {
+  const label = map[status] || status;
+  const cls = status === 'approved' || status === 'closed' ? 'buyer-service-status-ok'
+    : status === 'rejected' ? 'buyer-service-status-bad'
+    : 'buyer-service-status-pending';
+  return `<span class="buyer-service-status ${cls}">${escapeHtml(label)}</span>`;
+}
+
+function renderServiceCard({ icon, title, meta, statusHtml, actions }) {
+  return `
+    <article class="info-card buyer-service-card">
+      <div class="buyer-service-card-head">
+        <div class="buyer-service-card-icon" aria-hidden="true">${icon}</div>
+        <div class="buyer-service-card-main">
+          <strong>${escapeHtml(title)}</strong>
+          <span>${escapeHtml(meta)}</span>
+        </div>
+        ${statusHtml}
+      </div>
+      ${actions ? `<div class="buyer-service-card-actions">${actions}</div>` : ''}
+    </article>`;
+}
+
+function renderPluggingServices(items) {
+  const list = document.getElementById('plugging-service-list');
+  const empty = document.getElementById('plugging-service-empty');
+  if (!list) return;
+  if (!items.length) {
+    list.innerHTML = '';
+    if (empty) empty.hidden = false;
+    return;
+  }
+  if (empty) empty.hidden = true;
+  list.innerHTML = items.map((o) => {
+    let actions = '';
+    if (o.status === 'pending_payment') {
+      actions = `<a href="/plugging/payment?order=${encodeURIComponent(o.orderRef)}" class="btn-view">Complete Payment</a>`;
+    } else if (o.status === 'pending_approval') {
+      actions = `<a href="/plugging/status?order=${encodeURIComponent(o.orderRef)}" class="btn-view">View Status</a>`;
+    } else if (o.status === 'approved') {
+      actions = `
+        <a href="/plugging/workspace" class="btn-primary">Open Workspace</a>
+        <a href="/plugging/status?order=${encodeURIComponent(o.orderRef)}" class="btn-view">View Key</a>`;
+    }
+    const keyLine = o.accessKey
+      ? `<p class="buyer-service-key">Access key: <code>${escapeHtml(o.accessKey)}</code></p>`
+      : '';
+    return renderServiceCard({
+      icon: '⚡',
+      title: o.planName || 'Plugging Plan',
+      meta: `${o.orderRef} · ${formatDate(o.createdAt)} · ${formatMoney(o.total)}`,
+      statusHtml: serviceStatusBadge(o.status, PLUGGING_STATUS),
+      actions: `${keyLine}${actions}`
+    });
+  }).join('');
+}
+
+function renderLoanServices(items) {
+  const list = document.getElementById('loan-service-list');
+  const empty = document.getElementById('loan-service-empty');
+  if (!list) return;
+  if (!items.length) {
+    list.innerHTML = '';
+    if (empty) empty.hidden = false;
+    return;
+  }
+  if (empty) empty.hidden = true;
+  list.innerHTML = items.map((a) => renderServiceCard({
+    icon: '💳',
+    title: a.planName || 'Loan Application',
+    meta: `${a.applicationId} · ${formatDate(a.createdAt)}`,
+    statusHtml: serviceStatusBadge(a.status, LOAN_STATUS),
+    actions: `<a href="/lending/application/${encodeURIComponent(a.applicationId)}" class="btn-view">View Application</a>`
+  })).join('');
+}
+
+function renderWebtechServices(items) {
+  const list = document.getElementById('webtech-service-list');
+  const empty = document.getElementById('webtech-service-empty');
+  if (!list) return;
+  if (!items.length) {
+    list.innerHTML = '';
+    if (empty) empty.hidden = false;
+    return;
+  }
+  if (empty) empty.hidden = true;
+  list.innerHTML = items.map((q) => {
+    const msg = q.message ? `<p class="buyer-service-message">${escapeHtml(q.message)}</p>` : '';
+    return renderServiceCard({
+      icon: '🖥',
+      title: q.packageName || 'Website Inquiry',
+      meta: `${formatDate(q.createdAt)}${q.name ? ` · ${q.name}` : ''}`,
+      statusHtml: serviceStatusBadge(q.status, WEBTECH_STATUS),
+      actions: msg
+    });
+  }).join('');
+}
+
+function renderAllServices() {
+  renderPluggingServices(servicesData.plugging || []);
+  renderLoanServices(servicesData.loans || []);
+  renderWebtechServices(servicesData.webtech || []);
+}
+
+async function loadServices() {
+  servicesData = await api('/account/services');
+  servicesLoaded = true;
+  renderAllServices();
+}
+
+async function ensureServicesLoaded() {
+  if (servicesLoaded) {
+    renderAllServices();
+    return;
+  }
+  if (servicesLoadPromise) return servicesLoadPromise;
+  servicesLoadPromise = loadServices()
+    .catch((err) => { if (window.showToast) showToast(err.message, 'error'); })
+    .finally(() => { servicesLoadPromise = null; });
+  return servicesLoadPromise;
+}
 
 function purchaseItemLabel(order) {
   const item = order.items?.[0];
@@ -1355,8 +1500,8 @@ function renderNotificationsFromApi(notifications) {
   empty.hidden = true;
   list.innerHTML = notifications.map((n) => `
       <article class="buyer-notif-item info-card ${n.isRead ? '' : 'is-unread'}">
-        <p><strong>${escapeHtml(n.title)}</strong></p>
-        <p>${escapeHtml(n.body)}</p>
+        <p class="flirty-prose"><strong>${escapeHtml(n.title)}</strong></p>
+        <p class="flirty-prose">${escapeHtml(n.body)}</p>
         <small>${formatDate(n.createdAt)}</small>
         ${n.type === 'store_update'
           ? `<button type="button" class="buyer-notif-view" data-goto-panel="updates">View in Updates</button>`
@@ -1413,12 +1558,11 @@ function renderNotifications(orders) {
   }
   empty.hidden = true;
   list.innerHTML = orders.map((o) => {
-    let text = `Order ${formatOrderLabel(o)} — ${STATUS_LABEL[o.status] || o.status}`;
-    if (o.status === 'pending_payment') text = `Complete payment for order ${formatOrderLabel(o)}`;
-    if (o.status === 'approved') text = `Order ${formatOrderLabel(o)} has been approved`;
+    const label = window.flirtCopy?.orderNotifText(formatOrderLabel(o), o.status)
+      || `Order ${formatOrderLabel(o)} — ${STATUS_LABEL[o.status] || o.status}`;
     return `
       <article class="buyer-notif-item info-card">
-        <p>${text}</p>
+        <p class="flirty-prose">${label}</p>
         <small>${formatDate(o.createdAt)}</small>
         ${orderNeedsPayment(o)
           ? `<a href="${paymentLink(o)}">View</a>`
@@ -1560,6 +1704,9 @@ function switchPanel(panelId) {
   }
   if (panelId === 'reports') {
     loadBuyerReports();
+  }
+  if (panelId === 'plugging' || panelId === 'loan' || panelId === 'webtech') {
+    ensureServicesLoaded();
   }
   if (panelId === 'settings' && typeof loadSettings === 'function') {
     loadSettings();

@@ -1,0 +1,172 @@
+@import url('https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400;0,6..96,500;1,6..96,400&family=Pinyon+Script&family=Syne:wght@700;800&display=swap');
+
+/* Layered glossy wordmark — script front + bold shadow back */
+.brand-wordmark-wrap {
+  position: relative;
+  display: inline-block;
+  line-height: 1;
+  white-space: nowrap;
+  vertical-align: middle;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.brand-wordmark-back {
+  position: absolute;
+  left: 0.06em;
+  top: 0.07em;
+  z-index: 0;
+  font-family: var(--brand-font-bold, 'Syne', system-ui, sans-serif);
+  font-weight: 800;
+  font-style: normal;
+  font-size: 1.1em;
+  letter-spacing: -0.03em;
+  text-transform: lowercase;
+  color: rgba(72, 6, 14, 0.95);
+  pointer-events: none;
+  user-select: none;
+  -webkit-text-stroke: 0;
+}
+
+.brand-wordmark-front {
+  position: relative;
+  z-index: 1;
+  display: inline-block;
+  font-family: var(--brand-font-script, 'Pinyon Script', cursive);
+  font-weight: 400;
+  font-style: normal;
+  font-size: clamp(1.75rem, 4.5vw, 2.15rem);
+  letter-spacing: 0.03em;
+  line-height: 1;
+  background: linear-gradient(
+    168deg,
+    #fffafc 0%,
+    #ffeef3 14%,
+    #ffd0dc 38%,
+    #ff6888 50%,
+    #ffb8c8 62%,
+    #ffe4ec 82%,
+    #fff8fa 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter:
+    drop-shadow(0 1px 0 rgba(255, 255, 255, 0.45))
+    drop-shadow(0 2px 10px rgba(229, 9, 20, 0.48))
+    drop-shadow(0 0 22px rgba(255, 70, 95, 0.28));
+}
+
+.brand-wordmark-front::after {
+  content: '';
+  position: absolute;
+  left: -4%;
+  right: -4%;
+  top: -8%;
+  height: 55%;
+  background: linear-gradient(108deg, transparent 28%, rgba(255, 255, 255, 0.62) 46%, transparent 64%);
+  pointer-events: none;
+  border-radius: 50%;
+  mix-blend-mode: soft-light;
+  z-index: 2;
+}
+
+/* Nav header — Prada-style Bodoni, hot & classy */
+.nav-brand .brand-wordmark-wrap,
+.top-nav .store-brand .brand-wordmark-wrap {
+  padding: 0.1rem 0.42rem 0.14rem;
+  background: linear-gradient(165deg, rgba(88, 14, 22, 0.82) 0%, rgba(38, 4, 8, 0.92) 100%);
+  border: 1px solid rgba(170, 55, 65, 0.38);
+  border-radius: 2px;
+  box-shadow:
+    0 2px 10px rgba(0, 0, 0, 0.38),
+    inset 0 1px 0 rgba(255, 130, 130, 0.07);
+}
+
+.nav-brand .brand-wordmark-back,
+.top-nav .store-brand .brand-wordmark-back {
+  display: none;
+}
+
+.nav-brand .brand-wordmark-front,
+.top-nav .store-brand .brand-wordmark-front {
+  font-family: 'Bodoni Moda', 'Didot', 'Bodoni MT', 'Libre Bodoni', Georgia, serif;
+  font-optical-sizing: auto;
+  font-weight: 400;
+  font-style: normal;
+  font-size: clamp(1.05rem, 4.2vw, 1.38rem);
+  letter-spacing: 0.16em;
+  text-transform: lowercase;
+  line-height: 1.2;
+  padding-left: 0.06em;
+  background: linear-gradient(
+    180deg,
+    #fff9f8 0%,
+    #f3e4e6 38%,
+    #fff6f7 52%,
+    #c89098 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.45));
+}
+
+.nav-brand .brand-wordmark-front::after,
+.top-nav .store-brand .brand-wordmark-front::after {
+  top: -4%;
+  height: 48%;
+  background: linear-gradient(108deg, transparent 32%, rgba(255, 255, 255, 0.42) 48%, transparent 62%);
+  mix-blend-mode: overlay;
+  opacity: 0.85;
+}
+
+.brand-wordmark--admin .brand-wordmark-front {
+  font-size: clamp(0.95rem, 2.2vw, 1.12rem);
+}
+
+.brand-wordmark--preview .brand-wordmark-front {
+  font-size: clamp(1.65rem, 4vw, 2rem);
+}
+
+.brand-wordmark--preview .brand-wordmark-back {
+  font-size: 1.1em;
+}
+
+.brand-wordmark--admin .brand-wordmark-back {
+  font-size: 1.08em;
+  top: 0.05em;
+}
+
+.brand-wordmark--dash .brand-wordmark-front {
+  font-size: clamp(1.2rem, 3.5vw, 1.5rem) !important;
+}
+
+.brand-wordmark--dash .brand-wordmark-back {
+  font-size: 1.06em;
+}
+
+.brand-wordmark--auth .brand-wordmark-front,
+.auth-logo .brand-wordmark-front {
+  font-size: clamp(2rem, 6vw, 2.75rem);
+}
+
+.brand-wordmark--auth .brand-wordmark-back,
+.auth-logo .brand-wordmark-back {
+  font-size: 1.12em;
+  top: 0.08em;
+  left: 0.07em;
+}
+
+@media (max-width: 768px) {
+  .nav-brand .brand-wordmark-front,
+  .top-nav .store-brand .brand-wordmark-front {
+    font-size: clamp(1rem, 4.8vw, 1.22rem);
+    letter-spacing: 0.14em;
+  }
+
+  .nav-brand .brand-wordmark-wrap,
+  .top-nav .store-brand .brand-wordmark-wrap {
+    padding: 0.08rem 0.36rem 0.1rem;
+  }
+}

@@ -1,10 +1,12 @@
+const FLIRTY_BIO_FALLBACK = 'your go-to for premium digital goodies — shop, lend, build, and plug with someone who actually cares ♡';
+
 function renderAboutSocials(links) {
   const orbit = document.getElementById('about-socials');
   if (!orbit) return;
   orbit.innerHTML = '';
 
   if (!links.length) {
-    orbit.innerHTML = '<p class="about-social-empty">Social links will appear here once configured in the admin panel.</p>';
+    orbit.innerHTML = '<p class="about-social-empty flirty-prose">social links coming soon — stay tuned, babe ♡</p>';
     return;
   }
 
@@ -31,8 +33,8 @@ function renderProfile(profile) {
   const locWrap = document.getElementById('about-location');
   const locText = document.getElementById('about-location-text');
 
-  if (nameEl) nameEl.textContent = profile.displayName || profile.brandName || 'Our Store';
-  if (bioEl) bioEl.textContent = profile.bio || '';
+  if (nameEl) nameEl.textContent = profile.displayName || profile.brandName || 'loveriette';
+  if (bioEl) bioEl.textContent = profile.bio || FLIRTY_BIO_FALLBACK;
   if (photoEl) {
     const src = profile.photoUrl || '/assets/store-logo.png';
     photoEl.src = src;
@@ -67,7 +69,7 @@ async function loadAbout() {
   if (!profile) {
     const page = document.getElementById('about-page');
     if (page) {
-      page.innerHTML = '<p class="page-empty">Store profile is not available right now. Please try again later.</p>';
+      page.innerHTML = '<p class="page-empty flirty-prose">profile\'s taking a little break — try again soon, love.</p>';
     }
     return;
   }

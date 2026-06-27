@@ -1,0 +1,449 @@
+/* Display typography — neon script + complementary alt titles */
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&family=Pinyon+Script&family=Syne:wght@700;800&display=swap');
+
+.title-bubble,
+.title-script,
+.catalog-title,
+.nf-plans-step h2,
+.plans-section-title,
+.product-about-box h2,
+.nf-related-title,
+.order-detail-title,
+.info-header h1,
+.buyer-dash-panel-head h1 {
+  font-family: 'Syne', system-ui, sans-serif;
+  font-weight: 800;
+  font-size: clamp(0.92rem, 2vw, 1.08rem);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  text-transform: lowercase;
+  color: #fff;
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.4);
+}
+
+.platform-section-head h2,
+.title-alt,
+.platform-section-head h2.title-alt,
+.activity-section-title {
+  font-family: 'Syne', system-ui, sans-serif;
+  font-weight: 800;
+  font-size: clamp(0.95rem, 2.2vw, 1.12rem);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  text-transform: lowercase;
+  color: #fff;
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.4);
+}
+
+/* Large section titles — homepage only */
+body.page-home .platform-section-head h2 {
+  font-size: clamp(1.65rem, 4.5vw, 2.45rem);
+  line-height: 1.05;
+  letter-spacing: -0.025em;
+  text-shadow:
+    0 2px 14px rgba(0, 0, 0, 0.45),
+    0 0 22px rgba(229, 9, 20, 0.22);
+}
+
+.platform-section-head h2.title-alt {
+  color: #fff;
+}
+
+.platform-section-head p,
+.nf-plans-step p {
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+/* Hero banner — Ofelia-style: salmon brand behind + wide white premiums on top */
+.hero-display {
+  margin: 0 0 1rem;
+  max-width: 32rem;
+  line-height: 0.9;
+  overflow: visible;
+}
+
+.hero-display-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.15rem 0.65rem;
+}
+
+.hero-display-stack {
+  position: relative;
+  display: inline-block;
+  line-height: 0.88;
+  padding-top: 0.15em;
+  overflow: visible;
+}
+
+.hero-display-shadow {
+  position: relative;
+  display: block;
+  margin: 0 0 -0.58em;
+  padding: 0;
+  font-family: 'Syne', system-ui, sans-serif;
+  font-weight: 800;
+  font-size: clamp(2.45rem, 6.5vw, 4.1rem);
+  line-height: 0.9;
+  letter-spacing: 0.015em;
+  text-transform: capitalize;
+  color: rgba(255, 118, 118, 0.94);
+  white-space: nowrap;
+  z-index: 0;
+  pointer-events: none;
+  text-shadow:
+    0 0 40px rgba(229, 9, 20, 0.35),
+    0 3px 14px rgba(0, 0, 0, 0.4);
+}
+
+.hero-display-bold {
+  font-family: 'Bebas Neue', 'Syne', system-ui, sans-serif;
+  font-weight: 400;
+  font-size: clamp(3.35rem, 10vw, 6.25rem);
+  letter-spacing: 0.05em;
+  text-transform: lowercase;
+  line-height: 0.86;
+  color: #fff;
+  text-shadow:
+    0 2px 0 rgba(255, 255, 255, 0.22),
+    0 6px 28px rgba(0, 0, 0, 0.55);
+}
+
+.hero-display-premiums {
+  position: relative;
+  z-index: 2;
+  display: inline-block;
+  margin-top: 0;
+  padding-right: 0.4em;
+  isolation: isolate;
+  background: linear-gradient(
+    180deg,
+    #ffffff 0%,
+    #fff5f7 38%,
+    #ffd4dc 52%,
+    #ffffff 62%,
+    #ffe8ee 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter:
+    drop-shadow(0 2px 0 rgba(255, 255, 255, 0.35))
+    drop-shadow(0 8px 28px rgba(0, 0, 0, 0.5));
+}
+
+.hero-display-premiums::after {
+  content: '';
+  position: absolute;
+  left: -2%;
+  right: 8%;
+  top: 6%;
+  height: 42%;
+  background: linear-gradient(102deg, transparent 25%, rgba(255, 255, 255, 0.7) 48%, transparent 68%);
+  pointer-events: none;
+  border-radius: 40%;
+  mix-blend-mode: soft-light;
+  z-index: 3;
+}
+
+.hero-display-bow {
+  position: absolute;
+  top: -0.35em;
+  right: -0.5em;
+  width: clamp(2rem, 5.5vw, 3.1rem);
+  height: auto;
+  transform: rotate(8deg);
+  filter: drop-shadow(0 4px 14px rgba(0, 0, 0, 0.45));
+  pointer-events: none;
+  z-index: 4;
+}
+
+.hero-display-script {
+  font-family: 'Pinyon Script', cursive;
+  font-weight: 400;
+  font-size: clamp(2.65rem, 6.5vw, 4.35rem);
+  font-style: italic;
+  color: #fff5f7;
+  transform: translateY(0.12em);
+  text-shadow:
+    0 2px 0 rgba(255, 255, 255, 0.15),
+    0 4px 22px rgba(0, 0, 0, 0.45),
+    0 0 30px rgba(255, 100, 120, 0.25);
+}
+
+.hero-tagline,
+.hero-section .site-header-lead.hero-tagline {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-weight: 400;
+  font-size: clamp(0.78rem, 1.8vw, 0.92rem);
+  line-height: 1.65;
+  letter-spacing: 0.01em;
+  text-transform: lowercase;
+  font-style: italic;
+  color: rgba(255, 255, 255, 0.82);
+  max-width: 22rem;
+  margin: 0;
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.5);
+}
+
+.site-header--banner .site-header-body {
+  max-width: 42%;
+  padding-right: 1rem;
+}
+
+.hero-section .store-btn {
+  background: linear-gradient(165deg, #ff4545 0%, #e50914 45%, #b20710 100%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 4px 22px rgba(229, 9, 20, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  color: #fff;
+  margin-bottom: 1.1rem;
+}
+
+@media (max-width: 768px) {
+  .site-header--banner .site-header-body {
+    max-width: 100%;
+  }
+
+  .hero-display {
+    max-width: 100%;
+  }
+
+  .hero-display-bold,
+  .hero-display-premiums {
+    font-size: clamp(2.65rem, 13vw, 4rem);
+  }
+
+  .hero-display-shadow {
+    font-size: clamp(2rem, 9.5vw, 2.85rem);
+    margin-bottom: -0.5em;
+  }
+
+  .hero-display-bow {
+    width: clamp(1.65rem, 7vw, 2.35rem);
+    top: -0.3em;
+    right: -0.4em;
+  }
+
+  .hero-display-script {
+    font-size: clamp(2.2rem, 10vw, 3.2rem);
+  }
+}
+
+/* Section titles — neon script (unchanged from site-wide) */
+
+.nf-step-accent {
+  font-family: 'Pinyon Script', cursive;
+  font-weight: 400;
+  color: #ff3a3a;
+  text-shadow: 0 2px 16px rgba(229, 9, 20, 0.45);
+}
+
+.service-card h3 {
+  font-family: 'Syne', system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: lowercase;
+  font-size: 1.05rem;
+  color: #ffe4e4;
+}
+
+.faq-question {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-weight: 600;
+}
+
+/* Flirty service page heroes — shop, lending, website making */
+.service-hero--flirty {
+  position: relative;
+  padding: 3.25rem 1.25rem 2.25rem;
+  max-width: 720px;
+  margin: 0 auto;
+  text-align: center;
+  overflow: visible;
+}
+
+.service-hero--flirty::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(440px, 92vw);
+  height: 150px;
+  background: radial-gradient(ellipse at center, rgba(229, 9, 20, 0.2) 0%, transparent 72%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.service-hero--flirty::after {
+  content: '';
+  display: block;
+  width: 4.5rem;
+  height: 1px;
+  margin: 1.15rem auto 0;
+  background: linear-gradient(90deg, transparent, rgba(229, 9, 20, 0.65), transparent);
+}
+
+.service-hero-flirt {
+  position: relative;
+  z-index: 1;
+  display: inline-block;
+  line-height: 0.95;
+}
+
+.service-hero-flirt-shadow {
+  display: block;
+  font-family: 'Syne', system-ui, sans-serif;
+  font-weight: 800;
+  font-size: clamp(1rem, 2.6vw, 1.35rem);
+  text-transform: capitalize;
+  color: rgba(255, 105, 105, 0.78);
+  letter-spacing: 0.05em;
+  margin-bottom: -0.08em;
+  text-shadow: 0 0 22px rgba(229, 9, 20, 0.32);
+}
+
+.service-hero-flirt-title {
+  margin: 0 0 0.9rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.12rem 0.5rem;
+}
+
+.service-hero-flirt-bold {
+  font-family: 'Syne', system-ui, sans-serif;
+  font-weight: 800;
+  font-size: clamp(1.35rem, 3.6vw, 1.85rem);
+  letter-spacing: -0.025em;
+  text-transform: lowercase;
+  color: #fff;
+  text-shadow:
+    0 2px 16px rgba(0, 0, 0, 0.45),
+    0 0 22px rgba(229, 9, 20, 0.22);
+}
+
+.service-hero-flirt-script {
+  font-family: 'Pinyon Script', cursive;
+  font-weight: 400;
+  font-size: clamp(1.45rem, 3.8vw, 2rem);
+  font-style: italic;
+  color: #fff;
+  transform: translateY(0.07em);
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.35);
+}
+
+.service-hero-flirt-tagline {
+  position: relative;
+  z-index: 1;
+  margin: 0 auto;
+  max-width: 30rem;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: clamp(0.82rem, 1.9vw, 0.96rem);
+  font-style: italic;
+  font-weight: 400;
+  text-transform: lowercase;
+  color: #d89898;
+  line-height: 1.65;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.35);
+}
+
+.service-hero--flirty .service-hero-actions {
+  position: relative;
+  z-index: 1;
+}
+
+/* Flirty info pages — guide, faqs, terms */
+.info-header--flirty {
+  margin-bottom: 2.25rem;
+}
+
+.info-header-eyebrow {
+  display: block;
+  font-family: 'Syne', system-ui, sans-serif;
+  font-weight: 800;
+  font-size: clamp(0.78rem, 1.8vw, 0.9rem);
+  text-transform: capitalize;
+  color: rgba(255, 105, 105, 0.78);
+  letter-spacing: 0.06em;
+  margin-bottom: 0.15rem;
+}
+
+.info-header--flirty h1 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.12rem 0.45rem;
+  margin: 0 0 0.65rem;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+.info-title-bold {
+  font-family: 'Syne', system-ui, sans-serif;
+  font-weight: 800;
+  font-size: clamp(1.15rem, 3vw, 1.45rem);
+  text-transform: lowercase;
+  color: #fff;
+}
+
+.info-title-script {
+  font-family: 'Pinyon Script', cursive;
+  font-weight: 400;
+  font-size: clamp(1.25rem, 3.2vw, 1.6rem);
+  font-style: italic;
+  color: #fff;
+}
+
+.info-header-tagline,
+.legal-intro.flirty-prose {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: clamp(0.82rem, 1.9vw, 0.94rem);
+  font-style: italic;
+  text-transform: lowercase;
+  color: #d89898;
+  line-height: 1.65;
+  max-width: 28rem;
+  margin-inline: auto;
+}
+
+.flirty-prose,
+.toast-message--flirty,
+.buyer-notif-item p,
+.guide-step-desc,
+.faq-card p,
+.legal-body.flirty-prose p,
+.payment-panel .step-label,
+.payment-panel .upload-section-hint,
+.payment-continue-note,
+.order-status-text-flirty {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-style: italic;
+  text-transform: lowercase;
+  color: #d0a0a0;
+  line-height: 1.6;
+}
+
+.guide-step-desc,
+.faq-card h3 {
+  color: #ffd4d4;
+}
+
+.faq-card h3 {
+  font-family: 'Syne', system-ui, sans-serif;
+  font-weight: 700;
+  font-style: normal;
+  text-transform: lowercase;
+  font-size: 0.98rem;
+}
+
+.legal-card h3 {
+  font-family: 'Syne', system-ui, sans-serif;
+  font-weight: 700;
+  text-transform: lowercase;
+  font-size: 0.95rem;
+  color: #ffd4d4;
+}

@@ -1,9 +1,10 @@
 <!DOCTYPE html>
 <html lang="en" class="light-mode">
 <head>
+  <base href="/">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="theme-color" content="#f1dec9">
+  <meta name="theme-color" content="#080404">
   <title>Admin — loveriette</title>
   <style>
     /* Critical: .admin-account-pane { display:flex } overrides [hidden] without this */
@@ -87,6 +88,13 @@
         <button class="admin-nav-btn" data-tab="account"><span class="admin-nav-icon" data-icon="settings"></span> Account Settings</button>
         <button class="admin-nav-btn" data-tab="store-profile"><span class="admin-nav-icon" data-icon="store"></span> Store Profile</button>
         <button class="admin-nav-btn" data-tab="theme"><span class="admin-nav-icon" data-icon="theme"></span> Site Theme</button>
+
+        <span class="admin-nav-group">Platform</span>
+        <button class="admin-nav-btn" data-tab="cms"><span class="admin-nav-icon" data-icon="catalog"></span> Content (CMS)</button>
+        <button class="admin-nav-btn" data-tab="lending"><span class="admin-nav-icon" data-icon="transactions"></span> Lending</button>
+        <button class="admin-nav-btn" data-tab="website-making"><span class="admin-nav-icon" data-icon="store"></span> Website Making</button>
+        <button class="admin-nav-btn" data-tab="plugging"><span class="admin-nav-icon" data-icon="message"></span> Plugging</button>
+        <button class="admin-nav-btn" data-tab="platform-analytics"><span class="admin-nav-icon" data-icon="overview"></span> Platform Analytics</button>
       </nav>
       </div>
       <div class="admin-sidebar-footer">
@@ -470,7 +478,7 @@
         <div class="admin-panel" style="max-width:640px">
           <div class="admin-field">
             <label>Profile photo</label>
-            <p class="admin-field-hint">Shown on the public About Us page.</p>
+            <p class="admin-field-hint">Shown on the public About Me page.</p>
             <div class="admin-store-photo-upload">
               <span class="admin-store-photo-preview-wrap">
                 <img class="admin-store-photo-preview" id="store-photo-preview" src="/assets/store-logo.png" alt="">
@@ -507,17 +515,26 @@
             <span class="brand-logo-shell"><img class="admin-brand-logo-img" id="theme-preview-logo" src="/assets/store-logo.png" alt=""></span>
             <span class="admin-brand-name" id="theme-preview-name">loveriette</span>
           </div>
-          <div class="admin-field"><label>Store name (shown next to logo)</label><input id="theme-brand-name" placeholder="loveriette"></div>
-          <div class="admin-field" style="margin-top:.65rem"><label>Name font</label>
+          <div class="admin-field"><label>Store name (logo text)</label><input id="theme-brand-name" placeholder="loveriette"></div>
+          <div class="admin-field" style="margin-top:.65rem"><label>Signature font (front layer)</label>
             <select id="theme-brand-font">
-              <option value="system-ui">Default (System)</option>
+              <option value="Bodoni Moda">Bodoni Moda — Prada-style luxury</option>
+              <option value="Pinyon Script">Pinyon Script — sexy signature</option>
               <option value="Pacifico">Pacifico — cute script</option>
-              <option value="Fredoka">Fredoka — rounded</option>
-              <option value="Quicksand">Quicksand — soft sans</option>
-              <option value="Poppins">Poppins — modern</option>
-              <option value="Playfair Display">Playfair Display — elegant</option>
+              <option value="Dancing Script">Dancing Script — flowing script</option>
+              <option value="Great Vibes">Great Vibes — elegant script</option>
               <option value="Caveat">Caveat — handwritten</option>
-              <option value="Nunito">Nunito — friendly</option>
+              <option value="Playfair Display">Playfair Display — elegant serif</option>
+            </select>
+          </div>
+          <div class="admin-field" style="margin-top:.65rem"><label>Bold shadow font (back layer)</label>
+            <select id="theme-brand-font-bold">
+              <option value="Syne">Syne — bold modern</option>
+              <option value="Poppins">Poppins — clean bold</option>
+              <option value="Fredoka">Fredoka — rounded bold</option>
+              <option value="Quicksand">Quicksand — soft bold</option>
+              <option value="Nunito">Nunito — friendly bold</option>
+              <option value="system-ui">System default</option>
             </select>
           </div>
           <div class="admin-field" style="margin-top:.65rem"><label>Logo image</label>
@@ -573,6 +590,128 @@
           <button class="admin-btn admin-btn-primary" id="theme-save" style="margin-top:1rem">Save theme</button>
         </div>
       </section>
+
+      <!-- CMS -->
+      <section class="admin-tab" id="tab-cms" hidden>
+        <div class="admin-panel" style="margin-top:1rem">
+          <div class="admin-panel-head"><h2>Our Services (Homepage)</h2></div>
+          <form id="cms-services-form" class="admin-modal-body" style="padding:0">
+            <div class="admin-field"><label>Section Title</label><input name="title" id="cms-services-title"></div>
+            <div class="admin-field"><label>Section Subtitle</label><input name="subtitle" id="cms-services-subtitle"></div>
+            <div id="cms-services-items"></div>
+            <button type="button" class="admin-btn admin-btn-ghost admin-btn-sm" id="cms-service-add" style="margin:0.5rem 0">+ Add Service</button>
+            <button type="submit" class="admin-btn admin-btn-primary">Save Services</button>
+          </form>
+        </div>
+        <div class="admin-panel" style="margin-top:1rem">
+          <div class="admin-panel-head"><h2>Homepage Statistics</h2>
+            <button class="admin-btn admin-btn-primary admin-btn-sm" id="cms-stat-add">+ Add Stat</button>
+          </div>
+          <div id="cms-stats-list"></div>
+        </div>
+        <div class="admin-panel" style="margin-top:1rem">
+          <div class="admin-panel-head"><h2>FAQ Sections</h2>
+            <button class="admin-btn admin-btn-primary admin-btn-sm" id="cms-faq-add">+ Add FAQ</button>
+          </div>
+          <div id="cms-faqs-list"></div>
+        </div>
+        <div class="admin-panel" style="margin-top:1rem">
+          <div class="admin-panel-head"><h2>Homepage Sections</h2></div>
+          <div id="cms-sections-list"></div>
+        </div>
+        <div class="admin-panel" style="margin-top:1rem">
+          <div class="admin-panel-head"><h2>Footer Content</h2></div>
+          <form id="cms-footer-form" class="admin-modal-body" style="padding:0">
+            <div class="admin-field"><label>Tagline</label><input name="footer_tagline" id="footer-tagline-input"></div>
+            <div class="admin-field"><label>Copyright</label><input name="footer_copyright" id="footer-copyright-input"></div>
+            <button type="submit" class="admin-btn admin-btn-primary">Save Footer</button>
+          </form>
+        </div>
+      </section>
+
+      <!-- Lending Admin -->
+      <section class="admin-tab" id="tab-lending" hidden>
+        <div class="admin-panel">
+          <div class="admin-panel-head"><h2>Lending Settings</h2></div>
+          <form id="lending-settings-form" class="admin-modal-body" style="padding:0">
+            <label class="admin-toggle"><input type="checkbox" name="lending_enabled" id="lending-enabled"> <span>Enable lending service</span></label>
+            <div class="admin-field"><label>Hero Title</label><input name="lending_hero_title"></div>
+            <div class="admin-field"><label>Hero Subtitle</label><textarea name="lending_hero_subtitle" rows="2"></textarea></div>
+            <div class="admin-field"><label>Contact Email</label><input name="lending_contact_email" type="email"></div>
+            <div class="admin-field"><label>Contact Phone</label><input name="lending_contact_phone"></div>
+            <button type="submit" class="admin-btn admin-btn-primary">Save Settings</button>
+          </form>
+        </div>
+        <div class="admin-panel" style="margin-top:1rem">
+          <div class="admin-panel-head"><h2>Loan Plans</h2>
+            <button class="admin-btn admin-btn-primary admin-btn-sm" id="lending-plan-add">+ Add Plan</button>
+          </div>
+          <div class="admin-order-list" id="lending-plans-list"></div>
+        </div>
+        <div class="admin-panel" style="margin-top:1rem">
+          <div class="admin-panel-head"><h2>Applications</h2></div>
+          <div class="admin-order-list" id="lending-apps-list"></div>
+        </div>
+      </section>
+
+      <!-- Website Making Admin -->
+      <section class="admin-tab" id="tab-website-making" hidden>
+        <div class="admin-panel">
+          <div class="admin-panel-head"><h2>Website Packages</h2>
+            <button class="admin-btn admin-btn-primary admin-btn-sm" id="web-pkg-add">+ Add Package</button>
+          </div>
+          <div class="admin-order-list" id="web-packages-list"></div>
+        </div>
+        <div class="admin-panel" style="margin-top:1rem">
+          <div class="admin-panel-head"><h2>Inquiries</h2></div>
+          <div class="admin-order-list" id="web-inquiries-list"></div>
+        </div>
+      </section>
+
+      <!-- Plugging Admin -->
+      <section class="admin-tab" id="tab-plugging" hidden>
+        <div class="admin-panel">
+          <div class="admin-panel-head"><h2>Plugging Settings</h2></div>
+          <form id="plugging-settings-form" class="admin-modal-body" style="padding:0">
+            <label class="admin-toggle"><input type="checkbox" name="plugging_enabled" id="plugging-enabled"> <span>Enable plugging service</span></label>
+            <div class="admin-field"><label>Hero Title</label><input name="plugging_hero_title"></div>
+            <div class="admin-field"><label>Hero Subtitle</label><textarea name="plugging_hero_subtitle" rows="2"></textarea></div>
+            <div class="admin-field"><label>Contact Telegram</label><input name="plugging_contact_telegram" placeholder="@yourtelegram"></div>
+            <hr style="margin:1rem 0;border:none;border-top:1px solid rgba(0,0,0,.08)">
+            <h3 style="margin:0 0 .75rem">Telegram API Credentials</h3>
+            <p class="admin-card-meta" style="margin-bottom:.75rem">Get from <a href="https://my.telegram.org" target="_blank">my.telegram.org</a> — required for phone login & forwarding.</p>
+            <div class="admin-field"><label>Telegram API ID</label><input name="telegram_api_id" placeholder="30220075"></div>
+            <div class="admin-field"><label>Telegram API Hash</label><input name="telegram_api_hash" placeholder="your-api-hash"></div>
+            <label class="admin-toggle"><input type="checkbox" name="proxy_enabled" id="plugging-proxy-enabled"> <span>Enable outbound proxy (SOCKS5)</span></label>
+            <div class="admin-field"><label>Proxy URL</label><input name="proxy_url" placeholder="socks5://user:pass@host:1080"></div>
+            <button type="submit" class="admin-btn admin-btn-primary">Save Settings</button>
+          </form>
+        </div>
+        <div class="admin-panel" style="margin-top:1rem">
+          <div class="admin-panel-head"><h2>Subscription Orders</h2></div>
+          <div class="admin-order-list" id="plugging-orders-list"></div>
+        </div>
+        <div class="admin-panel" style="margin-top:1rem">
+          <div class="admin-panel-head"><h2>Plugging Products &amp; Variants</h2>
+            <button class="admin-btn admin-btn-primary admin-btn-sm" id="plugging-product-add">+ Add Product</button>
+          </div>
+          <div class="admin-order-list" id="plugging-products-list"></div>
+        </div>
+        <div class="admin-panel" style="margin-top:1rem">
+          <div class="admin-panel-head"><h2>Setup Requests</h2></div>
+          <div class="admin-order-list" id="plugging-requests-list"></div>
+        </div>
+      </section>
+
+      <!-- Platform Analytics -->
+      <section class="admin-tab" id="tab-platform-analytics" hidden>
+        <div class="admin-finance" id="platform-analytics-finance"></div>
+        <div class="admin-stats" id="platform-analytics-stats"></div>
+        <div class="admin-panel" style="margin-top:1rem">
+          <div class="admin-panel-head"><h2>Top Pages (30 days)</h2></div>
+          <div id="platform-top-pages"></div>
+        </div>
+      </section>
     </main>
   </div>
 
@@ -610,7 +749,8 @@
   <script src="admin-nav-icons.js"></script>
   <script src="branding.js"></script>
   <script src="badges.js?v=20260614tabs"></script>
-  <script src="admin.js?v=20260615store-updates"></script>
+  <script src="admin.js?v=20260626platform"></script>
+  <script src="admin-platform.js?v=20260626"></script>
   <script src="mobile.js?v=20260614mobile"></script>
 </body>
 </html>

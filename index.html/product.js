@@ -1,4 +1,5 @@
 const params = new URLSearchParams(window.location.search);
+const pathSlug = window.location.pathname.match(/\/product\/([^/]+)/)?.[1];
 const productId = Number(params.get('id'));
 
 const heroEl = document.getElementById('product-hero');
@@ -6,6 +7,10 @@ const aboutEl = document.getElementById('product-about');
 const plansSection = document.getElementById('plans-section');
 const plansGrid = document.getElementById('plans-grid');
 const errorEl = document.getElementById('product-error');
+
+function productHref(p) {
+  return p.shareUrl || (p.slug ? `/product/${p.slug}` : `product.html?id=${p.id}`);
+}
 
 const LOGO_LETTERS = {
   netflix: 'N',
@@ -65,7 +70,7 @@ function renderExploreServices(products, currentId) {
   const others = products.filter((p) => p.id !== currentId).slice(0, 3);
 
   const tiles = others.map((p) => `
-    <a href="product.html?id=${p.id}" class="explore-tile" title="${escapeHtml(p.name)}">
+    <a href="${productHref(p)}" class="explore-tile" title="${escapeHtml(p.name)}">
       <div class="explore-tile-icon logo${p.icon ? ' has-icon' : ''}">
         ${window.renderProductIcon ? window.renderProductIcon(p.icon, p.name, 'logo-img') : getLogoLetter(p.name)}
       </div>
@@ -73,7 +78,7 @@ function renderExploreServices(products, currentId) {
   `).join('');
 
   grid.innerHTML = `${tiles}
-    <a href="index.html#products" class="explore-tile explore-tile-all" title="All products">
+    <a href="/shop" class="explore-tile explore-tile-all" title="All products">
       <span>ALL</span>
     </a>`;
 }
@@ -141,8 +146,53 @@ function renderPlanCard(product, plan) {
   `;
 }
 
+function renderReviews(reviews) {
+  const section = document.getElementById('product-reviews-section');
+  const list = document.getElementById('product-reviews-list');
+  if (!section || !list) return;
+  if (!reviews?.length) { section.hidden = true; return; }
+  section.hidden = false;
+  list.innerHTML = reviews.map((r) => `
+    <div class="review-card">
+      <div class="review-header">
+        <strong>${escapeHtml(r.authorName || r.author_name)}</strong>
+        <span class="review-rating">${'★'.repeat(r.rating || 5)}</span>
+      </div>
+      <p>${escapeHtml(r.body)}</p>
+    </div>`).join('');
+}
+
+function renderRelated(related) {
+  const section = document.getElementById('related-products-section');
+  const grid = document.getElementById('related-products-grid');
+  if (!section || !grid || !related?.length) return;
+  section.hidden = false;
+  grid.innerHTML = related.map((p) => `
+    <a href="${productHref(p)}" class="related-product-card">
+      <div class="related-product-icon logo${p.icon ? ' has-icon' : ''}">
+        ${window.renderProductIcon ? window.renderProductIcon(p.icon, p.name, 'logo-img') : getLogoLetter(p.name)}
+      </div>
+      <strong>${escapeHtml(p.name)}</strong>
+      <div class="related-product-price">From ${formatMoney(p.startingPrice || p.price || p.displayPrice)}</div>
+    </a>`).join('');
+}
+
 function renderProduct(product, allProducts) {
-  document.title = `${product.name} — loveriette`;
+  const sharePath = product.shareUrl || (product.slug ? `/product/${product.slug}` : `/product.html?id=${product.id}`);
+  if (window.applySeoMeta) {
+    applySeoMeta({
+      title: `${product.metaTitle || product.meta_title || product.name} — loveriette`,
+      description: product.metaDescription || product.meta_description || product.description,
+      image: product.ogImage || product.og_image,
+      url: sharePath
+    });
+  } else {
+    document.title = `${product.name} — loveriette`;
+  }
+
+  if (window.renderShareButtons) {
+    renderShareButtons(document.getElementById('product-share'), sharePath, product.name);
+  }
 
   const logoEl = document.getElementById('product-logo');
   logoEl.innerHTML = window.renderProductIcon
@@ -158,6 +208,8 @@ function renderProduct(product, allProducts) {
   plansGrid.innerHTML = plans.map((plan) => renderPlanCard(product, plan)).join('');
 
   renderExploreServices(allProducts, product.id);
+  renderReviews(product.reviews);
+  renderRelated(product.relatedProducts);
 
   heroEl.hidden = false;
   aboutEl.hidden = false;
@@ -173,25 +225,41 @@ async function addToCart(productId, variantId) {
 }
 
 async function loadProduct() {
-  if (!productId) {
-    errorEl.hidden = false;
-    return;
-  }
-
   try {
-    const [product, allProducts] = await Promise.all([
-      api(`/products/${productId}`),
-      api('/products')
-    ]);
+    if (!pathSlug && !productId) {
+      location.replace('/shop');
+      return;
+    }
+    let product;
+    if (pathSlug) {
+      product = await api(`/api/products/slug/${encodeURIComponent(pathSlug)}`);
+    } else if (productId) {
+      product = await api(`/products/${productId}`);
+    } else {
+      errorEl.hidden = false;
+      return;
+    }
+
+    const allProducts = await api('/products');
+    if (!product.reviews) {
+      try { product.reviews = await api(`/products/${product.id}/reviews`); } catch { product.reviews = []; }
+    }
+    if (!product.relatedProducts) {
+      product.relatedProducts = allProducts.filter((p) => p.id !== product.id && p.category === product.category).slice(0, 4);
+    }
     renderProduct(product, allProducts);
 
     try {
-      await api(`/products/${productId}/view`, { method: 'POST' });
+      await api(`/products/${product.id}/view`, { method: 'POST' });
     } catch { /* ignore */ }
   } catch {
     errorEl.hidden = false;
   }
 }
+
+document.addEventListener('DOMContentLoaded', () => {
+  if (typeof initPlatformNav === 'function') initPlatformNav('shop');
+});
 
 plansGrid.addEventListener('click', async (e) => {
   const btn = e.target.closest('.add-to-cart');

@@ -27,7 +27,7 @@
   } catch (_) { /* ignore */ }
 })();
 
-const LIGHT_THEME_COLOR = '#f1dec9';
+const LIGHT_THEME_COLOR = '#080404';
 
 function isLightMode() {
   return true;
@@ -99,3 +99,29 @@ window.toggleTheme = toggleTheme;
 window.setTheme = setTheme;
 window.updateThemeMeta = updateThemeMeta;
 window.updateThemeToggleUI = function () {};
+
+(function loadSiteChrome() {
+  const v = '20260626';
+  if (!document.querySelector('link[href*="site-decorations.css"]')) {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = `/site-decorations.css?v=20260626e`;
+    document.head.appendChild(link);
+  }
+  function injectScript(src) {
+    if (document.querySelector(`script[src*="${src.split('?')[0]}"]`)) return;
+    const s = document.createElement('script');
+    s.src = src;
+    s.defer = true;
+    document.body.appendChild(s);
+  }
+  function loadChromeScripts() {
+    injectScript(`/site-decorations.js?v=20260626e`);
+    injectScript(`/flirty-site-text.js?v=${v}`);
+    if (!document.querySelector('script[src*="flirty-copy.js"]')) {
+      injectScript(`/flirty-copy.js?v=${v}`);
+    }
+  }
+  if (document.body) loadChromeScripts();
+  else document.addEventListener('DOMContentLoaded', loadChromeScripts);
+})();

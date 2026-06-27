@@ -2,10 +2,10 @@
 (function () {
   const STORAGE_KEY = 'loveriette-theme-colors';
   const DEFAULTS = {
-    background: '#f1dec9',
-    font: '#4a3c2e',
-    primary: '#8d7b68',
-    secondary: '#a4907c'
+    background: '#080404',
+    font: '#f0ecec',
+    primary: '#e50914',
+    secondary: '#ff3b3b'
   };
 
   function normalizeHex(hex) {
@@ -105,6 +105,34 @@
     const font = normalizeHex(colors.font) || DEFAULTS.font;
     const primary = normalizeHex(colors.primary) || DEFAULTS.primary;
     const secondary = normalizeHex(colors.secondary) || DEFAULTS.secondary;
+    const isDark = luminance(background) < 0.4;
+
+    if (isDark) {
+      const surface = mixHex(background, '#ffffff', 0.06);
+      const surfaceAlt = mixHex(background, '#ffffff', 0.1);
+      const border = mixHex(primary, background, 0.42);
+      const muted = mixHex('#ffffff', secondary, 0.38);
+      const tint = mixHex(primary, background, 0.2);
+      const btnEnd = mixHex(primary, '#000000', 0.35);
+      return {
+        background,
+        font,
+        primary,
+        secondary,
+        surface,
+        surfaceAlt,
+        border,
+        muted,
+        tint,
+        buttonGradient: `linear-gradient(135deg, ${secondary} 0%, ${primary} 55%, ${btnEnd} 100%)`,
+        onPrimary: '#ffffff',
+        shadow: hexToRgba(primary, 0.22),
+        authBrandBg: `linear-gradient(145deg, ${surfaceAlt} 0%, ${background} 42%, ${mixHex(primary, background, 0.35)} 100%)`,
+        authGlowA: hexToRgba(primary, 0.18),
+        authGlowB: hexToRgba(secondary, 0.12)
+      };
+    }
+
     return {
       background,
       font,
@@ -140,6 +168,14 @@
     } catch {
       return null;
     }
+  }
+
+  function resolveActiveTheme(colors) {
+    const normalized = normalizeThemePayload(colors || DEFAULTS);
+    if (luminance(normalized.background) > 0.35) {
+      return normalizeThemePayload(DEFAULTS);
+    }
+    return normalized;
   }
 
   /** Write all theme tokens to :root — frontend + admin inherit instantly */
@@ -243,14 +279,16 @@
         throw new Error(`theme-colors bad response: ${res.status} ${ct.slice(0, 40)}`);
       }
       const data = await res.json();
-      applyThemeColors(data);
-      saveThemeToStorage(data);
-      return data;
+      const active = resolveActiveTheme(data);
+      applyThemeColors(active);
+      saveThemeToStorage(active);
+      return active;
     } catch (err) {
       const cached = loadThemeFromStorage();
       if (cached) {
-        applyThemeColors(cached);
-        return cached;
+        const active = resolveActiveTheme(cached);
+        applyThemeColors(active);
+        return active;
       }
       applyThemeColors(DEFAULTS);
       saveThemeToStorage(DEFAULTS);
@@ -259,7 +297,7 @@
   }
 
   const cached = loadThemeFromStorage();
-  if (cached) applyThemeColors(cached);
+  applyThemeColors(resolveActiveTheme(cached || DEFAULTS));
 
   window.applyThemeColors = applyThemeColors;
   window.reapplySidebarTheme = function reapplySidebarTheme() {
@@ -273,6 +311,7 @@
   window.mapPaletteToTheme = mapPaletteToTheme;
   window.fetchAndApplyThemeColors = fetchAndApplyThemeColors;
   window.THEME_COLOR_DEFAULTS = DEFAULTS;
+  window.resolveActiveTheme = resolveActiveTheme;
 
   fetchAndApplyThemeColors();
 })();

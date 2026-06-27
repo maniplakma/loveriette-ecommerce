@@ -1,0 +1,236 @@
+/* Cyber Noir — glass, glow (theme-only layer) */
+.product-card:not(.catalog-card),
+.card:not(.package-card),
+.plan-purchase-card,
+.nf-plan-card,
+.plugging-ws-box,
+.nf-product-about,
+.platform-section .faq-item,
+.dashboard-panel,
+.checkout-card,
+.cart-item,
+.order-card,
+.admin-login-card,
+.admin-panel,
+.admin-table-wrap {
+  background: var(--glass-bg) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-color: var(--glass-border) !important;
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 0 0 1px rgba(229, 9, 20, 0.06);
+}
+
+.product-card:not(.catalog-card):hover,
+.nf-plan-card:hover {
+  border-color: rgba(229, 9, 20, 0.45) !important;
+  box-shadow:
+    0 16px 40px rgba(0, 0, 0, 0.55),
+    0 0 28px rgba(229, 9, 20, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* Red glow buttons */
+.store-btn,
+.nav-signup,
+.btn-purchase,
+.btn-primary-platform,
+.btn-buy-now,
+.add-to-cart:not(.btn-cart-icon),
+.nf-plan-btn,
+.admin-btn-primary,
+.checkout-submit,
+.auth-submit {
+  box-shadow: var(--glow-red), 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+.store-btn:hover,
+.nav-signup:hover,
+.btn-purchase:hover,
+.nf-plan-btn:hover,
+.admin-btn-primary:hover {
+  box-shadow: 0 0 32px rgba(229, 9, 20, 0.55), 0 6px 20px rgba(0, 0, 0, 0.4);
+}
+
+/* Nav active — red glow underline */
+.nav-left a.nav-pill.active::after,
+.nav-left a.active::after {
+  background: var(--primary-color);
+  box-shadow: 0 0 10px rgba(229, 9, 20, 0.6);
+}
+
+.nav-left a.nav-pill.active,
+.nav-left a.active {
+  color: var(--secondary-color) !important;
+  text-shadow: 0 0 18px rgba(229, 9, 20, 0.35);
+}
+
+/* Hero */
+.hero-section {
+  background: transparent;
+}
+
+.hero-bg-image {
+  opacity: 1;
+  filter: none;
+}
+
+.site-header--banner .site-header-body {
+  max-width: 42%;
+}
+
+@media (max-width: 768px) {
+  .nav-left a.nav-pill.active,
+  .nav-left a.active {
+    color: #fff !important;
+    text-shadow: none;
+  }
+
+  .site-header--banner {
+    min-height: clamp(280px, 70vw, 380px);
+    padding: 1.75rem 1.25rem 2rem;
+  }
+
+  .site-header--banner .site-header-body {
+    max-width: 100%;
+  }
+
+  .site-header--banner::before {
+    background:
+      linear-gradient(180deg, rgba(0, 0, 0, 0.82) 0%, rgba(0, 0, 0, 0.45) 55%, rgba(0, 0, 0, 0.2) 100%);
+  }
+}
+
+/* Inputs */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+select,
+textarea,
+.plugging-ws-input,
+.admin-field input,
+.admin-field select,
+.admin-field textarea,
+.auth-field input {
+  background: rgba(8, 4, 4, 0.75) !important;
+  border-color: rgba(229, 9, 20, 0.25) !important;
+  color: var(--font-color) !important;
+}
+
+input:focus,
+select:focus,
+textarea:focus,
+.plugging-ws-input:focus {
+  border-color: var(--primary-color) !important;
+  box-shadow: 0 0 0 3px rgba(229, 9, 20, 0.2), 0 0 16px rgba(229, 9, 20, 0.15) !important;
+}
+
+/* Footer */
+.site-footer {
+  background: rgba(4, 0, 0, 0.85);
+  border-top: 1px solid var(--glass-border);
+}
+
+.footer-copy {
+  color: var(--muted-color);
+}
+
+/* Platform service pages */
+.service-hero--flirty {
+  background: linear-gradient(180deg, rgba(229, 9, 20, 0.14) 0%, transparent 100%);
+}
+
+.service-hero:not(.service-hero--flirty) h1 {
+  color: var(--font-color);
+}
+
+.plugging-ws-guide {
+  background: rgba(229, 9, 20, 0.08) !important;
+  border-color: rgba(229, 9, 20, 0.2) !important;
+}
+
+.plugging-ws-guide li span {
+  background: var(--primary-color);
+  box-shadow: 0 0 12px rgba(229, 9, 20, 0.4);
+}
+
+/* Netflix-style plan cards — red tiers */
+.nf-plan-card {
+  --nf-card-bg: rgba(10, 2, 4, 0.82);
+  --nf-card-border: rgba(229, 9, 20, 0.2);
+}
+
+.nf-plan-card.tier-1 .nf-plan-header {
+  background: linear-gradient(145deg, #4a1520 0%, #2a0a10 100%);
+}
+
+.nf-plan-card.tier-2 .nf-plan-header {
+  background: linear-gradient(145deg, #b20710 0%, #6b0408 100%);
+}
+
+.nf-plan-card.tier-3 .nf-plan-header {
+  background: linear-gradient(145deg, #1a0808 0%, #0a0000 100%);
+  border-bottom: 1px solid rgba(229, 9, 20, 0.3);
+}
+
+.nf-plan-card.is-popular {
+  border-color: rgba(229, 9, 20, 0.55) !important;
+  box-shadow: 0 0 36px rgba(229, 9, 20, 0.2), 0 12px 36px rgba(0, 0, 0, 0.5) !important;
+}
+
+.nf-plan-ribbon {
+  background: linear-gradient(90deg, #e50914, #ff3b3b) !important;
+  color: #fff !important;
+  box-shadow: 0 0 16px rgba(229, 9, 20, 0.5);
+}
+
+.nf-check {
+  color: var(--secondary-color);
+  filter: drop-shadow(0 0 4px rgba(229, 9, 20, 0.5));
+}
+
+/* Admin — status colors tuned for dark */
+html.light-mode .admin-page,
+body.light-mode .admin-page {
+  --a-green: #55efc4;
+  --a-green-bg: rgba(85, 239, 196, 0.12);
+  --a-red: #ff7675;
+  --a-red-bg: rgba(255, 118, 117, 0.12);
+  --a-orange: #ffb86b;
+  --a-orange-bg: rgba(255, 184, 107, 0.12);
+  --a-pink-bg: rgba(229, 9, 20, 0.12);
+}
+
+.admin-sidebar {
+  background: rgba(6, 2, 3, 0.95) !important;
+  border-color: var(--glass-border) !important;
+}
+
+.admin-main {
+  background: transparent;
+}
+
+/* Announcement bar */
+.announcement-bar {
+  background: linear-gradient(90deg, #8b0000, #e50914, #8b0000);
+  color: #fff;
+}
+
+/* Scrollbar (webkit) */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0a0000;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #3a1520;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #e50914;
+}

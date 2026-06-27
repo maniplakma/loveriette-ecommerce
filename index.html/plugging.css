@@ -1,0 +1,144 @@
+/* Plugging page — workspace box + product catalog */
+.plugging-workspace-section {
+  padding-top: 0 !important;
+}
+
+.plugging-ws-box {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 320px);
+  gap: 1.25rem;
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 1.5rem;
+  background: var(--glass-bg, rgba(12, 4, 6, 0.72));
+  border: 1px solid var(--glass-border, rgba(229, 9, 20, 0.22));
+  border-radius: 20px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.plugging-ws-main h2 {
+  margin: 0 0 0.35rem;
+  font-size: 1.25rem;
+  color: var(--theme-font, #4a3c2e);
+}
+
+.plugging-ws-main > p {
+  margin: 0 0 1rem;
+  font-size: 0.88rem;
+  color: var(--theme-secondary, #a4907c);
+  line-height: 1.5;
+}
+
+.plugging-ws-label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--theme-secondary, #a4907c);
+  margin-bottom: 0.4rem;
+}
+
+.plugging-ws-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.8rem 0.95rem;
+  border-radius: 12px;
+  border: 1px solid rgba(141, 123, 104, 0.25);
+  background: rgba(255, 255, 255, 0.85);
+  font-family: 'Consolas', monospace;
+  font-size: 0.92rem;
+  margin-bottom: 0.85rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.plugging-ws-input:focus {
+  outline: none;
+  border-color: var(--theme-primary, #8d7b68);
+  box-shadow: 0 0 0 3px rgba(141, 123, 104, 0.15);
+}
+
+.plugging-ws-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.plugging-ws-actions .btn-primary-platform,
+.plugging-ws-actions .btn-outline-platform {
+  flex: 1;
+  min-width: 140px;
+  justify-content: center;
+  text-align: center;
+}
+
+.plugging-ws-error {
+  color: #c0392b;
+  font-size: 0.82rem;
+  margin: 0.5rem 0 0;
+}
+
+.plugging-ws-guide {
+  padding: 1.15rem 1.1rem;
+  background: rgba(141, 123, 104, 0.08);
+  border-radius: 14px;
+  border: 1px solid rgba(141, 123, 104, 0.12);
+}
+
+.plugging-ws-guide h3 {
+  margin: 0 0 0.85rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--theme-secondary, #a4907c);
+}
+
+.plugging-ws-guide ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.plugging-ws-guide li {
+  display: flex;
+  gap: 0.6rem;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--theme-font, #4a3c2e);
+}
+
+.plugging-ws-guide li span {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--theme-primary, #8d7b68);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.plugging-share-section {
+  text-align: center;
+  padding: 1.5rem 1rem 2.5rem;
+}
+
+.plugging-share-section .share-actions {
+  justify-content: center;
+}
+
+@media (max-width: 768px) {
+  .plugging-ws-box {
+    grid-template-columns: 1fr;
+    padding: 1.25rem;
+  }
+  .plugging-ws-guide { order: -1; }
+}

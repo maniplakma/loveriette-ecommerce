@@ -26,7 +26,7 @@
 
   .search-bar input,
   #search-input {
-    font-size: var(--text-sm, 0.8125rem);
+    font-size: 16px;
   }
 
   .btn-primary,
@@ -480,5 +480,125 @@
 
   .admin-nav-btn:hover {
     transform: none;
+  }
+}
+
+/* ---- Shop page mobile ---- */
+@media (max-width: 768px) {
+  body.page-shop {
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
+
+  body.page-shop .service-hero--flirty {
+    padding: 1.15rem 0.85rem 0.35rem;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  body.page-shop .service-hero-flirt-title {
+    font-size: clamp(1.65rem, 8vw, 2.15rem);
+  }
+
+  body.page-shop .service-hero-flirt-tagline {
+    font-size: 0.82rem;
+    padding: 0 0.15rem;
+    line-height: 1.5;
+  }
+
+  body.page-shop .search-bar {
+    margin: 0 auto 1.15rem;
+    padding: 0 0.75rem;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  body.page-shop .search-input-wrap {
+    margin-bottom: 0.85rem;
+  }
+
+  body.page-shop .search-bar input,
+  body.page-shop #search-input {
+    font-size: 16px;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  body.page-shop .filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    max-width: 100%;
+  }
+
+  body.page-shop .filter-btn {
+    flex: 0 0 auto;
+    width: auto;
+    max-width: 100%;
+    padding: 0.38rem 0.72rem;
+    font-size: 0.8125rem;
+    white-space: nowrap;
+  }
+
+  body.page-shop .catalog-header {
+    padding: 0 0.75rem;
+  }
+
+  body.page-shop .catalog-title {
+    font-size: 1rem;
+    margin: 0.5rem 0 0.65rem;
+  }
+
+  body.page-shop main {
+    padding: 0 0 1.25rem;
+    max-width: 100%;
+    overflow-x: clip;
+  }
+
+  body.page-shop main .products {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+    padding: 0 0.75rem 0.5rem;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  body.page-shop .catalog-card {
+    min-width: 0;
+  }
+
+  body.page-shop .catalog-card-link {
+    padding: 0.45rem 0.45rem 0.4rem;
+  }
+
+  body.page-shop .catalog-card-name {
+    font-size: 0.75rem;
+  }
+
+  body.page-shop .catalog-desc {
+    font-size: 0.68rem;
+    -webkit-line-clamp: 2;
+  }
+
+  body.page-shop .catalog-card-icon .logo {
+    width: 40px;
+    height: 40px;
+  }
+
+  body.page-shop #shop-share.page-share-bar {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+}
+
+@media (max-width: 380px) {
+  body.page-shop main .products {
+    gap: 0.4rem;
+  }
+
+  body.page-shop .catalog-card-name {
+    font-size: 0.7rem;
   }
 }

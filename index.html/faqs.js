@@ -4,7 +4,7 @@ function renderFaqs(faqs) {
   list.innerHTML = '';
 
   if (!faqs.length) {
-    list.innerHTML = '<p class="page-empty">No FAQs published yet.</p>';
+    list.innerHTML = '<p class="page-empty flirty-prose">no faqs yet — check back soon, babe.</p>';
     return;
   }
 
@@ -27,7 +27,7 @@ async function loadFaqs() {
     renderFaqs(Array.isArray(faqs) ? faqs : []);
   } catch {
     const list = document.querySelector('.faq-list');
-    if (list) list.innerHTML = '<p class="page-empty">Could not load FAQs. Please refresh the page.</p>';
+    if (list) list.innerHTML = '<p class="page-empty flirty-prose">couldn\'t load faqs — refresh and try again, love.</p>';
   }
 }
 

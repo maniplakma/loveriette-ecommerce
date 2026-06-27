@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <base href="/">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
@@ -88,6 +89,18 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           My Purchases
         </button>
+        <button type="button" class="buyer-dash-nav-btn" data-panel="plugging">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></svg>
+          Plugging
+        </button>
+        <button type="button" class="buyer-dash-nav-btn" data-panel="loan">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+          Loan
+        </button>
+        <button type="button" class="buyer-dash-nav-btn" data-panel="webtech">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          Webtech
+        </button>
         <button type="button" class="buyer-dash-nav-btn" data-panel="wallet">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1" fill="currentColor" stroke="none"/></svg>
           Wallet Activity
@@ -162,6 +175,45 @@
         <div class="buyer-purchase-stats info-card" id="purchase-stats" hidden></div>
         <div class="buyer-purchase-list" id="active-purchases-list"></div>
         <p class="dashboard-empty" id="active-purchases-empty" hidden>No purchases yet.</p>
+      </section>
+
+      <section class="buyer-dash-panel" id="panel-plugging" hidden>
+        <header class="buyer-dash-panel-head">
+          <h1>Plugging</h1>
+          <p>Your Telegram auto forwarder subscriptions and workspace access.</p>
+        </header>
+        <div class="buyer-service-quick info-card">
+          <a href="/plugging" class="btn-view">Browse Plans</a>
+          <a href="/plugging/workspace" class="btn-primary">Enter Workspace</a>
+        </div>
+        <div class="buyer-service-list" id="plugging-service-list"></div>
+        <p class="dashboard-empty" id="plugging-service-empty" hidden>No plugging orders yet. <a href="/plugging">Subscribe to a plan</a>.</p>
+      </section>
+
+      <section class="buyer-dash-panel" id="panel-loan" hidden>
+        <header class="buyer-dash-panel-head">
+          <h1>Loan</h1>
+          <p>Track your lending applications and approval status.</p>
+        </header>
+        <div class="buyer-service-quick info-card">
+          <a href="/lending" class="btn-view">View Loan Plans</a>
+          <a href="/lending/apply" class="btn-primary">Apply for a Loan</a>
+        </div>
+        <div class="buyer-service-list" id="loan-service-list"></div>
+        <p class="dashboard-empty" id="loan-service-empty" hidden>No loan applications yet. <a href="/lending/apply">Submit an application</a>.</p>
+      </section>
+
+      <section class="buyer-dash-panel" id="panel-webtech" hidden>
+        <header class="buyer-dash-panel-head">
+          <h1>Webtech</h1>
+          <p>Your website project inquiries and requests.</p>
+        </header>
+        <div class="buyer-service-quick info-card">
+          <a href="/website-making" class="btn-view">View Packages</a>
+          <a href="contact.html" class="btn-primary">Contact Us</a>
+        </div>
+        <div class="buyer-service-list" id="webtech-service-list"></div>
+        <p class="dashboard-empty" id="webtech-service-empty" hidden>No website inquiries yet. <a href="/website-making">Browse packages</a>.</p>
       </section>
 
       <section class="buyer-dash-panel" id="panel-wallet" hidden>
@@ -372,10 +424,10 @@
       <section class="buyer-dash-panel" id="panel-notifications" hidden>
         <header class="buyer-dash-panel-head">
           <h1>Notifications</h1>
-          <p>Updates about your orders.</p>
+          <p class="flirty-prose">updates about your orders — we'll keep you in the loop, babe.</p>
         </header>
         <div class="buyer-notif-list" id="notif-list"></div>
-        <p class="dashboard-empty" id="notif-empty" hidden>No notifications yet.</p>
+        <p class="dashboard-empty" id="notif-empty" hidden>no notifications yet — we'll whisper when something happens ♡</p>
       </section>
 
       <section class="buyer-dash-panel" id="panel-updates" hidden>
@@ -512,11 +564,12 @@
     </div>
   </div>
 
+  <script src="flirty-copy.js"></script>
   <script src="notifications.js"></script>
   <script src="toast.js"></script>
   <script src="branding.js"></script>
   <script src="badges.js"></script>
-  <script src="dashboard.js?v=20260615store-updates"></script>
+  <script src="dashboard.js?v=20260626services"></script>
   <script src="mobile.js?v=20260615vouch"></script>
   <script src="settings.js"></script>
 </body>

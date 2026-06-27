@@ -1,7 +1,7 @@
-/* Theme accents — colors come from the palette variables in style.css,
-   which flip automatically between dark (:root) and light (.light-mode). */
+/* Theme layer — Cyber Noir accents + light-mode class compatibility */
+@import url('cyber-theme.css');
+@import url('typography.css');
 
-/* Light-mode fine-tuning that the variables don't fully cover */
 html.light-mode .top-nav,
 body.light-mode .top-nav {
   box-shadow: none;
@@ -18,15 +18,11 @@ html.light-mode .info-card,
 body.light-mode .product-card,
 body.light-mode .card,
 body.light-mode .info-card {
-  box-shadow: 0 4px 18px rgba(141, 123, 104, 0.12);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(229, 9, 20, 0.08);
 }
 
-html.light-mode .product-card-media,
-body.light-mode .product-card-media {
-  background: linear-gradient(160deg, var(--surface-color) 0%, var(--background-color) 55%, var(--tint-color) 100%);
-}
-
-/* Nav active — underline style (see style.css) */
 .nav-pill.active {
   background: transparent;
   color: var(--accent) !important;
@@ -36,9 +32,9 @@ body.light-mode .product-card-media {
 .contact-icon {
   background: var(--tint);
   color: var(--accent);
+  box-shadow: 0 0 12px rgba(229, 9, 20, 0.2);
 }
 
-/* New buyer — accent highlight (guest / not logged in) */
 body.is-new-buyer .nav-inner {
   border-color: transparent;
   box-shadow: none;
@@ -47,7 +43,7 @@ body.is-new-buyer .nav-inner {
 body.is-new-buyer .nav-signup {
   position: relative;
   background: var(--btn-bg);
-  box-shadow: 0 4px 18px rgba(141, 123, 104, 0.4);
+  box-shadow: var(--glow-red);
   animation: new-buyer-glow 2.5s ease-in-out infinite;
 }
 
@@ -64,7 +60,7 @@ body.is-new-buyer .nav-signup::after {
   color: var(--on-primary);
   background: var(--accent-2);
   border-radius: 999px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 0 12px rgba(229, 9, 20, 0.45);
 }
 
 body.is-new-buyer .site-header .store-btn {
@@ -72,12 +68,12 @@ body.is-new-buyer .site-header .store-btn {
   border: none;
   color: var(--on-primary);
   font-weight: 600;
-  box-shadow: 0 3px 14px color-mix(in srgb, var(--primary-color) 28%, transparent);
+  box-shadow: var(--glow-red);
 }
 
 @keyframes new-buyer-glow {
-  0%, 100% { box-shadow: 0 4px 18px rgba(141, 123, 104, 0.4); }
-  50% { box-shadow: 0 4px 26px rgba(141, 123, 104, 0.6); }
+  0%, 100% { box-shadow: 0 0 20px rgba(229, 9, 20, 0.4); }
+  50% { box-shadow: 0 0 32px rgba(229, 9, 20, 0.65); }
 }
 
 .nav-admin-link {
@@ -89,12 +85,13 @@ body.is-new-buyer .site-header .store-btn {
   font-size: 0.85rem;
   font-weight: 600;
   text-decoration: none;
-  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.2);
-  transition: opacity 0.2s;
+  box-shadow: var(--glow-red);
+  transition: opacity 0.2s, box-shadow 0.2s;
 }
 
 .nav-admin-link:hover {
-  opacity: 0.9;
+  opacity: 0.92;
+  box-shadow: 0 0 28px rgba(229, 9, 20, 0.55);
 }
 
 .theme-toggle,

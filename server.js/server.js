@@ -7,6 +7,12 @@ const bcrypt = require('bcryptjs');
 const appConfig = require('./config');
 const db = require('./db');
 const { fetchLatestEmailForAccount } = require('./imap-fetch');
+const { sendHtmlPage } = require('./send-html-page');
+const {
+  buildOrderActivityMessage,
+  buildOrderActivityMeta,
+  mapActivityFeedRow
+} = require('./activity-feed');
 
 appConfig.ensurePortableDirs();
 
@@ -16,7 +22,8 @@ const host = appConfig.host;
 
 app.set('trust proxy', 1);
 app.use(express.json({ limit: appConfig.jsonBodyLimit }));
-app.use(express.static(appConfig.frontendDir));
+
+// Static files mounted after API + platform page routes (see bottom of file)
 
 const uploadsDir = appConfig.uploadsDir;
 const avatarsDir = path.join(uploadsDir, 'avatars');
@@ -804,8 +811,8 @@ function processExpiredTingiHolds() {
       createUserNotification(
         order.user_id,
         'order',
-        'Tingi Drop auto-delivered',
-        `${result.assigned} remaining account(s) from order #${orderDisplayId(full)} were automatically delivered after the ${readTingiSettings().holdDays}-day hold.`
+        'Tingi drop delivered ♡',
+        `${result.assigned} remaining account(s) from order #${orderDisplayId(full)} were auto-delivered after the ${readTingiSettings().holdDays}-day hold — check my purchases, babe.`
       );
     }
   }
@@ -1673,6 +1680,12 @@ function markOrderApprovedAndFulfill(orderId) {
 
   db.prepare('UPDATE orders SET status = ? WHERE id = ?').run(ORDER_STATUS.APPROVED, orderId);
 
+  try {
+    const orderNum = order.order_number || orderId;
+    db.prepare('INSERT INTO activity_feed (feed_type, message, meta_json) VALUES (?, ?, ?)')
+      .run('order', `Order #${orderNum} was approved`, JSON.stringify({ orderId }));
+  } catch (_) { /* table may not exist yet during migration */ }
+
   const items = db.prepare('SELECT product_id, quantity FROM order_items WHERE order_id = ?').all(orderId);
   const bumpSold = db.prepare('UPDATE products SET sold_count = sold_count + ? WHERE id = ?');
   for (const item of items) {
@@ -1818,6 +1831,8 @@ function withPlanListing(product) {
     : [lowestUnitPrice(product.id, null, base.price)];
   return {
     ...base,
+    slug: base.slug,
+    shareUrl: base.slug ? `/product/${base.slug}` : `/product.html?id=${base.id}`,
     variants,
     variantCount: variants.length,
     startingPrice: prices.length ? Math.min(...prices) : 0
@@ -1825,9 +1840,13 @@ function withPlanListing(product) {
 }
 
 app.get('/products', (req, res) => {
-  const { search, category } = req.query;
-  let query = 'SELECT * FROM products WHERE 1=1';
+  const { search, category, featured } = req.query;
+  let query = 'SELECT * FROM products WHERE is_enabled != 0';
   const params = [];
+
+  if (featured === '1') {
+    query += ' AND is_featured = 1';
+  }
 
   if (category && category.toLowerCase() !== 'all') {
     query += ' AND LOWER(category) = LOWER(?)';
@@ -1840,7 +1859,7 @@ app.get('/products', (req, res) => {
     params.push(term, term);
   }
 
-  query += ' ORDER BY id ASC';
+  query += ' ORDER BY is_featured DESC, id ASC';
   if (!search && (!category || String(category).toLowerCase() === 'all')) {
     res.set('Cache-Control', 'public, max-age=30');
   }
@@ -2264,6 +2283,77 @@ app.get('/account/dashboard', requireAuth, (req, res) => {
   });
 });
 
+app.get('/account/services', requireAuth, (req, res) => {
+  const userId = req.session.userId;
+  const email = req.authUser.email.toLowerCase();
+
+  const plugging = db.prepare(`
+    SELECT po.order_ref AS orderRef, po.status, po.total, po.access_key AS accessKey,
+           po.created_at AS createdAt, pp.name AS planName
+    FROM plugging_orders po
+    LEFT JOIN plugging_plans pp ON pp.id = po.plan_id
+    WHERE LOWER(po.email) = ?
+    ORDER BY po.created_at DESC
+  `).all(email).map((row) => ({
+    orderRef: row.orderRef,
+    status: row.status,
+    total: row.total,
+    planName: row.planName,
+    createdAt: row.createdAt,
+    accessKey: row.status === 'approved' ? row.accessKey : null
+  }));
+
+  const loanRows = db.prepare(`
+    SELECT la.application_id AS applicationId, la.status, la.created_at AS createdAt,
+           la.user_id AS userId, la.form_data AS formData,
+           lp.name AS planName, lp.slug AS planSlug
+    FROM loan_applications la
+    LEFT JOIN loan_plans lp ON lp.id = la.plan_id
+    WHERE la.user_id = ? OR la.user_id IS NULL
+    ORDER BY la.created_at DESC
+  `).all(userId);
+
+  const seenLoans = new Set();
+  const loans = [];
+  for (const row of loanRows) {
+    if (seenLoans.has(row.applicationId)) continue;
+    if (row.userId === userId) {
+      seenLoans.add(row.applicationId);
+      loans.push({
+        applicationId: row.applicationId,
+        status: row.status,
+        planName: row.planName,
+        planSlug: row.planSlug,
+        createdAt: row.createdAt
+      });
+      continue;
+    }
+    let formData = {};
+    try { formData = JSON.parse(row.formData || '{}'); } catch (_) { /* ignore */ }
+    if (String(formData.email || '').toLowerCase() === email) {
+      seenLoans.add(row.applicationId);
+      loans.push({
+        applicationId: row.applicationId,
+        status: row.status,
+        planName: row.planName,
+        planSlug: row.planSlug,
+        createdAt: row.createdAt
+      });
+    }
+  }
+
+  const webtech = db.prepare(`
+    SELECT wi.id, wi.status, wi.name, wi.message, wi.created_at AS createdAt,
+           wp.name AS packageName, wp.slug AS packageSlug
+    FROM website_inquiries wi
+    LEFT JOIN website_packages wp ON wp.id = wi.package_id
+    WHERE LOWER(wi.email) = ?
+    ORDER BY wi.created_at DESC
+  `).all(email);
+
+  res.json({ plugging, loans, webtech });
+});
+
 app.get('/account/orders/:orderNumber/credentials', requireAuth, (req, res) => {
   const result = getOrderCredentialsForUser(
     req.params.orderNumber,
@@ -2331,8 +2421,8 @@ app.post('/account/orders/:orderNumber/claim', requireAuth, (req, res) => {
   createUserNotification(
     req.session.userId,
     'order',
-    'Stock delivered',
-    `1 account from order #${order.order_number} has been delivered. Check My Purchases for credentials.`
+    'Delivered to you ♡',
+    `1 account from order #${order.order_number} is ready — check my purchases for your credentials, babe.`
   );
 
   const credentials = getOrderCredentialsForUser(order.order_number, req.session.userId, req.authUser.email);
@@ -3054,21 +3144,33 @@ app.get('/admin/products', requireAdmin, (req, res) => {
   res.json(rows);
 });
 
+function ensureProductSlug(name, excludeId = null) {
+  let slug = slugify(name);
+  const row = excludeId
+    ? db.prepare('SELECT 1 FROM products WHERE slug = ? AND id != ?').get(slug, excludeId)
+    : db.prepare('SELECT 1 FROM products WHERE slug = ?').get(slug);
+  if (row) slug = `${slug}-${Date.now()}`;
+  return slug;
+}
+
 app.post('/admin/products', requireAdmin, (req, res) => {
   const {
     name, description, long_description, price, status, category, warranty, cost, variants,
-    allow_pre_order, icon, bulkPricingEnabled, bulk_pricing_enabled, bulkTiers, bulk_tiers
+    allow_pre_order, icon, bulkPricingEnabled, bulk_pricing_enabled, bulkTiers, bulk_tiers,
+    slug, meta_title, meta_description, og_image, image_url, is_featured, is_enabled, promo_banner
   } = req.body;
   if (!name || price == null || !category) {
     return res.status(400).json({ error: 'Name, price, and category are required' });
   }
   const cat = resolveCategory(category);
+  const productSlug = slug ? slugify(slug) : ensureProductSlug(name);
   const result = db.prepare(`
     INSERT INTO products (
       name, description, long_description, price, cost, status, category, category_id,
-      warranty, allow_pre_order, icon, bulk_pricing_enabled, bulk_tiers, updated_at
+      warranty, allow_pre_order, icon, bulk_pricing_enabled, bulk_tiers, updated_at,
+      slug, meta_title, meta_description, og_image, image_url, is_featured, is_enabled, promo_banner
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     name.trim(),
     description || '',
@@ -3082,7 +3184,15 @@ app.post('/admin/products', requireAdmin, (req, res) => {
     allow_pre_order ? 1 : 0,
     String(icon || '').trim(),
     (bulkPricingEnabled || bulk_pricing_enabled) ? 1 : 0,
-    JSON.stringify(bulkTiers || bulk_tiers || [])
+    JSON.stringify(bulkTiers || bulk_tiers || []),
+    productSlug,
+    meta_title || '',
+    meta_description || '',
+    og_image || '',
+    image_url || '',
+    is_featured ? 1 : 0,
+    is_enabled === false ? 0 : 1,
+    promo_banner || ''
   );
   saveVariants(result.lastInsertRowid, variants);
   const product = db.prepare('SELECT * FROM products WHERE id = ?').get(result.lastInsertRowid);
@@ -3095,7 +3205,7 @@ app.put('/admin/products/:id', requireAdmin, (req, res) => {
   const existing = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
   if (!existing) return res.status(404).json({ error: 'Product not found' });
 
-  const { name, description, long_description, price, status, category, warranty, cost, variants, allow_pre_order, icon, bulkPricingEnabled, bulk_pricing_enabled, bulkTiers, bulk_tiers } = req.body;
+  const { name, description, long_description, price, status, category, warranty, cost, variants, allow_pre_order, icon, bulkPricingEnabled, bulk_pricing_enabled, bulkTiers, bulk_tiers, slug, meta_title, meta_description, og_image, image_url, is_featured, is_enabled, promo_banner } = req.body;
   const cat = category != null ? resolveCategory(category) : null;
   const bulkEnabled = bulkPricingEnabled != null || bulk_pricing_enabled != null
     ? (bulkPricingEnabled || bulk_pricing_enabled) ? 1 : 0
@@ -3103,11 +3213,16 @@ app.put('/admin/products/:id', requireAdmin, (req, res) => {
   const bulkTierJson = bulkTiers != null || bulk_tiers != null
     ? JSON.stringify(bulkTiers || bulk_tiers || [])
     : existing.bulk_tiers;
+  let productSlug = existing.slug;
+  if (slug != null) productSlug = slugify(slug);
+  else if (name && name !== existing.name) productSlug = ensureProductSlug(name, id);
   db.prepare(`
     UPDATE products
     SET name = ?, description = ?, long_description = ?, price = ?, cost = ?,
         status = ?, category = ?, category_id = ?, warranty = ?, allow_pre_order = ?, icon = ?,
-        bulk_pricing_enabled = ?, bulk_tiers = ?, updated_at = datetime('now')
+        bulk_pricing_enabled = ?, bulk_tiers = ?, updated_at = datetime('now'),
+        slug = ?, meta_title = ?, meta_description = ?, og_image = ?, image_url = ?,
+        is_featured = ?, is_enabled = ?, promo_banner = ?
     WHERE id = ?
   `).run(
     name ?? existing.name,
@@ -3123,6 +3238,14 @@ app.put('/admin/products/:id', requireAdmin, (req, res) => {
     icon != null ? String(icon).trim() : existing.icon,
     bulkEnabled,
     bulkTierJson,
+    productSlug,
+    meta_title ?? existing.meta_title ?? '',
+    meta_description ?? existing.meta_description ?? '',
+    og_image ?? existing.og_image ?? '',
+    image_url ?? existing.image_url ?? '',
+    is_featured != null ? (is_featured ? 1 : 0) : existing.is_featured,
+    is_enabled != null ? (is_enabled ? 1 : 0) : existing.is_enabled,
+    promo_banner ?? existing.promo_banner ?? '',
     id
   );
   if (variants !== undefined) saveVariants(id, variants);
@@ -3399,6 +3522,19 @@ app.post('/orders', (req, res) => {
 
     db.exec('COMMIT');
 
+    try {
+      let buyerName = email.trim();
+      if (req.session.userId) {
+        const buyer = db.prepare('SELECT name FROM users WHERE id = ?').get(req.session.userId);
+        if (buyer?.name?.trim()) buyerName = buyer.name.trim();
+      }
+      const feedItems = items.map((i) => ({ name: i.name, quantity: i.quantity }));
+      const meta = buildOrderActivityMeta(orderNumber, buyerName, feedItems);
+      const feedMessage = buildOrderActivityMessage(buyerName, feedItems);
+      db.prepare('INSERT INTO activity_feed (feed_type, message, meta_json) VALUES (?, ?, ?)')
+        .run('order', feedMessage, JSON.stringify(meta));
+    } catch (_) { /* ignore */ }
+
     if (productId) {
       removeFromCart(req, Number(productId));
     } else {
@@ -3484,8 +3620,8 @@ app.post('/admin/orders/:orderNumber/approve', requireAdmin, (req, res) => {
     createUserNotification(
       order.user_id,
       'order',
-      'Order approved',
-      `Order #${orderDisplayId(order)} has been approved. Check My Account for your credentials.`
+      'Order approved ♡',
+      `order #${orderDisplayId(order)} is approved — your premium is waiting in my account, babe.`
     );
   }
 
@@ -3621,12 +3757,12 @@ function mapColorhuntToTheme(hexes) {
 }
 
 function getThemeColorSettings() {
-  const primary = getSetting('theme_primary', getSetting('theme_light_primary', '#8d7b68'));
+  const primary = getSetting('theme_primary', getSetting('theme_light_primary', '#e50914'));
   return {
-    background: getSetting('theme_bg', '#f1dec9'),
-    font: getSetting('theme_font', '#4a3c2e'),
-    primary: normalizeThemeHex(primary) || '#8d7b68',
-    secondary: getSetting('theme_secondary', '#a4907c'),
+    background: getSetting('theme_bg', '#080404'),
+    font: getSetting('theme_font', '#f0ecec'),
+    primary: normalizeThemeHex(primary) || '#e50914',
+    secondary: getSetting('theme_secondary', '#ff3b3b'),
     colorhuntUrl: getSetting('theme_colorhunt_url', '')
   };
 }
@@ -3725,8 +3861,8 @@ app.post('/admin/orders/:orderNumber/reject', requireAdmin, (req, res) => {
     createUserNotification(
       order.user_id,
       'order',
-      'Order rejected',
-      `Order #${orderDisplayId(order)} was rejected. Reason: ${reason}`
+      'Order declined',
+      `order #${orderDisplayId(order)} wasn't approved this time. reason: ${reason}`
     );
   }
 
@@ -4598,8 +4734,8 @@ app.post('/admin/reports/:id/resolve', requireAdmin, (req, res) => {
     createUserNotification(
       report.user_id,
       'report',
-      'Report resolved',
-      `Your report for order #${report.order_number || '—'} has been resolved.`
+      'Report resolved ♡',
+      `your report for order #${report.order_number || '—'} is all sorted — check your dashboard, babe.`
     );
   }
 
@@ -4846,7 +4982,8 @@ app.get('/branding', (req, res) => {
   res.json({
     name: getSetting('store_brand_name', 'loveriette'),
     logoUrl: getSetting('store_logo_url', '/assets/store-logo.png'),
-    nameFont: getSetting('store_name_font', 'Pacifico'),
+    nameFont: getSetting('store_name_font', 'Pinyon Script'),
+    nameFontBold: getSetting('store_name_font_bold', 'Syne'),
     logoAutoTheme: getSetting('store_logo_auto_theme', '1') === '1'
   });
 });
@@ -4860,7 +4997,8 @@ app.get('/admin/theme', requireAdmin, (req, res) => {
     forceMode: getSetting('theme_force_mode', 'light'),
     brandName: getSetting('store_brand_name', 'loveriette'),
     logoUrl: getSetting('store_logo_url', '/assets/store-logo.png'),
-    nameFont: getSetting('store_name_font', 'Pacifico'),
+    nameFont: getSetting('store_name_font', 'Pinyon Script'),
+    nameFontBold: getSetting('store_name_font_bold', 'Syne'),
     logoAutoTheme: getSetting('store_logo_auto_theme', '1') === '1'
   });
 });
@@ -4886,6 +5024,7 @@ app.put('/admin/theme', requireAdmin, (req, res) => {
   if (req.body.brandName != null) setSetting('store_brand_name', String(req.body.brandName).trim());
   if (req.body.logoUrl != null) setSetting('store_logo_url', String(req.body.logoUrl).trim());
   if (req.body.nameFont != null) setSetting('store_name_font', String(req.body.nameFont).trim());
+  if (req.body.nameFontBold != null) setSetting('store_name_font_bold', String(req.body.nameFontBold).trim());
   if (req.body.logoAutoTheme != null) setSetting('store_logo_auto_theme', req.body.logoAutoTheme ? '1' : '0');
   res.json({ ok: true, colors: getThemeColorSettings() });
 });
@@ -5032,6 +5171,22 @@ function getLocalNetworkUrls() {
   }
   return urls;
 }
+
+const { mountPlatformRoutes } = require('./platform-routes');
+const platformHelpers = mountPlatformRoutes(app, db, {
+  requireAdmin,
+  requireAuth,
+  slugify,
+  frontendDir: appConfig.frontendDir,
+  withPlanListing,
+  productAvailability,
+  getVariants,
+  variantAvailability,
+  lowestUnitPrice,
+  parseBulkTiers
+});
+
+app.use(express.static(appConfig.frontendDir));
 
 app.listen(port, host, () => {
   if (appConfig.publicUrl) {

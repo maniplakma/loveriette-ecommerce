@@ -88,10 +88,10 @@ function updateConfirmButton() {
       hint.textContent = 'This order is complete';
       hint.classList.remove('upload-confirm-hint--ready');
     } else if (canSubmit) {
-      hint.textContent = 'Receipt attached — you can confirm your order';
+      hint.textContent = 'Receipt attached — tap confirm when you\'re ready, babe ♡';
       hint.classList.add('upload-confirm-hint--ready');
     } else {
-      hint.textContent = 'Select a receipt image to enable Confirm Order';
+      hint.textContent = 'Select a receipt image first — then confirm your order ♡';
       hint.classList.remove('upload-confirm-hint--ready');
     }
   }
@@ -139,6 +139,7 @@ function renderPaymentInstructions(order) {
   }
 
   box.hidden = false;
+  box.className = 'payment-instructions-box flirty-prose';
   box.innerHTML = lines.map((line) => `<p>${escapeHtml(line)}</p>`).join('');
 }
 
@@ -313,9 +314,9 @@ function renderOrder(order) {
     statusEl.className = 'order-status-badges';
   } else {
     const statusText = {
-      pending_payment: 'Waiting for payment...',
-      pending: 'Awaiting manual approval...',
-      approved: 'Order approved'
+      pending_payment: 'waiting on your payment, babe...',
+      pending: 'receipt received — hang tight while we review...',
+      approved: 'approved — enjoy your premium ♡'
     };
     statusEl.textContent = statusText[order.status] || order.status;
   }

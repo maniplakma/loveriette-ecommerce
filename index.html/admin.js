@@ -198,6 +198,7 @@ function initDashboard() {
   on('theme-colorhunt-apply', 'click', applyColorhuntPalette);
   on('theme-brand-name', 'input', updateThemeBrandPreview);
   on('theme-brand-font', 'change', updateThemeBrandPreview);
+  on('theme-brand-font-bold', 'change', updateThemeBrandPreview);
   on('theme-logo-auto', 'change', updateThemeBrandPreview);
   on('theme-logo-url', 'input', updateThemeBrandPreview);
   on('theme-logo-clear', 'click', () => {
@@ -217,7 +218,11 @@ const TAB_TITLES = {
   catalog: 'Catalog', inventory: 'Inventory', users: 'Manage Users', redeem: 'Redeem',
   'store-updates': 'Store Updates', 'direct-message': 'Direct Message', 'support-tickets': 'Support Tickets', notifications: 'Notifications',
   reports: 'Product Reports', account: 'Account Settings', 'store-profile': 'Store Profile',
-  theme: 'Site Theme'
+  theme: 'Site Theme',
+  cms: 'Content Management',
+  lending: 'Lending Service',
+  'website-making': 'Website Making',
+  'platform-analytics': 'Platform Analytics'
 };
 
 const loaded = {};
@@ -242,7 +247,12 @@ function switchTab(tab) {
     reports: loadReports,
     account: loadAccount,
     'store-profile': loadStoreProfile,
-    theme: loadTheme
+    theme: loadTheme,
+    cms: () => window.loadPlatformCms?.(),
+    lending: () => window.loadPlatformLending?.(),
+    'website-making': () => window.loadPlatformWebsite?.(),
+    plugging: () => window.loadPlatformPlugging?.(),
+    'platform-analytics': () => window.loadPlatformAnalytics?.()
   };
   if (loaders[tab]) loaders[tab]();
 }
@@ -281,6 +291,17 @@ async function loadOverview() {
 
   renderChart(o.salesTrend);
   renderTopSellers(o.topSellers);
+
+  try {
+    const p = await api('/admin/platform/stats');
+    const el = document.getElementById('admin-stats');
+    if (el && p) {
+      el.innerHTML += `
+        <div class="admin-stat"><div class="admin-stat-label">Lending Apps</div><div class="admin-stat-value">${p.lendingApplications}</div></div>
+        <div class="admin-stat"><div class="admin-stat-label">Web Inquiries</div><div class="admin-stat-value">${p.websiteInquiries}</div></div>
+        <div class="admin-stat"><div class="admin-stat-label">Visitors (7d)</div><div class="admin-stat-value">${p.visitorsWeek}</div></div>`;
+    }
+  } catch (_) { /* platform stats optional */ }
 
   const badge = document.getElementById('orders-badge');
   if (badge) {
@@ -547,7 +568,7 @@ async function loadCatalog() {
   tbody.innerHTML = products.map((p) => `
     <tr>
       <td>${adminProdIconCell(p)}</td>
-      <td><strong>${p.name}</strong></td>
+      <td><strong>${p.name}</strong><br><small class="admin-card-meta">${p.slug ? `<a href="/product/${p.slug}" target="_blank">/product/${p.slug}</a>` : ''}</small></td>
       <td>${p.category}</td>
       <td>${peso(p.price)}</td>
       <td>${planLabel(p)}</td>
@@ -733,6 +754,11 @@ async function openProductModal(product = null) {
       </select>
     </div>
     <div class="admin-field"><label>Warranty</label><input name="warranty" value="${(p.warranty || '30 days').replace(/"/g, '&quot;')}"></div>
+    <div class="admin-field"><label>URL Slug</label><input name="slug" value="${(p.slug || '').replace(/"/g, '&quot;')}" placeholder="auto-generated from name"></div>
+    <label class="admin-toggle" style="margin:.3rem 0"><input type="checkbox" name="is_featured" ${p.is_featured ? 'checked' : ''}> <span>Featured product</span></label>
+    <label class="admin-toggle" style="margin:.3rem 0"><input type="checkbox" name="is_enabled" ${(product ? p.is_enabled !== 0 : true) ? 'checked' : ''}> <span>Enabled (visible in shop)</span></label>
+    <div class="admin-field"><label>Meta title (SEO)</label><input name="meta_title" value="${(p.meta_title || '').replace(/"/g, '&quot;')}"></div>
+    <div class="admin-field"><label>Meta description (SEO)</label><textarea name="meta_description" rows="2">${p.meta_description || ''}</textarea></div>
     <label class="admin-toggle" style="margin:.3rem 0"><input type="checkbox" name="allow_pre_order" ${(product ? p.allow_pre_order : 1) ? 'checked' : ''}> <span>Allow Pre-Order <small class="admin-card-meta">(buyers can order even when out of stock)</small></span></label>
     <label class="admin-toggle" style="margin:.3rem 0"><input type="checkbox" name="bulk_pricing_enabled" ${p.bulkPricingEnabled || p.bulk_pricing_enabled ? 'checked' : ''}> <span>Enable bulk pricing (base product)</span></label>
     <div class="admin-field"><label>Bulk tiers (base product)</label><textarea name="bulk_tiers" rows="2" placeholder="1-4:100, 5-9:90, 10+:80">${formatBulkTiersText(p.bulkTiers)}</textarea></div>
@@ -749,6 +775,8 @@ async function openProductModal(product = null) {
     const body = Object.fromEntries(new FormData(form));
     if (!body.category) throw new Error('Please select a category');
     body.allow_pre_order = form.querySelector('[name="allow_pre_order"]').checked;
+    body.is_featured = form.querySelector('[name="is_featured"]')?.checked;
+    body.is_enabled = form.querySelector('[name="is_enabled"]')?.checked;
     body.bulkPricingEnabled = form.querySelector('[name="bulk_pricing_enabled"]').checked;
     body.bulkTiers = parseBulkTiersInput(form.querySelector('[name="bulk_tiers"]').value);
     body.variants = [...form.querySelectorAll('#variant-rows .admin-variant-row')].map((r) => ({
@@ -2316,13 +2344,13 @@ function previewThemeColors() {
 
 function updateThemeBrandPreview() {
   const name = $('theme-brand-name')?.value || 'loveriette';
-  const font = $('theme-brand-font')?.value || 'system-ui';
+  const font = $('theme-brand-font')?.value || 'Pinyon Script';
+  const fontBold = $('theme-brand-font-bold')?.value || 'Syne';
   const logo = $('theme-logo-url')?.value || '/assets/store-logo.png';
   const logoAutoTheme = $('theme-logo-auto')?.checked ?? true;
-  if ($('theme-preview-name')) $('theme-preview-name').textContent = name;
   if ($('theme-preview-logo')) { $('theme-preview-logo').src = logo; $('theme-preview-logo').hidden = !logo; }
   if ($('theme-logo-preview')) { $('theme-logo-preview').src = logo; $('theme-logo-preview').hidden = !logo; }
-  window.applyStoreBranding?.({ name, logoUrl: logo, nameFont: font, logoAutoTheme });
+  window.applyStoreBranding?.({ name, logoUrl: logo, nameFont: font, nameFontBold: fontBold, logoAutoTheme });
 }
 
 async function applyColorhuntPalette() {
@@ -2384,7 +2412,8 @@ async function loadTheme() {
   setThemeColorFields(colors);
   if ($('theme-colorhunt-url')) $('theme-colorhunt-url').value = t.colorhuntUrl || '';
   if ($('theme-brand-name')) $('theme-brand-name').value = t.brandName || 'loveriette';
-  if ($('theme-brand-font')) $('theme-brand-font').value = t.nameFont || 'Pacifico';
+  if ($('theme-brand-font')) $('theme-brand-font').value = t.nameFont || 'Pinyon Script';
+  if ($('theme-brand-font-bold')) $('theme-brand-font-bold').value = t.nameFontBold || 'Syne';
   if ($('theme-logo-url')) $('theme-logo-url').value = t.logoUrl || '';
   if ($('theme-logo-auto')) $('theme-logo-auto').checked = t.logoAutoTheme !== false;
   window.saveThemeToStorage?.(colors);
@@ -2400,6 +2429,7 @@ async function saveTheme() {
       forceMode: 'light',
       brandName: $('theme-brand-name').value,
       nameFont: $('theme-brand-font').value,
+      nameFontBold: $('theme-brand-font-bold')?.value || 'Syne',
       logoUrl: $('theme-logo-url').value,
       logoAutoTheme: $('theme-logo-auto')?.checked ?? true
     })
@@ -2411,6 +2441,7 @@ async function saveTheme() {
     name: $('theme-brand-name').value,
     logoUrl: $('theme-logo-url').value,
     nameFont: $('theme-brand-font').value,
+    nameFontBold: $('theme-brand-font-bold')?.value || 'Syne',
     logoAutoTheme: $('theme-logo-auto')?.checked ?? true
   });
   showToast('Theme saved', 'approved');

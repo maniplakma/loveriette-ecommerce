@@ -12,4 +12,5 @@ PUBLIC-LINK.txt
 server.js/ecom.db
 server.js/ecom.db.*
 server.js/uploads/
+server.js/plugging-sessions/
 index.html/uploads/

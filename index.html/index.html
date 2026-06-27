@@ -1,31 +1,30 @@
 <!DOCTYPE html>
 <html lang="en" class="light-mode">
 <head>
+  <base href="/">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="theme-color" content="#f1dec9">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <title>loveriette</title>
-  <link rel="stylesheet" href="style.css?v=20260616hero-decor">
-  <link rel="stylesheet" href="mobile.css?v=20260616hero-decor">
+  <meta name="theme-color" content="#080404">
+  <meta name="description" content="Premium digital products, lending services, and professional website development.">
+  <title>loveriette — Premium Multi-Service Platform</title>
+  <link rel="stylesheet" href="style.css?v=20260627hero">
+  <link rel="stylesheet" href="mobile.css?v=20260626platform">
   <link rel="stylesheet" href="theme.css">
+  <link rel="stylesheet" href="platform.css?v=20260628shop">
+  <link rel="stylesheet" href="site-decorations.css?v=20260626">
   <script src="theme.js"></script>
   <script src="theme-colors.js?v=20260614persist"></script>
+  <script src="api-cache.js"></script>
 </head>
-<body>
+<body class="page-home">
+  <div class="announcement-bar" id="announcement-bar" hidden></div>
+
   <nav class="top-nav">
     <div class="nav-inner">
-      <ul class="nav-left">
-        <li><a href="index.html" class="nav-pill active">Home</a></li>
-        <li><a href="#products" class="nav-link">Products</a></li>
-        <li><a href="faqs.html" class="nav-link">FAQs</a></li>
-        <li><a href="guide.html" class="nav-link">Guide</a></li>
-        <li><a href="about.html" class="nav-link">About Us</a></li>
-        <li><a href="contact.html" class="nav-link">Contact</a></li>
-      </ul>
+      <ul class="nav-left"></ul>
       <ul class="nav-right">
         <li>
-          <button class="icon-btn cart-btn" type="button" aria-label="Cart">
+          <button class="icon-btn cart-btn" type="button" aria-label="Cart" onclick="location.href='cart.html'">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
               <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
@@ -41,103 +40,118 @@
     </div>
   </nav>
 
-  <section class="hero-section" aria-label="Welcome">
-  <header class="site-header">
-    <div class="hero-bg-image" aria-hidden="true"></div>
-    <div class="hero-bg-decor" aria-hidden="true">
-      <div class="hero-decor-wave hero-decor-wave--1"></div>
-      <div class="hero-decor-wave hero-decor-wave--2"></div>
-      <div class="hero-decor-orbit hero-decor-orbit--1"></div>
-      <div class="hero-decor-orbit hero-decor-orbit--2"></div>
-      <div class="hero-decor-panel hero-decor-panel--browser">
-        <span class="hero-decor-dots"><i></i><i></i><i></i></span>
-        <span class="hero-decor-play" aria-hidden="true"></span>
-        <span class="hero-decor-bar hero-decor-bar--1"></span>
-        <span class="hero-decor-bar hero-decor-bar--2"></span>
-      </div>
-      <div class="hero-decor-panel hero-decor-panel--chat">
-        <span class="hero-decor-chat-line"></span>
-        <span class="hero-decor-chat-line hero-decor-chat-line--short"></span>
-        <span class="hero-decor-sparkle" aria-hidden="true">✦</span>
-      </div>
-      <div class="hero-decor-waveform" aria-hidden="true">
-        <span></span><span></span><span></span><span></span><span></span>
-      </div>
-      <div class="hero-decor-tile hero-decor-tile--grid" aria-hidden="true"></div>
-    </div>
-    <div class="hero-bg-apps" aria-hidden="true">
-      <span class="hero-bg-app hero-bg-app--canva"><img src="https://api.iconify.design/simple-icons:canva.svg" alt="" loading="lazy"></span>
-      <span class="hero-bg-app hero-bg-app--spotify"><img src="https://api.iconify.design/simple-icons:spotify.svg?color=%231db954" alt="" loading="lazy"></span>
-      <span class="hero-bg-app hero-bg-app--netflix"><img src="https://api.iconify.design/cbi:netflix-alt.svg" alt="" loading="lazy"></span>
-      <span class="hero-bg-app hero-bg-app--capcut"><img src="https://api.iconify.design/arcticons:capcut.svg" alt="" loading="lazy"></span>
-      <span class="hero-bg-app hero-bg-app--chatgpt"><img src="https://api.iconify.design/simple-icons:openai.svg?color=%2310a37f" alt="" loading="lazy"></span>
-    </div>
-    <div class="site-header-body">
-      <div class="store-btn">
-        <svg class="store-btn-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
-          <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>
-        </svg>
-        Discover Your Digital Edge
-      </div>
-      <h1 class="site-header-title">
-        <span class="hero-line-group hero-line-group--top">
-          <span class="hero-line hero-line--dark">Smart Apps &amp;</span>
-          <span class="hero-line hero-line--accent">Creative Tools</span>
-        </span>
-        <span class="hero-line-group hero-line-group--bottom">
-          <span class="hero-line hero-line--primary">Premium Services</span>
-          <span class="hero-line hero-line--dark">for Everyone</span>
-        </span>
-      </h1>
-      <p class="site-header-lead">Loveriette brings you the best<br>digital apps, tools, and services—<br>affordable, reliable, and ready to use.</p>
-    </div>
-  </header>
-  </section>
-
-  <div class="search-bar">
-    <div class="search-input-wrap">
-      <svg class="search-input-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-        <circle cx="11" cy="11" r="7"/><path d="M20 20l-3-3"/>
-      </svg>
-      <input type="text" id="search-input" placeholder="Search products...">
-    </div>
-    <div class="filters">
-      <button class="filter-btn active" type="button" data-category="All">
-        <svg class="filter-btn-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-          <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
-        </svg>
-        All
-      </button>
-      <button class="filter-btn" type="button" data-category="Editing">
-        <svg class="filter-btn-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-          <circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4L8.5 15.5"/><path d="M14.5 17.5L20 22"/><path d="M8.5 8.5L20 20"/>
-        </svg>
-        Editing
-      </button>
-      <button class="filter-btn" type="button" data-category="Educational">
-        <svg class="filter-btn-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
-        </svg>
-        Educational
-      </button>
-      <button class="filter-btn" type="button" data-category="Entertainment">
-        <svg class="filter-btn-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-          <rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/>
-        </svg>
-        Entertainment
-      </button>
-    </div>
+  <div class="site-deco site-deco--spider" aria-hidden="true">
+    <img src="/assets/deco-spiderman-cut.png?v=2" alt="" width="118" height="200" loading="lazy" decoding="async">
   </div>
 
-  <main>
-    <div class="catalog-header">
-      <h2 class="catalog-title">All Products</h2>
+  <section class="hero-section" aria-label="Welcome">
+    <header class="site-header site-header--banner">
+      <div class="hero-bg-image" aria-hidden="true"></div>
+      <div class="site-header-body">
+        <div class="store-btn">
+          <svg class="store-btn-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+            <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>
+          </svg>
+          One Stop for Every Premium
+        </div>
+        <h1 class="hero-display" data-no-flirt>
+          <span class="hero-display-row">
+            <span class="hero-display-stack">
+              <span class="hero-display-shadow" aria-hidden="true">Loveriette</span>
+              <span class="hero-display-bold hero-display-premiums">
+                premiums
+                <img class="hero-display-bow" src="/assets/deco-bow-cut.png?v=2" alt="" width="54" height="54" aria-hidden="true">
+              </span>
+            </span>
+            <span class="hero-display-script">desire</span>
+          </span>
+        </h1>
+        <p class="site-header-lead hero-tagline">indulge what you crave — premium access, delivered with trust and care</p>
+      </div>
+    </header>
+  </section>
+
+  <!-- Service categories -->
+  <section class="platform-section">
+    <div class="platform-section-head">
+      <h2 id="service-categories-title">Our Services</h2>
+      <p id="service-categories-sub">Four powerful services, one platform</p>
     </div>
-    <section class="products" id="products"></section>
-    <p class="empty-state" hidden>No products found.</p>
-  </main>
+    <div class="service-cards-grid" id="service-categories-grid"></div>
+  </section>
+
+  <!-- Real-time activity feed -->
+  <section class="platform-section" id="activity-section">
+    <img class="site-deco site-deco--flowers" src="/assets/deco-flowers-cut.png?v=2" alt="" width="180" height="220" loading="lazy" decoding="async" aria-hidden="true">
+    <div class="platform-section-head">
+      <h2>Live Activity</h2>
+      <p>See what's happening right now</p>
+    </div>
+    <div class="activity-feed">
+      <ul class="activity-feed-list" id="activity-feed-list">
+        <li class="activity-feed-item"><span class="activity-feed-dot"></span><div>Loading activity...</div></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- About Me + guides -->
+  <section class="platform-section about-portfolio-section" id="about-portfolio-section">
+    <div class="platform-section-head">
+      <h2>about me</h2>
+      <p class="about-portfolio-sub" id="about-portfolio-sub">the girl behind your premium fix — come say hi</p>
+    </div>
+    <div class="about-portfolio-layout">
+      <article class="about-portfolio about-portfolio--home" id="home-about-portfolio" aria-label="Store profile">
+        <div class="about-portfolio-glow" aria-hidden="true"></div>
+        <header class="about-portfolio-head">
+          <div class="about-photo-frame">
+            <div class="about-photo-ring" aria-hidden="true"></div>
+            <img id="home-about-photo" class="about-photo" src="/assets/store-logo.png" alt="">
+          </div>
+          <div class="about-portfolio-intro">
+            <p class="about-eyebrow">hey, it's</p>
+            <h3 id="home-about-name" class="about-name">loveriette</h3>
+            <p class="about-location" id="home-about-location" hidden>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
+              </svg>
+              <span id="home-about-location-text"></span>
+            </p>
+          </div>
+        </header>
+        <div class="about-divider" aria-hidden="true"><span>✦</span></div>
+        <blockquote id="home-about-bio" class="about-bio-text">your go-to for premium digital goodies — shop, lend, build, and plug with someone who actually cares ♡</blockquote>
+        <div class="about-social-strip" id="home-about-social-wrap">
+          <p class="about-social-label">find me online</p>
+          <div id="home-about-socials" class="about-social-orbit" aria-label="Social links"></div>
+        </div>
+      </article>
+      <nav class="guide-links-panel" id="guide-links-grid" aria-label="Guides and quick links"></nav>
+    </div>
+  </section>
+
+  <!-- Featured products -->
+  <section class="platform-section">
+    <div class="platform-section-head">
+      <h2>Featured Products</h2>
+      <p><a href="/shop" style="color:var(--theme-primary)">View all products →</a></p>
+    </div>
+    <div class="related-products-grid" id="featured-products"></div>
+  </section>
+
+  <!-- FAQ -->
+  <section class="platform-section">
+    <div class="platform-section-head">
+      <h2>Frequently Asked Questions</h2>
+    </div>
+    <div class="faq-list" id="homepage-faq-list"></div>
+  </section>
 
   <footer class="site-footer">
+    <div class="site-deco site-deco--web" aria-hidden="true">
+      <img src="/assets/deco-web-cut.png?v=2" alt="" width="280" height="280" loading="lazy" decoding="async">
+    </div>
+    <p class="footer-copy" id="footer-tagline">Premium digital services for everyone.</p>
     <div class="footer-socials" id="footer-socials"></div>
     <p class="footer-copy">© 2026 LOVERIETTE. ALL RIGHTS RESERVED.</p>
     <div class="footer-links">
@@ -148,13 +162,14 @@
 
   <script src="social-icons.js"></script>
   <script src="footer-socials.js"></script>
+  <script src="flirty-copy.js"></script>
   <script src="notifications.js"></script>
   <script src="toast.js"></script>
   <script src="branding.js"></script>
-  <script src="badges.js"></script>
   <script src="nav.js"></script>
-  <script src="mobile.js?v=20260615theme-hero"></script>
-  <script src="product-icons.js"></script>
-  <script src="app.js?v=20260615badge-sm"></script>
+  <script src="mobile.js"></script>
+  <script src="platform-nav.js"></script>
+  <script src="homepage.js"></script>
+  <script src="ezyshell-redirect.js"></script>
 </body>
 </html>

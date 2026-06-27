@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <base href="/">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Website Package — loveriette</title>
+  <link rel="stylesheet" href="style.css?v=20260626platform">
+  <link rel="stylesheet" href="theme.css">
+  <link rel="stylesheet" href="platform.css?v=20260627icons">
+  <script src="theme.js"></script>
+  <script src="share-utils.js"></script>
+</head>
+<body>
+  <nav class="top-nav"><div class="nav-inner"><ul class="nav-left"></ul></div></nav>
+  <main class="platform-section" id="pkg-content"><p>Loading...</p></main>
+  <div id="pkg-share"></div>
+  <footer class="site-footer"><p class="footer-copy">© 2026 LOVERIETTE. ALL RIGHTS RESERVED.</p></footer>
+
+  <dialog id="inquiry-modal" style="border:none;border-radius:16px;padding:1.5rem;max-width:420px;width:90%">
+    <form id="inquiry-form" class="platform-form">
+      <h3>Send Inquiry</h3>
+      <label>Name *<input name="name" required></label>
+      <label>Email *<input type="email" name="email" required></label>
+      <label>Phone<input name="phone"></label>
+      <label>Message<textarea name="message"></textarea></label>
+      <button type="submit" class="btn-primary-platform">Send</button>
+      <button type="button" class="btn-outline-platform" onclick="document.getElementById('inquiry-modal').close()">Cancel</button>
+    </form>
+  </dialog>
+
+  <script src="toast.js"></script>
+  <script src="nav.js"></script>
+  <script src="platform-nav.js"></script>
+  <script src="website-package.js"></script>
+</body>
+</html>

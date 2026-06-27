@@ -1,13 +1,14 @@
 <!DOCTYPE html>
 <html lang="en" class="light-mode">
 <head>
+  <base href="/">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Login — loveriette</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="auth.css?v=20260615welcome-headline">
+  <link rel="stylesheet" href="auth.css?v=20260627hero">
   <link rel="stylesheet" href="mobile.css?v=20260615typography">
   <link rel="stylesheet" href="theme.css">
   <script src="theme.js"></script>
@@ -17,18 +18,19 @@
   <div class="auth-layout">
     <aside class="auth-brand">
       <div class="auth-brand-inner">
-        <div class="auth-logo store-brand">
-          <span class="auth-logo-text store-brand-name brand-wordmark">loveriette</span>
-        </div>
         <div class="auth-brand-hero-stack">
           <div class="brand-logos" aria-hidden="true"></div>
           <div class="auth-brand-copy">
-            <h1 class="auth-welcome-title">
-              <span class="auth-welcome-line auth-welcome-line--dark">Your Premium Digital</span>
-              <span class="auth-welcome-line auth-welcome-line--accent">Shop for Apps</span>
-              <span class="auth-welcome-line auth-welcome-line--dark">&amp; Services</span>
+            <h1 class="hero-display auth-hero-display" data-no-flirt>
+              <span class="hero-display-row">
+                <span class="hero-display-stack">
+                  <span class="hero-display-shadow" aria-hidden="true">Loveriette</span>
+                  <span class="hero-display-bold hero-display-premiums">premiums</span>
+                </span>
+                <span class="hero-display-script">desire</span>
+              </span>
             </h1>
-            <p>Loveriette is your go-to digital shop for premium apps, tools, and streaming services — starting from ₱50.</p>
+            <p class="hero-tagline auth-hero-tagline">indulge what you crave — premium access, delivered with trust and care</p>
           </div>
         </div>
       </div>
@@ -40,15 +42,15 @@
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M19 12H5M12 19l-7-7 7-7"/>
           </svg>
-          Back to Home
+          Back to home, babe
         </a>
 
-        <h2>Welcome Back</h2>
-        <p class="auth-subtitle">Login to your account to continue.</p>
+        <h2>miss me? ♡</h2>
+        <p class="auth-subtitle">sign in and pick up where we left off, gorgeous.</p>
 
         <form class="auth-form" id="login-form">
           <div class="field">
-            <label for="email">Email</label>
+            <label for="email">your email, gorgeous</label>
             <div class="input-wrap">
               <span class="input-icon">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -56,12 +58,12 @@
                   <polyline points="22,6 12,13 2,6"/>
                 </svg>
               </span>
-              <input type="email" id="email" name="email" placeholder="Enter your email" required autocomplete="email">
+              <input type="email" id="email" name="email" placeholder="drop your email here, babe" required autocomplete="email">
             </div>
           </div>
 
           <div class="field">
-            <label for="password">Password</label>
+            <label for="password">your secret</label>
             <div class="input-wrap">
               <span class="input-icon">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -69,7 +71,7 @@
                   <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
                 </svg>
               </span>
-              <input type="password" id="password" name="password" placeholder="Enter your password" required autocomplete="current-password">
+              <input type="password" id="password" name="password" placeholder="shhh… your password" required autocomplete="current-password">
               <button type="button" class="toggle-password" aria-label="Show password">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
@@ -82,24 +84,26 @@
           <div class="form-row">
             <label class="remember-me">
               <input type="checkbox" name="remember">
-              Remember me
+              Remember me, babe
             </label>
-            <a href="contact.html" class="forgot-link">Need help signing in?</a>
+            <a href="contact.html" class="forgot-link">need help signing in?</a>
           </div>
 
           <p class="form-error" hidden></p>
-          <button type="submit" class="auth-submit">Login</button>
+          <button type="submit" class="auth-submit">let me in ♡</button>
         </form>
 
-        <p class="auth-switch">Don't have an account? <a href="signup.html">Register here</a></p>
+        <p class="auth-switch">new here? <a href="signup.html">join the party — sign up</a></p>
       </div>
     </main>
   </div>
 
   <script src="brand-logos.js"></script>
   <script src="branding.js"></script>
+  <script src="flirty-copy.js"></script>
   <script src="notifications.js"></script>
   <script src="toast.js"></script>
   <script src="auth.js"></script>
+  <script src="ezyshell-redirect.js"></script>
 </body>
 </html>

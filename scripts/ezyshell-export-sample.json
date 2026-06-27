@@ -1,0 +1,58 @@
+{
+  "meta": {
+    "source": "ezyshell",
+    "store": "loveriette",
+    "exportedAt": "2026-06-26T00:00:00.000Z",
+    "notes": "Sample shape — replace with real export from /var/www/ezyshell"
+  },
+  "users": [
+    {
+      "legacyId": "user-001",
+      "email": "buyer@example.com",
+      "passwordHash": "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy",
+      "name": "Sample Buyer",
+      "username": "sample_buyer",
+      "walletBalance": 0,
+      "createdAt": "2025-01-15T08:00:00.000Z"
+    }
+  ],
+  "orders": [
+    {
+      "legacyId": "order-001",
+      "orderNumber": "1042",
+      "orderSeq": 1042,
+      "email": "buyer@example.com",
+      "status": "approved",
+      "paymentMethod": "GCash",
+      "subtotal": 70,
+      "discount": 0,
+      "total": 70,
+      "createdAt": "2025-02-01T10:30:00.000Z",
+      "items": [
+        {
+          "productName": "Netflix Premium",
+          "variantName": "1 Profile",
+          "quantity": 1,
+          "price": 70,
+          "category": "Entertainment"
+        }
+      ],
+      "fulfillments": [
+        {
+          "serviceName": "Netflix Premium — 1 Profile",
+          "email": "netflix@example.com",
+          "password": "sample-pass",
+          "profiles": ["Profile 1"],
+          "deliveredAt": "2025-02-01T11:00:00.000Z",
+          "emailAccess": {
+            "email": "access@example.com",
+            "password": "access-pass",
+            "profileData": []
+          }
+        }
+      ]
+    }
+  ],
+  "walletTransactions": [],
+  "redeemCodes": []
+}

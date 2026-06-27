@@ -3,6 +3,7 @@
 <html lang="en">
 
 <head>
+  <base href="/">
 
   <meta charset="UTF-8">
 
@@ -36,7 +37,7 @@
 
         <li><a href="guide.html" class="nav-pill active">Guide</a></li>
 
-        <li><a href="about.html" class="nav-link">About Us</a></li>
+        <li><a href="about.html" class="nav-link">About Me</a></li>
 
         <li><a href="contact.html" class="nav-link">Contact</a></li>
 
@@ -80,17 +81,19 @@
 
   <main class="info-page info-page-wide">
 
-    <header class="info-header">
+    <header class="info-header info-header--flirty">
 
-      <h1>How to Order</h1>
+      <span class="info-header-eyebrow">let us guide you</span>
 
-      <p>Follow these steps to purchase a subscription and receive your account details.</p>
+      <h1><span class="info-title-bold">how to</span> <span class="info-title-script">order</span></h1>
+
+      <p class="info-header-tagline">follow these steps — we'll take care of the rest, babe</p>
 
     </header>
 
-    <div id="guide-loading" class="guide-state">Loading guide…</div>
+    <div id="guide-loading" class="guide-state flirty-prose">loading your guide…</div>
 
-    <div id="guide-error" class="guide-state guide-state--error" hidden>Could not load the guide. Please refresh or try again later.</div>
+    <div id="guide-error" class="guide-state guide-state--error flirty-prose" hidden>couldn't load the guide — refresh and try again, love.</div>
 
     <section id="guide-steps" class="guide-steps" hidden aria-label="Order tutorial steps"></section>
 
@@ -114,6 +117,7 @@
 
 
 
+  <script src="flirty-copy.js"></script>
   <script src="notifications.js"></script>
 
   <script src="branding.js"></script>
