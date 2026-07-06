@@ -65,7 +65,7 @@ Deploy **only** to `/var/www/ecommerce`. **Do not** change `/var/www/ezyshell` o
 └── server.js/                    # Express API + SQLite
     ├── server.js
     ├── db.js
-    ├── imap-fetch.js
+    ├── gmail-fetch.js
     ├── ecom.db                     # SQLite database (persistent)
     ├── test-workflows.js           # optional tests
     ├── tunnel.js                   # optional local dev only

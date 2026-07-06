@@ -3,21 +3,34 @@
 <head>
   <base href="/">
   <meta charset="UTF-8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Website Making — loveriette</title>
+  <link rel="stylesheet" href="theme-critical.css?v=20260705cleanup">
+  <script src="theme-boot.js?v=20260705cleanup"></script>
   <link rel="stylesheet" href="style.css?v=20260626platform">
   <link rel="stylesheet" href="mobile.css?v=20260626platform">
-  <link rel="stylesheet" href="theme.css">
+  <link rel="stylesheet" href="performance-mobile.css?v=20260705cleanup">
+  <link rel="stylesheet" href="theme.css?v=20260703audit">
   <link rel="stylesheet" href="typography.css">
-  <link rel="stylesheet" href="platform.css?v=20260627icons">
-  <script src="theme.js"></script>
-  <script src="api-cache.js"></script>
-  <script src="share-utils.js"></script>
+  <link rel="stylesheet" href="platform.css?v=20260707aesthetic">
+  <script src="theme.js?v=20260705cleanup" defer></script>
+  <script src="share-utils.js?v=20260703audit" defer></script>
 </head>
 <body>
-  <nav class="top-nav"><div class="nav-inner"><ul class="nav-left"></ul><ul class="nav-right">
+  <nav class="top-nav"><div class="nav-inner"><ul class="nav-left">
+        <li><a href="/" class="nav-link">Home</a></li>
+        <li><a href="/shop" class="nav-link">Shop</a></li>
+        <li><a href="/website-making" class="nav-link">Website Making</a></li>
+        <li><a href="/plugging" class="nav-link">Plugging</a></li>
+                <li><a href="about.html" class="nav-link">About</a></li>
+        <li><a href="faqs.html" class="nav-link">FAQ</a></li>
+        <li><a href="contact.html" class="nav-link">Contact</a></li>
+      </ul><ul class="nav-right">
     <li class="auth-guest"><a href="login.html" class="nav-link">Sign In</a></li>
   </ul></div></nav>
+  <script src="nav-shell.js?v=20260705cleanup"></script>
 
   <div class="service-hero service-hero--flirty">
     <div class="service-hero-flirt">
@@ -33,19 +46,42 @@
   <section class="platform-section">
     <div class="platform-section-head">
       <h2>our packages</h2>
-      <p class="flirty-prose">pick a package, babe — we'll build something gorgeous for you ♡</p>
+      <p>Choose a package that fits your business — ecommerce, auto-order, landing pages, and more.</p>
     </div>
-    <div class="package-grid" id="packages-grid"></div>
-  </section>
-
-  <section class="platform-section">
-    <div class="platform-section-head"><h2>portfolio</h2><p class="flirty-prose">a peek at what we've made for other loves</p></div>
-    <div class="package-grid" id="portfolio-grid"></div>
+    <div class="package-grid" id="packages-grid">
+      <article class="package-card">
+        <h3>Ecommerce Website</h3>
+        <p>Full online store with cart &amp; checkout.</p>
+        <div class="package-price">Starting at ₱25,000</div>
+        <ul class="package-features"><li>Product catalog</li><li>Cart &amp; checkout</li><li>Admin panel</li><li>Mobile responsive</li></ul>
+        <div class="package-actions"><a href="/website-making/ecommerce" class="btn-primary-platform">View Package</a></div>
+      </article>
+      <article class="package-card">
+        <h3>Auto Order Website</h3>
+        <p>Automated order processing site.</p>
+        <div class="package-price">Starting at ₱18,000</div>
+        <ul class="package-features"><li>Auto order flow</li><li>Payment QR</li><li>Order notifications</li><li>Admin dashboard</li></ul>
+        <div class="package-actions"><a href="/website-making/auto-order" class="btn-primary-platform">View Package</a></div>
+      </article>
+      <article class="package-card">
+        <h3>Custom Website</h3>
+        <p>Tailored design for your brand.</p>
+        <div class="package-price">Starting at ₱35,000</div>
+        <ul class="package-features"><li>Custom design</li><li>Unique features</li><li>SEO setup</li><li>Training included</li></ul>
+        <div class="package-actions"><a href="/website-making/custom" class="btn-primary-platform">View Package</a></div>
+      </article>
+    </div>
+    <p class="platform-empty-hint" id="packages-empty" hidden>No packages available yet.</p>
   </section>
 
   <section class="platform-section">
     <div class="platform-section-head"><h2>FAQ</h2></div>
-    <div class="faq-list" id="web-faq"></div>
+    <div class="faq-list" id="web-faq">
+      <div class="faq-item open">
+        <button type="button" class="faq-question">How long does it take to build a website?</button>
+        <div class="faq-answer"><p>Typical turnaround is 1–2 weeks depending on package complexity, content readiness, and revision rounds.</p></div>
+      </div>
+    </div>
   </section>
 
   <div id="web-share"></div>
@@ -53,9 +89,9 @@
   <footer class="site-footer"><p class="footer-copy">© 2026 LOVERIETTE. ALL RIGHTS RESERVED.</p></footer>
 
   <script src="toast.js"></script>
-  <script src="nav.js"></script>
-  <script src="mobile.js"></script>
+  <script src="nav.js?v=20260703audit" defer></script>
+  <script src="mobile.js?v=20260703audit" defer></script>
   <script src="platform-nav.js"></script>
-  <script src="website-making.js"></script>
+  <script src="website-making.js?v=20260707wmfix"></script>
 </body>
 </html>

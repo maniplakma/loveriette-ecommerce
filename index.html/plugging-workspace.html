@@ -1,184 +1,124 @@
 <!DOCTYPE html>
-
-<html lang="en">
-
+<html lang="en" class="light-mode">
 <head>
   <base href="/">
-
   <meta charset="UTF-8">
-
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
   <title>Plugging Workspace</title>
-
-  <link rel="stylesheet" href="/theme.css">
-
-  <link rel="stylesheet" href="/plugging-workspace.css?v=3">
-
-  <script src="/theme.js"></script>
-
+  <link rel="stylesheet" href="theme-critical.css?v=20260705cleanup">
+  <link rel="stylesheet" href="performance-mobile.css?v=20260705cleanup">
+  <script src="theme-boot.js?v=20260705cleanup"></script>
+  <link rel="stylesheet" href="/style.css?v=20260626platform">
+  <link rel="stylesheet" href="/theme.css?v=20260703audit">
+  <link rel="stylesheet" href="/platform.css?v=20260705cleanup">
+  <link rel="stylesheet" href="/plugging-workspace.css?v=6">
+  <script src="/theme.js?v=20260705cleanup" defer></script>
+  <script src="/theme-colors.js?v=20260705cleanup" defer></script>
 </head>
+<body class="plug-body light-mode" data-no-flirt>
 
-<body class="plug-body">
-
+  <!-- Gate: guide + access key -->
   <div id="gate-view" class="plug-gate-wrap">
-
     <div class="plug-gate-layout">
-
-      <div class="plug-gate">
-
-        <div class="plug-gate-icon" aria-hidden="true">
-
-          <svg viewBox="0 0 24 24" stroke-width="2"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></svg>
-
-        </div>
-
-        <h1>Plugging Workspace</h1>
-
-        <p class="plug-gate-desc">Enter your access key to connect your Telegram account and run the auto forwarder — fully self-service, no admin setup.</p>
-
-        <label for="access-key-input">Access Key</label>
-
-        <input id="access-key-input" placeholder="PLG-XXXX-XXXX" autocomplete="off" spellcheck="false">
-
-        <button type="button" class="plug-btn plug-btn-primary" id="unlock-btn" style="width:100%">Enter Workspace</button>
-
-        <p id="gate-error" hidden style="color:var(--plug-danger);margin-top:0.75rem;font-size:0.85rem;text-align:center"></p>
-
-        <p class="plug-gate-links"><a href="/plugging/status">Check order status</a> · <a href="/plugging">Back to Plugging</a></p>
-
-      </div>
-
-      <aside class="plug-ws-guide">
-
+      <aside class="plug-guide-panel">
         <h2>How to use</h2>
-
-        <ol class="plug-ws-guide-list">
-
-          <li>
-
-            <span class="plug-ws-num">1</span>
-
-            <div><strong>Enter your access key</strong><p>Get this from your order status page after payment is approved.</p></div>
-
-          </li>
-
-          <li>
-
-            <span class="plug-ws-num">2</span>
-
-            <div><strong>Add your Telegram number</strong><p>Use country code (e.g. 639171234567). We'll send a Telegram OTP code.</p></div>
-
-          </li>
-
-          <li>
-
-            <span class="plug-ws-num">3</span>
-
-            <div><strong>Verify with OTP</strong><p>Enter the code Telegram sends you — same as normal login, no password needed.</p></div>
-
-          </li>
-
-          <li>
-
-            <span class="plug-ws-num">4</span>
-
-            <div><strong>Set source & targets</strong><p>Add the chat/channel to forward from, and where messages should go (one per line).</p></div>
-
-          </li>
-
-          <li>
-
-            <span class="plug-ws-num">5</span>
-
-            <div><strong>Start forwarder</strong><p>Hit Start — messages relay live through your own Telegram account.</p></div>
-
-          </li>
-
+        <ol class="plug-guide-list">
+          <li><span class="plug-guide-num">1</span><div><strong>Enter your access key</strong><p>Get this from your order status page after payment is approved.</p></div></li>
+          <li><span class="plug-guide-num">2</span><div><strong>Add your Telegram number</strong><p>Use country code (e.g. 639171234567). We'll send a Telegram OTP code.</p></div></li>
+          <li><span class="plug-guide-num">3</span><div><strong>Verify with OTP</strong><p>Enter the code Telegram sends you — no password needed.</p></div></li>
+          <li><span class="plug-guide-num">4</span><div><strong>Set source &amp; targets</strong><p>Add the chat to forward from and where messages should go.</p></div></li>
+          <li><span class="plug-guide-num">5</span><div><strong>Start forwarder</strong><p>Hit Start — messages relay live through your Telegram account.</p></div></li>
         </ol>
-
-        <div class="plug-ws-tip">
-
-          <strong>Tip</strong>
-
-          <p>Your account must be a member of both the source chat and target groups/channels.</p>
-
-        </div>
-
+        <div class="plug-guide-tip"><strong>Tip</strong><p>Your account must be a member of both the source chat and target groups/channels.</p></div>
       </aside>
-
+      <section class="plug-gate-card">
+        <a href="/plugging" class="plug-gate-back">← Back to Plugging</a>
+        <div class="plug-gate-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" stroke-width="2"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></svg>
+        </div>
+        <h1>Plugging Workspace</h1>
+        <p class="plug-gate-desc">Enter your access key to open the workspace.</p>
+        <label for="access-key-input">Access Key</label>
+        <input id="access-key-input" class="plug-field-input" placeholder="PLG-XXXX-XXXX" autocomplete="off" spellcheck="false">
+        <button type="button" class="btn-primary-platform plug-gate-submit" id="unlock-btn">Enter Workspace</button>
+        <p id="gate-error" class="plug-form-error" hidden></p>
+        <p class="plug-gate-links"><a href="/plugging/status">Check order status</a></p>
+      </section>
     </div>
-
   </div>
 
-
-
+  <!-- Workspace -->
   <div id="workspace-view" class="plug-workspace" hidden>
-
     <header class="plug-topbar">
-
-      <div class="plug-topbar-brand"><span>⚡</span> Plugging Workspace</div>
-
-      <div style="display:flex;align-items:center;gap:1rem">
-
-        <span class="plug-topbar-meta" id="plan-info"></span>
-
-        <button type="button" class="plug-btn plug-btn-ghost" id="logout-btn">Logout</button>
-
+      <div class="plug-topbar-brand">
+        <span class="plug-brand-mark" aria-hidden="true">⚡</span>
+        <div>
+          <strong>Plugging Workspace</strong>
+          <small id="plan-info"></small>
+        </div>
       </div>
-
+      <div class="plug-topbar-actions">
+        <a href="/plugging" class="plug-topbar-link">Plugging</a>
+        <button type="button" class="btn-outline-platform plug-btn-compact" id="logout-btn">Logout</button>
+      </div>
     </header>
 
-    <aside class="plug-sidebar">
+    <div class="plug-workspace-inner">
+      <div class="plug-top-row">
+        <aside class="plug-guide-panel">
+          <h2>How to use</h2>
+          <ol class="plug-guide-list">
+            <li><span class="plug-guide-num">1</span><div><strong>Add Telegram account</strong><p>Enter phone with country code on the right.</p></div></li>
+            <li><span class="plug-guide-num">2</span><div><strong>Verify OTP</strong><p>Enter the code from your Telegram app.</p></div></li>
+            <li><span class="plug-guide-num">3</span><div><strong>Configure forwarding</strong><p>Source, targets, delay — then Start. Anti-spam timing runs automatically.</p></div></li>
+            <li><span class="plug-guide-num">4</span><div><strong>Monitor activity</strong><p>Watch live logs for complete forwards and errors.</p></div></li>
+          </ol>
+          <div class="plug-guide-tip"><strong>Tip</strong><p>After OTP verification, set your source channel and target groups below.</p></div>
+        </aside>
 
-      <div class="plug-sidebar-head">
-
-        <h2>Your Accounts</h2>
-
-        <p>Connect Telegram numbers linked to your plan</p>
-
+        <section class="plug-add-panel" id="plug-add-panel">
+          <div class="plug-add-panel-head">
+            <div class="plug-onboard-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/></svg>
+            </div>
+            <div>
+              <h2>Add Telegram Account</h2>
+              <p class="plug-panel-desc">Connect a number linked to your plan.</p>
+            </div>
+          </div>
+          <div class="plug-form-grid plug-form-grid-2">
+            <div class="plug-form-field">
+              <label for="new-label">Label <span class="plug-optional">optional</span></label>
+              <input id="new-label" class="plug-field-input" placeholder="My reseller account">
+            </div>
+            <div class="plug-form-field">
+              <label for="new-phone">Phone with country code</label>
+              <input id="new-phone" class="plug-field-input plug-field-mono" placeholder="639171234567" inputmode="tel">
+            </div>
+          </div>
+          <button type="button" class="btn-primary-platform" id="add-account-btn">Send Telegram Code</button>
+          <p id="add-account-msg" class="plug-form-msg" hidden></p>
+        </section>
       </div>
 
-      <ul class="plug-account-list" id="account-list"></ul>
+      <section class="plug-accounts-section">
+        <div class="plug-accounts-head">
+          <h2>My Accounts</h2>
+          <p>Select an account to configure forwarding and view live activity.</p>
+        </div>
+        <ul class="plug-account-list" id="account-list"></ul>
+      </section>
 
-      <div class="plug-panel plug-add-card">
-
-        <h3 style="margin:0 0 0.85rem;font-size:0.85rem">Add Telegram Account</h3>
-
-        <label>Label (optional)</label>
-
-        <input id="new-label" placeholder="My reseller account">
-
-        <label>Phone with country code</label>
-
-        <input id="new-phone" placeholder="639171234567">
-
-        <button type="button" class="plug-btn plug-btn-primary" id="add-account-btn" style="width:100%">Send Telegram Code</button>
-
-        <p id="add-account-msg" hidden style="font-size:0.82rem;margin:0.65rem 0 0"></p>
-
-      </div>
-
-    </aside>
-
-    <main class="plug-main" id="account-detail">
-
-      <div class="plug-empty-state">
-
-        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/></svg>
-
-        <p>Select an account or add your Telegram number to get started.</p>
-
-      </div>
-
-    </main>
-
+      <main class="plug-main" id="account-detail">
+        <div class="plug-empty-detail">
+          <p>Select an account above to configure forwarding and view live activity.</p>
+        </div>
+      </main>
+    </div>
   </div>
 
-  <script src="/plugging-workspace.js"></script>
-
+  <script src="/plugging-workspace.js?v=5"></script>
 </body>
-
 </html>
-
-

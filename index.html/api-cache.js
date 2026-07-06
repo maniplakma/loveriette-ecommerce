@@ -1,3 +1,12 @@
+/** Run fn when DOM is ready — defined first so sync body scripts can use it immediately. */
+window.domReady = window.onPageReady = function domReady(fn) {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', fn, { once: true });
+  } else {
+    fn();
+  }
+};
+
 /** Lightweight in-memory API cache with TTL */
 const ApiCache = (() => {
   const store = new Map();

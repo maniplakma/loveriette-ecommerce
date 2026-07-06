@@ -28,8 +28,9 @@ function renderCatalogProductCard({ href, name, description, icon, price, badgeH
     ? window.renderProductIcon(icon, name, 'logo-img')
     : esc(name.charAt(0));
   return `
-    <article class="product-card catalog-card">
+    <article class="product-card catalog-card catalog-card--float">
       <a href="${esc(href)}" class="catalog-card-link">
+        <span class="catalog-card-gloss" aria-hidden="true"></span>
         <div class="catalog-card-head">
           <div class="catalog-card-icon">
             <div class="logo${icon ? ' has-icon' : ''}">${iconHtml}</div>

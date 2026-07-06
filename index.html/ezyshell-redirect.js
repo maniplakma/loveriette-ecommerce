@@ -6,7 +6,7 @@
   if (params.get('from') !== 'ezyshell' && params.get('migrated') !== '1') return;
 
   const text =
-    'Welcome back, babe — use the same email and password from ezyshell. Your orders are already here ♡';
+    'Welcome back — use the same email and password from ezyshell. Your orders are already here.';
 
   function mountBanner(container) {
     if (!container || container.querySelector('.ezyshell-migrated-banner')) return;
@@ -26,6 +26,6 @@
     bar.hidden = false;
     bar.className = 'announcement-bar ezyshell-migrated-topbar';
     bar.innerHTML =
-      '<p><strong>From ezyshell?</strong> Sign in with your old account — same email &amp; password. Your history is ready ♡</p>';
+      '<p><strong>From ezyshell?</strong> Sign in with your old account — same email &amp; password. Your history is ready </p>';
   }
 })();

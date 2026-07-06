@@ -1,4 +1,4 @@
-const FLIRTY_BIO_FALLBACK = 'your go-to for premium digital goodies — shop, lend, build, and plug with someone who actually cares ♡';
+const FLIRTY_BIO_FALLBACK = 'your go-to for premium digital goodies — shop, lend, build, and plug with someone who actually cares ';
 
 function renderAboutSocials(links) {
   const orbit = document.getElementById('about-socials');
@@ -6,7 +6,7 @@ function renderAboutSocials(links) {
   orbit.innerHTML = '';
 
   if (!links.length) {
-    orbit.innerHTML = '<p class="about-social-empty flirty-prose">social links coming soon — stay tuned, babe ♡</p>';
+    orbit.innerHTML = '<p class="about-social-empty flirty-prose">Social links coming soon.</p>';
     return;
   }
 

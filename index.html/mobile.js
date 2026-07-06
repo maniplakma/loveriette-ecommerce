@@ -6,7 +6,6 @@
     dashboard: 'Dashboard',
     'active-purchases': 'My Purchases',
     plugging: 'Plugging',
-    loan: 'Loan',
     webtech: 'Webtech',
     wallet: 'Wallet Activity',
     'email-access': 'Email Access',

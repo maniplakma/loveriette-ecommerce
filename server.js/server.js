@@ -6,8 +6,25 @@ const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const appConfig = require('./config');
 const db = require('./db');
-const { fetchLatestEmailForAccount } = require('./imap-fetch');
+const { fetchLatestUnreadGmail, parseGmailFilters, getLastFetchedMessageId } = require('./gmail-fetch');
+const {
+  oauthConfigured,
+  getRedirectUri,
+  buildAuthUrl,
+  createOAuthState,
+  exchangeCodeForTokens,
+  fetchGoogleEmail,
+  saveGmailConnection
+} = require('./gmail-oauth');
+const {
+  purgeExpiredGmail,
+  getActiveGmailConnection,
+  assignGmailToBuyer,
+  getAssignmentForStock,
+  saveFetchedEmail
+} = require('./gmail-schema');
 const { sendHtmlPage } = require('./send-html-page');
+const { domainStatus, gmailOAuthAllowed, isCustomDomainConnected } = require('./domain-setup');
 const {
   buildOrderActivityMessage,
   buildOrderActivityMeta,
@@ -15,6 +32,11 @@ const {
 } = require('./activity-feed');
 
 appConfig.ensurePortableDirs();
+
+const schemaCheck = db.ensureCriticalSchema?.();
+if (schemaCheck && !schemaCheck.ok) {
+  console.error('[startup] Order schema incomplete:', schemaCheck.missing?.join(', '));
+}
 
 const app = express();
 const port = appConfig.port;
@@ -35,6 +57,16 @@ if (!fs.existsSync(reportProofsDir)) fs.mkdirSync(reportProofsDir, { recursive: 
 if (!fs.existsSync(receiptsDir)) fs.mkdirSync(receiptsDir, { recursive: true });
 if (!fs.existsSync(paymentQrDir)) fs.mkdirSync(paymentQrDir, { recursive: true });
 app.use('/uploads', express.static(uploadsDir));
+
+function reportPrimaryStockItemId(report) {
+  if (report.stock_item_id) return report.stock_item_id;
+  try {
+    const items = JSON.parse(report.reported_items || '[]');
+    return items[0]?.stockItemId || null;
+  } catch (_) {
+    return null;
+  }
+}
 
 function emptyUploadDir(dir) {
   if (!dir || !fs.existsSync(dir)) return;
@@ -310,11 +342,7 @@ function clearCart(req) {
 function getCheckoutItems(req, productId, variantId, directQuantity = 1) {
   if (productId) {
     const vid = variantId ? Number(variantId) : null;
-    const cart = getCartPayload(req);
-    const cartItem = cart.items.find((item) =>
-      item.productId === productId && (item.variantId || null) === vid
-    );
-    if (cartItem) return [cartItem];
+    const quantity = Math.max(1, Number(directQuantity) || 1);
 
     const product = db.prepare('SELECT * FROM products WHERE id = ?').get(productId);
     if (!product) return null;
@@ -331,7 +359,6 @@ function getCheckoutItems(req, productId, variantId, directQuantity = 1) {
       }
     }
 
-    const quantity = Math.max(1, Number(directQuantity) || 1);
     const unitPrice = unitPriceForQuantity(productId, vid, quantity, basePrice);
 
     return [{
@@ -479,6 +506,8 @@ function readTingiSettings() {
 
 function resolveFulfillmentMode(tingiDropEnabled, totalQuantity) {
   if (tingiDropEnabled) return 'manual';
+  const { minAutoDrop } = readTingiSettings();
+  if (totalQuantity < minAutoDrop) return 'manual';
   return 'auto';
 }
 
@@ -601,6 +630,15 @@ function claimOneStockForOrder(orderId) {
           profileData: profiles
         });
       }
+      if (order.user_id) {
+        try {
+          assignGmailToBuyer(db, {
+            buyerId: order.user_id,
+            orderId,
+            stockItemId: stockRow.id
+          });
+        } catch (_) { /* non-fatal */ }
+      }
       assignedStockId = stockRow.id;
       db.exec('COMMIT');
       const postSummary = orderFulfillmentSummary(orderId);
@@ -621,8 +659,122 @@ function claimOneStockForOrder(orderId) {
   }
 }
 
+function prepareOrderSchema() {
+  if (typeof db.ensureCriticalSchema === 'function') {
+    const result = db.ensureCriticalSchema();
+    if (!result.ok) {
+      console.error('[orders] schema incomplete:', result.missing?.join(', '));
+    }
+  }
+  try {
+    const hasSeq = db.prepare('PRAGMA table_info(orders)').all().some((c) => c.name === 'order_seq');
+    if (!hasSeq) return;
+    const missing = db.prepare(
+      'SELECT id FROM orders WHERE order_seq IS NULL ORDER BY datetime(created_at) ASC, id ASC'
+    ).all();
+    if (missing.length) {
+      let seq = db.prepare('SELECT COALESCE(MAX(order_seq), 0) AS m FROM orders').get().m;
+      const upd = db.prepare('UPDATE orders SET order_seq = ? WHERE id = ?');
+      for (const row of missing) {
+        seq += 1;
+        upd.run(seq, row.id);
+      }
+    }
+    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_order_seq ON orders(order_seq)');
+  } catch (err) {
+    console.error('[orders] order_seq backfill failed:', err.message);
+  }
+}
+
+function allocateOrderIdentity() {
+  prepareOrderSchema();
+  const hasSeqCol = db.prepare('PRAGMA table_info(orders)').all().some((c) => c.name === 'order_seq');
+  let seq = hasSeqCol
+    ? db.prepare('SELECT COALESCE(MAX(order_seq), 0) + 1 AS n FROM orders').get().n
+    : db.prepare('SELECT COALESCE(MAX(id), 0) + 1 AS n FROM orders').get().n;
+
+  for (let i = 0; i < 200; i++) {
+    const orderNumber = String(seq);
+    const numClash = db.prepare('SELECT 1 AS x FROM orders WHERE order_number = ?').get(orderNumber);
+    const seqClash = hasSeqCol
+      ? db.prepare('SELECT 1 AS x FROM orders WHERE order_seq = ?').get(seq)
+      : null;
+    if (!numClash && !seqClash) {
+      return { orderSeq: hasSeqCol ? seq : null, orderNumber };
+    }
+    seq += 1;
+  }
+  const fallback = `T${Date.now()}`;
+  return { orderSeq: hasSeqCol ? seq : null, orderNumber: fallback };
+}
+
 function nextOrderSeq() {
-  return db.prepare('SELECT COALESCE(MAX(order_seq), 0) + 1 AS n FROM orders').get().n;
+  const id = allocateOrderIdentity();
+  return id.orderSeq ?? (Number(id.orderNumber) || 0);
+}
+
+function insertOrderRow(fields) {
+  const cols = new Set(db.prepare('PRAGMA table_info(orders)').all().map((c) => c.name));
+  const hasModern = cols.has('order_seq') && cols.has('tingi_drop_enabled') && cols.has('fulfillment_mode');
+  if (hasModern) {
+    return db.prepare(`
+      INSERT INTO orders (
+        order_number, order_seq, user_id, email, payment_method_id, redeem_code_id,
+        subtotal, discount, total, status, tingi_drop_enabled, fulfillment_mode
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_payment', ?, ?)
+    `).run(
+      fields.orderNumber,
+      fields.orderSeq,
+      fields.userId,
+      fields.email,
+      fields.paymentMethodId,
+      fields.redeemCodeId,
+      fields.subtotal,
+      fields.discount,
+      fields.total,
+      fields.tingiDropEnabled ? 1 : 0,
+      fields.fulfillmentMode
+    );
+  }
+  return db.prepare(`
+    INSERT INTO orders (
+      order_number, user_id, email, payment_method_id, redeem_code_id,
+      subtotal, discount, total, status
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending_payment')
+  `).run(
+    fields.orderNumber,
+    fields.userId,
+    fields.email,
+    fields.paymentMethodId,
+    fields.redeemCodeId,
+    fields.subtotal,
+    fields.discount,
+    fields.total
+  );
+}
+
+function insertOrderItemRow(orderId, item) {
+  const cols = new Set(db.prepare('PRAGMA table_info(order_items)').all().map((c) => c.name));
+  if (cols.has('variant_id')) {
+    return db.prepare(`
+      INSERT INTO order_items (order_id, product_id, variant_id, product_name, quantity, price)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(orderId, item.productId, item.variantId || null, item.name, item.quantity, item.price);
+  }
+  return db.prepare(`
+    INSERT INTO order_items (order_id, product_id, product_name, quantity, price)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(orderId, item.productId, item.name, item.quantity, item.price);
+}
+
+function classifyOrderError(err) {
+  const msg = err?.message || String(err);
+  if (/no such column/i.test(msg)) return 'ORDER_SCHEMA';
+  if (/UNIQUE constraint/i.test(msg)) return 'ORDER_UNIQUE';
+  if (/FOREIGN KEY/i.test(msg)) return 'ORDER_FK';
+  return 'ORDER_UNKNOWN';
 }
 
 function findOrderByRef(ref) {
@@ -779,6 +931,15 @@ function fulfillOrderRemaining(orderId) {
             profileData: profiles
           });
         }
+        if (order.user_id) {
+          try {
+            assignGmailToBuyer(db, {
+              buyerId: order.user_id,
+              orderId,
+              stockItemId: stockRow.id
+            });
+          } catch (_) { /* non-fatal */ }
+        }
         assigned++;
       }
     }
@@ -811,8 +972,8 @@ function processExpiredTingiHolds() {
       createUserNotification(
         order.user_id,
         'order',
-        'Tingi drop delivered ♡',
-        `${result.assigned} remaining account(s) from order #${orderDisplayId(full)} were auto-delivered after the ${readTingiSettings().holdDays}-day hold — check my purchases, babe.`
+        'Tingi Drop delivered',
+        `${result.assigned} remaining account(s) from order #${orderDisplayId(full)} were auto-delivered after the ${readTingiSettings().holdDays}-day hold. Check My Purchases for credentials.`
       );
     }
   }
@@ -1810,6 +1971,90 @@ function withAvailability(product) {
   };
 }
 
+function lowestUnitPriceFromCfg(basePrice, bulkEnabled, bulkTiersRaw) {
+  const base = Number(basePrice) || 0;
+  if (!bulkEnabled) return base;
+  const tiers = parseBulkTiers(bulkTiersRaw);
+  if (!tiers.length) return base;
+  return Math.min(base, ...tiers.map((t) => t.price));
+}
+
+function batchStockCounts(productIds) {
+  const productStock = {};
+  const variantStock = {};
+  if (!productIds.length) return { productStock, variantStock };
+  const placeholders = productIds.map(() => '?').join(',');
+  db.prepare(`
+    SELECT product_id, COUNT(*) AS c FROM stock_items
+    WHERE status = 'available' AND product_id IN (${placeholders})
+    GROUP BY product_id
+  `).all(...productIds).forEach((r) => { productStock[r.product_id] = r.c; });
+  db.prepare(`
+    SELECT variant_id, COUNT(*) AS c FROM stock_items
+    WHERE status = 'available' AND product_id IN (${placeholders}) AND variant_id IS NOT NULL
+    GROUP BY variant_id
+  `).all(...productIds).forEach((r) => { variantStock[r.variant_id] = r.c; });
+  return { productStock, variantStock };
+}
+
+function listingAvailability(product, stock) {
+  let state; let label;
+  if (String(product.status || '').toUpperCase() === 'COMING SOON') {
+    state = 'coming_soon'; label = 'Coming Soon';
+  } else if (stock > 0) {
+    state = 'available'; label = 'Available';
+  } else if (product.allow_pre_order) {
+    state = 'preorder'; label = 'Preorder';
+  } else {
+    state = 'sold_out'; label = 'Sold Out';
+  }
+  return { stock, state, label };
+}
+
+function mapCatalogProducts(products) {
+  if (!products.length) return [];
+  const productIds = products.map((p) => p.id);
+  const { productStock, variantStock } = batchStockCounts(productIds);
+  const variantsMap = batchVariantsByProductIds(productIds);
+  return products.map((product) => {
+    const pStock = productStock[product.id] || 0;
+    const pa = listingAvailability(product, pStock);
+    const listingStockState = pa.stock > 0 ? 'available' : 'preorder';
+    const listingStockLabel = pa.stock > 0 ? 'Available' : 'Preorder';
+    const variants = (variantsMap[product.id] || []).map((v) => {
+      const vStock = variantStock[v.id] ?? pStock;
+      const va = listingAvailability(product, vStock);
+      const displayPrice = lowestUnitPriceFromCfg(v.price, v.bulkPricingEnabled, v.bulkTiers);
+      return {
+        id: v.id,
+        name: v.name,
+        duration: v.duration,
+        price: v.price,
+        displayPrice,
+        description: v.description,
+        availability: va.label,
+        availability_state: va.state
+      };
+    });
+    const prices = variants.length
+      ? variants.map((v) => v.displayPrice ?? v.price)
+      : [lowestUnitPriceFromCfg(product.price, product.bulk_pricing_enabled, product.bulk_tiers)];
+    return {
+      ...product,
+      stock: pStock,
+      availability: pa.label,
+      availability_state: pa.state,
+      listingStockState,
+      listingStockLabel,
+      slug: product.slug,
+      shareUrl: product.slug ? `/product/${product.slug}` : `/product.html?id=${product.id}`,
+      variants,
+      variantCount: variants.length,
+      startingPrice: prices.length ? Math.min(...prices) : 0
+    };
+  });
+}
+
 function withPlanListing(product) {
   const base = withAvailability(product);
   const variants = getVariants(product.id).map((v) => {
@@ -1860,10 +2105,13 @@ app.get('/products', (req, res) => {
   }
 
   query += ' ORDER BY is_featured DESC, id ASC';
+  const limit = Math.min(100, Math.max(0, Number(req.query.limit) || 0));
+  if (limit) query += ` LIMIT ${limit}`;
   if (!search && (!category || String(category).toLowerCase() === 'all')) {
     res.set('Cache-Control', 'public, max-age=30');
   }
-  const products = db.prepare(query).all(...params).map(withPlanListing);
+  const rows = db.prepare(query).all(...params);
+  const products = mapCatalogProducts(rows);
   res.json(products);
 });
 
@@ -1912,7 +2160,25 @@ app.post('/products/:id/view', (req, res) => {
   res.json({ views: row.views });
 });
 
-app.post('/auth/register', (req, res) => {
+const authRateBuckets = new Map();
+function authRateLimit(req, res, next) {
+  const key = String(req.ip || req.socket?.remoteAddress || 'unknown');
+  const now = Date.now();
+  const windowMs = 15 * 60 * 1000;
+  const maxAttempts = 30;
+  let bucket = authRateBuckets.get(key);
+  if (!bucket || now > bucket.resetAt) {
+    bucket = { count: 0, resetAt: now + windowMs };
+  }
+  bucket.count += 1;
+  authRateBuckets.set(key, bucket);
+  if (bucket.count > maxAttempts) {
+    return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
+  }
+  next();
+}
+
+app.post('/auth/register', authRateLimit, (req, res) => {
   const { name, email, password } = req.body;
 
   if (!name || !email || !password) {
@@ -1948,7 +2214,7 @@ app.post('/auth/register', (req, res) => {
   });
 });
 
-app.post('/auth/login', (req, res) => {
+app.post('/auth/login', authRateLimit, (req, res) => {
   const { email, password } = req.body;
 
   if (!email || !password) {
@@ -2303,55 +2569,20 @@ app.get('/account/services', requireAuth, (req, res) => {
     accessKey: row.status === 'approved' ? row.accessKey : null
   }));
 
-  const loanRows = db.prepare(`
-    SELECT la.application_id AS applicationId, la.status, la.created_at AS createdAt,
-           la.user_id AS userId, la.form_data AS formData,
-           lp.name AS planName, lp.slug AS planSlug
-    FROM loan_applications la
-    LEFT JOIN loan_plans lp ON lp.id = la.plan_id
-    WHERE la.user_id = ? OR la.user_id IS NULL
-    ORDER BY la.created_at DESC
-  `).all(userId);
-
-  const seenLoans = new Set();
-  const loans = [];
-  for (const row of loanRows) {
-    if (seenLoans.has(row.applicationId)) continue;
-    if (row.userId === userId) {
-      seenLoans.add(row.applicationId);
-      loans.push({
-        applicationId: row.applicationId,
-        status: row.status,
-        planName: row.planName,
-        planSlug: row.planSlug,
-        createdAt: row.createdAt
-      });
-      continue;
-    }
-    let formData = {};
-    try { formData = JSON.parse(row.formData || '{}'); } catch (_) { /* ignore */ }
-    if (String(formData.email || '').toLowerCase() === email) {
-      seenLoans.add(row.applicationId);
-      loans.push({
-        applicationId: row.applicationId,
-        status: row.status,
-        planName: row.planName,
-        planSlug: row.planSlug,
-        createdAt: row.createdAt
-      });
-    }
-  }
-
   const webtech = db.prepare(`
-    SELECT wi.id, wi.status, wi.name, wi.message, wi.created_at AS createdAt,
+    SELECT wi.id, wi.inquiry_ref AS inquiryRef, wi.status, wi.name, wi.message,
+           wi.unread_by_client AS unreadByClient, wi.created_at AS createdAt,
            wp.name AS packageName, wp.slug AS packageSlug
     FROM website_inquiries wi
     LEFT JOIN website_packages wp ON wp.id = wi.package_id
     WHERE LOWER(wi.email) = ?
     ORDER BY wi.created_at DESC
-  `).all(email);
+  `).all(email).map((row) => ({
+    ...row,
+    chatUrl: row.inquiryRef ? `/website-making/inquiry/${row.inquiryRef}` : null
+  }));
 
-  res.json({ plugging, loans, webtech });
+  res.json({ plugging, webtech });
 });
 
 app.get('/account/orders/:orderNumber/credentials', requireAuth, (req, res) => {
@@ -2421,8 +2652,8 @@ app.post('/account/orders/:orderNumber/claim', requireAuth, (req, res) => {
   createUserNotification(
     req.session.userId,
     'order',
-    'Delivered to you ♡',
-    `1 account from order #${order.order_number} is ready — check my purchases for your credentials, babe.`
+    'Account delivered',
+    `1 account from order #${order.order_number} is ready — check My Purchases for your credentials.`
   );
 
   const credentials = getOrderCredentialsForUser(order.order_number, req.session.userId, req.authUser.email);
@@ -2478,28 +2709,51 @@ app.post('/account/email/fetch', requireAuth, async (req, res) => {
   const stockItemId = Number(req.body.stockItemId);
   if (!stockItemId) return res.status(400).json({ error: 'Please select an account' });
 
-  if (!userOwnsStockItem(stockItemId, req.session.userId, req.authUser.email)) {
-    return res.status(403).json({ error: 'Account not found' });
-  }
-
-  const account = db.prepare(`
-    SELECT s.email, e.email AS accessEmail
-    FROM stock_items s
-    LEFT JOIN email_access_credentials e ON e.stock_item_id = s.id
-    WHERE s.id = ?
-  `).get(stockItemId);
-  const imap = getIntegration('imap');
-  if (imap.enabled === false) {
-    return res.status(400).json({ error: 'Email fetcher is disabled. Contact the seller.' });
-  }
-
-  const fetchEmail = account?.accessEmail || account?.email;
   try {
-    const result = await fetchLatestEmailForAccount(imap, fetchEmail);
+    const result = await fetchLatestEmailForBuyer({
+      buyerId: req.session.userId,
+      buyerEmail: req.authUser.email,
+      stockItemId
+    });
     res.json(result);
   } catch (err) {
-    res.status(500).json({ error: err.message || 'Could not fetch email' });
+    const status = err.statusCode || 500;
+    res.status(status).json({ error: err.message || 'Could not fetch email' });
   }
+});
+
+app.get('/emails/fetchLatest/:buyerId', requireAuth, async (req, res) => {
+  const buyerId = Number(req.params.buyerId);
+  const stockItemId = Number(req.query.stockItemId);
+  if (!buyerId || !stockItemId) {
+    return res.status(400).json({ error: 'buyerId and stockItemId query param are required' });
+  }
+  const admin = db.prepare('SELECT is_admin FROM users WHERE id = ?').get(req.session.userId);
+  if (req.session.userId !== buyerId && !admin?.is_admin) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  const buyer = db.prepare('SELECT email FROM users WHERE id = ?').get(buyerId);
+  if (!buyer) return res.status(404).json({ error: 'Buyer not found' });
+
+  try {
+    const result = await fetchLatestEmailForBuyer({
+      buyerId,
+      buyerEmail: buyer.email,
+      stockItemId
+    });
+    res.json(result);
+  } catch (err) {
+    const status = err.statusCode || 500;
+    res.status(status).json({ error: err.message || 'Could not fetch email' });
+  }
+});
+
+app.get('/buyer/dashboard', requireAuth, (req, res) => {
+  res.redirect('/dashboard.html');
+});
+
+app.get('/seller/dashboard', requireAdmin, (req, res) => {
+  res.redirect('/admin.html');
 });
 
 function submitProductReport(req, reportType) {
@@ -2632,7 +2886,9 @@ function submitProductReport(req, reportType) {
 
 app.post('/reports', requireAuth, (req, res) => {
   const out = submitProductReport(req, 'report');
-  if (out.error) return res.status(out.status).json({ error: out.error });
+  if (out.error) {
+    return res.status(out.status).json({ error: out.error });
+  }
   res.status(201).json({
     id: out.reportId,
     ok: true,
@@ -3126,7 +3382,8 @@ function batchVariantsByProductIds(productIds) {
   if (!productIds.length) return map;
   const placeholders = productIds.map(() => '?').join(',');
   const rows = db.prepare(`
-    SELECT id, product_id, name, duration, price, cost, description, rules, sort_order
+    SELECT id, product_id, name, duration, price, cost, description, rules, sort_order,
+           bulk_pricing_enabled AS bulkPricingEnabled, bulk_tiers AS bulkTiers
     FROM product_variants WHERE product_id IN (${placeholders})
     ORDER BY product_id ASC, sort_order ASC, id ASC
   `).all(...productIds);
@@ -3395,6 +3652,16 @@ app.put('/admin/contact/:id', requireAdmin, (req, res) => {
   res.json(updated);
 });
 
+app.get('/api/health', (req, res) => {
+  const domain = domainStatus();
+  res.json({
+    ok: true,
+    domainConnected: domain.domainConnected,
+    gmailOAuthAllowed: domain.gmailOAuthAllowed,
+    publicUrl: domain.publicUrl || null
+  });
+});
+
 app.get('/payment-methods', (req, res) => {
   const methods = db.prepare(`
     SELECT id, name, slug, qr_image_url, account_number, sort_order
@@ -3437,7 +3704,7 @@ app.post('/orders', (req, res) => {
 
   const paymentMethod = db.prepare(`
     SELECT id FROM payment_methods WHERE id = ? AND is_active = 1
-  `).get(paymentMethodId);
+  `).get(Number(paymentMethodId));
 
   if (!paymentMethod) {
     return res.status(400).json({ error: 'Invalid payment method' });
@@ -3480,39 +3747,29 @@ app.post('/orders', (req, res) => {
   }
 
   const total = subtotal - discount;
-  const orderSeq = nextOrderSeq();
-  const orderNumber = String(orderSeq);
+  prepareOrderSchema();
+  let { orderSeq, orderNumber } = allocateOrderIdentity();
 
   db.exec('BEGIN');
   try {
-    const orderResult = db.prepare(`
-      INSERT INTO orders (
-        order_number, order_seq, user_id, email, payment_method_id, redeem_code_id,
-        subtotal, discount, total, status, tingi_drop_enabled, fulfillment_mode
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_payment', ?, ?)
-    `).run(
+    const orderResult = insertOrderRow({
       orderNumber,
       orderSeq,
-      req.session.userId || null,
-      email.trim().toLowerCase(),
-      paymentMethodId,
+      userId: req.session.userId || null,
+      email: email.trim().toLowerCase(),
+      paymentMethodId: Number(paymentMethodId),
       redeemCodeId,
       subtotal,
       discount,
       total,
-      tingiDropEnabled ? 1 : 0,
+      tingiDropEnabled,
       fulfillmentMode
-    );
+    });
 
     const orderId = orderResult.lastInsertRowid;
-    const insertItem = db.prepare(`
-      INSERT INTO order_items (order_id, product_id, variant_id, product_name, quantity, price)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `);
 
     for (const item of items) {
-      insertItem.run(orderId, item.productId, item.variantId || null, item.name, item.quantity, item.price);
+      insertOrderItemRow(orderId, item);
     }
 
     if (redeemCodeId) {
@@ -3543,8 +3800,54 @@ app.post('/orders', (req, res) => {
 
     res.status(201).json(formatOrder(orderNumber));
   } catch (err) {
-    db.exec('ROLLBACK');
-    res.status(500).json({ error: 'Could not create order' });
+    try { db.exec('ROLLBACK'); } catch (_) { /* already rolled back */ }
+    const errMsg = err?.message || String(err);
+    console.error('[orders] create failed:', errMsg);
+
+    if (/UNIQUE constraint failed/i.test(errMsg) && /order_seq|order_number/i.test(errMsg)) {
+      try {
+        prepareOrderSchema();
+        ({ orderSeq, orderNumber } = allocateOrderIdentity());
+        db.exec('BEGIN');
+        const orderResult = insertOrderRow({
+          orderNumber,
+          orderSeq,
+          userId: req.session.userId || null,
+          email: email.trim().toLowerCase(),
+          paymentMethodId: Number(paymentMethodId),
+          redeemCodeId,
+          subtotal,
+          discount,
+          total,
+          tingiDropEnabled,
+          fulfillmentMode
+        });
+        const orderId = orderResult.lastInsertRowid;
+        for (const item of items) {
+          insertOrderItemRow(orderId, item);
+        }
+        if (redeemCodeId) {
+          db.prepare('UPDATE redeem_codes SET used_count = used_count + 1 WHERE id = ?').run(redeemCodeId);
+        }
+        db.exec('COMMIT');
+        if (productId) removeFromCart(req, Number(productId));
+        else clearCart(req);
+        return res.status(201).json(formatOrder(orderNumber));
+      } catch (retryErr) {
+        try { db.exec('ROLLBACK'); } catch (_) { /* ignore */ }
+        console.error('[orders] retry failed:', retryErr?.message || retryErr);
+      }
+    }
+
+    const errCode = classifyOrderError(err);
+    const clientError = appConfig.isProduction
+      ? 'Could not create order'
+      : `Could not create order: ${errMsg}`;
+    res.status(500).json({
+      error: clientError,
+      code: errCode,
+      detail: appConfig.isProduction ? undefined : errMsg
+    });
   }
 });
 
@@ -3620,8 +3923,8 @@ app.post('/admin/orders/:orderNumber/approve', requireAdmin, (req, res) => {
     createUserNotification(
       order.user_id,
       'order',
-      'Order approved ♡',
-      `order #${orderDisplayId(order)} is approved — your premium is waiting in my account, babe.`
+      'Order approved',
+      `Order #${orderDisplayId(order)} is approved — your credentials are in My Purchases.`
     );
   }
 
@@ -3694,10 +3997,15 @@ app.put('/admin/redeem-codes/:id', requireAdmin, (req, res) => {
    Settings helpers (loyalty, theme, store profile)
    ============================================================ */
 function getSetting(key, fallback = null) {
+  if (!getSetting._cache) getSetting._cache = new Map();
+  if (getSetting._cache.has(key)) return getSetting._cache.get(key);
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
-  return row ? row.value : fallback;
+  const val = row ? row.value : fallback;
+  getSetting._cache.set(key, val);
+  return val;
 }
 function setSetting(key, value) {
+  if (getSetting._cache) getSetting._cache.set(key, String(value));
   db.prepare(`
     INSERT INTO settings (key, value) VALUES (?, ?)
     ON CONFLICT(key) DO UPDATE SET value = excluded.value
@@ -3782,6 +4090,52 @@ function saveThemeColorSettings(colors) {
 /* ============================================================
    ALL ORDERS — pending / approved / rejected + search + date
    ============================================================ */
+function mapOrderCards(rows) {
+  if (!rows.length) return [];
+  const ids = rows.map((r) => r.id);
+  const ph = ids.map(() => '?').join(',');
+  const itemRows = db.prepare(`
+    SELECT order_id, product_name AS name, quantity
+    FROM order_items WHERE order_id IN (${ph})
+    ORDER BY id ASC
+  `).all(...ids);
+  const itemsByOrder = new Map();
+  for (const item of itemRows) {
+    if (!itemsByOrder.has(item.order_id)) itemsByOrder.set(item.order_id, []);
+    itemsByOrder.get(item.order_id).push(item);
+  }
+  return rows.map((o) => {
+    const items = itemsByOrder.get(o.id) || [];
+    const first = items[0];
+    const buyerName = o.buyer_name || o.user_name || (o.email ? o.email.split('@')[0] : 'Guest');
+    return {
+      id: o.id,
+      orderNumber: o.order_number,
+      orderId: o.order_seq,
+      displayId: orderDisplayId(o),
+      buyerName,
+      email: o.email,
+      userId: o.user_id || null,
+      user: {
+        id: o.user_id || null,
+        name: o.buyer_name || o.user_name || buyerName,
+        email: o.email
+      },
+      itemName: first ? first.name : '—',
+      itemQty: first ? first.quantity : 0,
+      itemCount: items.length,
+      stockState: null,
+      stockLabel: null,
+      total: o.total,
+      paymentMethod: o.payment_method_name,
+      status: o.status,
+      receiptUrl: o.receipt_url || null,
+      rejectReason: o.reject_reason || null,
+      createdAt: o.created_at
+    };
+  });
+}
+
 function orderCard(o) {
   const items = db.prepare(
     'SELECT product_name AS name, quantity FROM order_items WHERE order_id = ?'
@@ -3841,8 +4195,9 @@ app.get('/admin/all-orders', requireAdmin, (req, res) => {
   }
   if (req.query.from) { query += ' AND date(o.created_at) >= date(?)'; params.push(req.query.from); }
   if (req.query.to) { query += ' AND date(o.created_at) <= date(?)'; params.push(req.query.to); }
-  query += ' ORDER BY o.id DESC';
-  res.json(db.prepare(query).all(...params).map(orderCard));
+  query += ' ORDER BY o.id DESC LIMIT 150';
+  const rows = db.prepare(query).all(...params);
+  res.json(mapOrderCards(rows));
 });
 
 app.post('/admin/orders/:orderNumber/reject', requireAdmin, (req, res) => {
@@ -4513,6 +4868,18 @@ app.get('/admin/reports/:id/detail', requireAdmin, (req, res) => {
     emailAccess = getEmailAccessForStock(report.stock_item_id);
   }
 
+  if (!stockItem && reportedItems[0]?.stockItemId) {
+    const sid = reportedItems[0].stockItemId;
+    stockItem = db.prepare(`
+      SELECT s.*, p.name AS product_name, v.name AS variant_name
+      FROM stock_items s
+      LEFT JOIN products p ON p.id = s.product_id
+      LEFT JOIN product_variants v ON v.id = s.variant_id
+      WHERE s.id = ?
+    `).get(sid);
+    emailAccess = getEmailAccessForStock(sid);
+  }
+
   const affectedReports = report.stock_item_id
     ? db.prepare(`
       SELECT r.*, u.username FROM product_reports r
@@ -4566,11 +4933,13 @@ app.post('/admin/reports/:id/action', requireAdmin, (req, res) => {
   const stockDescription = String(req.body.stockDescription || '').trim();
   const rejectReason = String(req.body.rejectReason || req.body.reason || '').trim();
   const userId = report.user_id;
-  const stockItemId = report.stock_item_id;
+  const stockItemId = reportPrimaryStockItemId(report);
 
   const notifyBuyer = (title, body, type = 'report') => {
     createUserNotification(userId, type, title, body);
   };
+
+  const finishAction = (actionName, payload) => res.json(payload);
 
   if (action === 'fix_active') {
     if (!stockItemId) return res.status(400).json({ error: 'No purchased account linked to this report' });
@@ -4621,7 +4990,7 @@ app.post('/admin/reports/:id/action', requireAdmin, (req, res) => {
     db.prepare('INSERT INTO admin_notifications (type, title, body, is_read) VALUES (?, ?, ?, 0)')
       .run('report', 'Account replaced', `Report #${reportId} — credentials updated for stock #${stockItemId}`);
 
-    return res.json({ ok: true, action: 'fix_active' });
+    return finishAction('fix_active', { ok: true, action: 'fix_active' });
   }
 
   if (action === 'refund') {
@@ -4671,7 +5040,7 @@ app.post('/admin/reports/:id/action', requireAdmin, (req, res) => {
     db.prepare('INSERT INTO admin_notifications (type, title, body, is_read) VALUES (?, ?, ?, 0)')
       .run('payout', 'Refund processed', `Report #${reportId} — ${peso(amount)} for order #${report.order_number || '—'}`);
 
-    return res.json({ ok: true, action: 'refund', amount });
+    return finishAction('refund', { ok: true, action: 'refund', amount });
   }
 
   if (action === 'void') {
@@ -4689,7 +5058,7 @@ app.post('/admin/reports/:id/action', requireAdmin, (req, res) => {
       'report'
     );
 
-    return res.json({ ok: true, action: 'void' });
+    return finishAction('void', { ok: true, action: 'void' });
   }
 
   if (action === 'reject') {
@@ -4709,7 +5078,7 @@ app.post('/admin/reports/:id/action', requireAdmin, (req, res) => {
       'report'
     );
 
-    return res.json({ ok: true, action: 'reject' });
+    return finishAction('reject', { ok: true, action: 'reject' });
   }
 
   return res.status(400).json({ error: 'Invalid action. Use fix_active, refund, void, or reject.' });
@@ -4734,8 +5103,8 @@ app.post('/admin/reports/:id/resolve', requireAdmin, (req, res) => {
     createUserNotification(
       report.user_id,
       'report',
-      'Report resolved ♡',
-      `your report for order #${report.order_number || '—'} is all sorted — check your dashboard, babe.`
+      'Report resolved',
+      `Your report for order #${report.order_number || '—'} has been resolved — check your dashboard for details.`
     );
   }
 
@@ -4815,6 +5184,7 @@ app.post('/admin/store-profile/photo', requireAdmin, (req, res) => {
 });
 
 app.get('/store-profile', (req, res) => {
+  res.set('Cache-Control', 'public, max-age=60');
   const photoUrl = getSetting('store_profile_photo', '');
   const logoUrl = getSetting('store_logo_url', '/assets/store-logo.png');
   res.json({
@@ -4975,10 +5345,12 @@ app.get('/tingi-drop', (req, res) => {
 });
 
 app.get('/theme-colors', (req, res) => {
+  res.set('Cache-Control', 'no-store');
   res.json(getThemeColorSettings());
 });
 
 app.get('/branding', (req, res) => {
+  res.set('Cache-Control', 'public, max-age=60');
   res.json({
     name: getSetting('store_brand_name', 'loveriette'),
     logoUrl: getSetting('store_logo_url', '/assets/store-logo.png'),
@@ -5053,11 +5425,16 @@ const DEFAULT_SOCIAL = appConfig.parseDefaultSocialLinks();
 function getSocialLinks() {
   const raw = getSetting('social_links', '');
   if (!raw) return DEFAULT_SOCIAL;
-  try { const arr = JSON.parse(raw); return Array.isArray(arr) ? arr : DEFAULT_SOCIAL; } catch (_) { return DEFAULT_SOCIAL; }
+  try {
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr) || !arr.length) return DEFAULT_SOCIAL;
+    return arr;
+  } catch (_) { return DEFAULT_SOCIAL; }
 }
 
 // Public — buyer storefront (only enabled links)
 app.get('/social', (req, res) => {
+  res.set('Cache-Control', 'public, max-age=60');
   res.json(getSocialLinks().filter((l) => l.enabled && l.url));
 });
 
@@ -5096,17 +5473,157 @@ app.put('/admin/chat-seller-bot', requireAdmin, (req, res) => {
 /* ============================================================
    INTEGRATIONS — SMTP, Tawk.to, Telegram Bot, IMAP Fetcher
    ============================================================ */
-const INTEGRATION_KEYS = ['imap', 'smtp', 'tawk', 'telegram', 'chat-seller'];
+const INTEGRATION_KEYS = ['gmail', 'chat-seller'];
 function getIntegration(name) {
   try { return JSON.parse(getSetting('integration_' + name, '{}')); } catch (_) { return {}; }
 }
 
+function mergeGmailIntegration(existing = {}, incoming = {}) {
+  return {
+    ...existing,
+    ...incoming,
+    enabled: incoming.enabled !== false && incoming.enabled !== 'false',
+    unreadOnly: incoming.unreadOnly !== false && incoming.unreadOnly !== 'false',
+    inboxOnly: incoming.inboxOnly !== false && incoming.inboxOnly !== 'false',
+    allowedSenders: String(incoming.allowedSenders ?? existing.allowedSenders ?? ''),
+    blockedSenders: String(incoming.blockedSenders ?? existing.blockedSenders ?? ''),
+    subjectKeywords: String(incoming.subjectKeywords ?? existing.subjectKeywords ?? ''),
+    extraQuery: String(incoming.extraQuery ?? existing.extraQuery ?? '')
+  };
+}
+
+function isGmailFetcherEnabled() {
+  const settings = getIntegration('gmail');
+  if (settings.enabled === false) return false;
+  return !!getActiveGmailConnection(db);
+}
+
+async function fetchLatestEmailForBuyer({ buyerId, buyerEmail, stockItemId }) {
+  if (!isGmailFetcherEnabled()) {
+    const err = new Error('Email fetcher is disabled. Contact the seller.');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (!userOwnsStockItem(stockItemId, buyerId, buyerEmail)) {
+    const err = new Error('Account not found');
+    err.statusCode = 403;
+    throw err;
+  }
+
+  const account = db.prepare(`
+    SELECT s.email, e.email AS accessEmail
+    FROM stock_items s
+    LEFT JOIN email_access_credentials e ON e.stock_item_id = s.id
+    WHERE s.id = ?
+  `).get(stockItemId);
+  const fetchEmail = account?.accessEmail || account?.email;
+
+  let assignment = getAssignmentForStock(db, buyerId, stockItemId);
+  if (!assignment) {
+    const orderLink = db.prepare(`
+      SELECT o.id AS orderId FROM orders o
+      JOIN order_fulfillments f ON f.order_id = o.id
+      WHERE f.stock_item_id = ? AND o.user_id = ?
+      ORDER BY o.id DESC LIMIT 1
+    `).get(stockItemId, buyerId);
+    assignGmailToBuyer(db, {
+      buyerId,
+      orderId: orderLink?.orderId || null,
+      stockItemId
+    });
+    assignment = getAssignmentForStock(db, buyerId, stockItemId);
+  }
+
+  const conn = (assignment?.access_token_enc ? assignment : null) || getActiveGmailConnection(db);
+  if (!conn?.access_token_enc) {
+    const err = new Error('Seller has not connected Gmail yet. Contact support.');
+    err.statusCode = 503;
+    throw err;
+  }
+
+  const gmailSettings = getIntegration('gmail');
+  const filters = parseGmailFilters(gmailSettings);
+  const skipMessageId = getLastFetchedMessageId(db, buyerId, stockItemId);
+
+  const result = await fetchLatestUnreadGmail(db, conn, fetchEmail, { filters, skipMessageId });
+  if (result.found) {
+    saveFetchedEmail(db, {
+      buyerId,
+      stockItemId,
+      gmailMessageId: result.messageId,
+      subject: result.subject,
+      bodyText: result.bodyText || result.body,
+      bodyHtml: result.bodyHtml,
+      fromAddress: result.from
+    });
+  }
+  return result;
+}
+
+app.get('/auth/google', requireAdmin, (req, res) => {
+  if (!isCustomDomainConnected()) {
+    return res.status(503).send(
+      'Gmail OAuth is disabled until your custom domain is connected. Set PUBLIC_URL=https://your-domain.com in .env and restart the server.'
+    );
+  }
+  if (!oauthConfigured()) {
+    return res.status(503).send('Google OAuth is not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env (redirect URI is auto-built from PUBLIC_URL).');
+  }
+  const state = createOAuthState();
+  req.session.googleOAuthState = state;
+  req.session.googleOAuthAdminId = req.session.userId;
+  req.session.save(() => res.redirect(buildAuthUrl(state)));
+});
+
+app.get('/auth/google/callback', async (req, res) => {
+  if (!isCustomDomainConnected()) {
+    return res.redirect('/admin.html?gmail=domain_required');
+  }
+  const { code, state, error } = req.query;
+  if (error) return res.redirect('/admin.html?gmail=error');
+  if (!code || !state || state !== req.session.googleOAuthState) {
+    return res.redirect('/admin.html?gmail=invalid_state');
+  }
+  try {
+    const tokens = await exchangeCodeForTokens(String(code));
+    if (!tokens.access_token) throw new Error('No access token returned');
+    const email = await fetchGoogleEmail(tokens.access_token);
+    if (!email) throw new Error('Could not read Gmail address from Google profile');
+    saveGmailConnection(db, {
+      email,
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token,
+      expiresIn: tokens.expires_in,
+      adminUserId: req.session.googleOAuthAdminId,
+      label: email
+    });
+    const existingGmail = getIntegration('gmail');
+    setSetting('integration_gmail', JSON.stringify(mergeGmailIntegration(existingGmail, {
+      enabled: true,
+      connectedEmail: email
+    })));
+    delete req.session.googleOAuthState;
+    delete req.session.googleOAuthAdminId;
+    res.redirect('/admin.html?gmail=connected');
+  } catch (err) {
+    const msg = err.message || 'OAuth failed';
+    res.redirect(`/admin.html?gmail=error&msg=${encodeURIComponent(msg)}`);
+  }
+});
+
 app.get('/admin/integrations', requireAdmin, (req, res) => {
+  const domain = domainStatus();
+  const activeGmail = getActiveGmailConnection(db);
   res.json({
-    imap: getIntegration('imap'),
-    smtp: getIntegration('smtp'),
-    tawk: getIntegration('tawk'),
-    telegram: getIntegration('telegram'),
+    gmail: {
+      ...getIntegration('gmail'),
+      oauthConfigured: oauthConfigured(),
+      oauthAllowed: gmailOAuthAllowed(),
+      domainConnected: domain.domainConnected,
+      publicUrl: domain.publicUrl,
+      redirectUri: getRedirectUri(),
+      gmailConnected: !!activeGmail
+    },
     'chat-seller': { ...getChatSellerBotSettings(), ...getIntegration('chat_seller') }
   });
 });
@@ -5116,48 +5633,43 @@ app.put('/admin/integrations/:name', requireAdmin, (req, res) => {
     return res.status(400).json({ error: 'Unknown integration' });
   }
   const key = req.params.name === 'chat-seller' ? 'chat_seller' : req.params.name;
-  setSetting('integration_' + key, JSON.stringify(req.body || {}));
-  res.json({ ok: true });
+  const existing = getIntegration(key);
+  const incoming = { ...(req.body || {}) };
+  delete incoming.testEmail;
+  delete incoming.connections;
+  delete incoming.oauthConfigured;
+  delete incoming.redirectUri;
+
+  const merged = req.params.name === 'gmail'
+    ? mergeGmailIntegration(existing, incoming)
+    : { ...existing, ...incoming };
+
+  if (req.params.name === 'gmail' && merged.enabled && !gmailOAuthAllowed()) {
+    return res.status(400).json({
+      error: 'Gmail integration cannot be enabled until your custom domain is connected (PUBLIC_URL must be https://your-domain.com).'
+    });
+  }
+
+  setSetting('integration_' + key, JSON.stringify(merged));
+  res.json({ ok: true, ...merged });
 });
 
-// Live IMAP login test (used by the "Test Fetcher" button)
-app.post('/admin/integrations/test-imap', requireAdmin, (req, res) => {
-  const tls = require('tls');
-  const net = require('net');
-  const { host, port, username, password, enc, validateSsl } = req.body || {};
-  if (!host || !username || !password) {
-    return res.status(400).json({ error: 'Host, email username and app password are required' });
+app.post('/admin/integrations/test-gmail', requireAdmin, async (req, res) => {
+  const conn = getActiveGmailConnection(db);
+  if (!conn) return res.status(400).json({ ok: false, message: 'No active Gmail connection. Connect Gmail first.' });
+  const testEmail = String(req.body?.testEmail || conn.connected_email).trim();
+  const filters = parseGmailFilters(getIntegration('gmail'));
+  try {
+    const result = await fetchLatestUnreadGmail(db, conn, testEmail, { filters, skipMessageId: null });
+    res.json({
+      ok: result.found,
+      message: result.found
+        ? `Gmail API OK — latest unread fetched (${result.subject || 'no subject'})`
+        : (result.message || 'No unread message found')
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, message: err.message || 'Gmail test failed' });
   }
-  const p = Number(port) || 993;
-  const useTls = (enc || 'SSL').toUpperCase() !== 'NONE';
-  let done = false;
-  let stage = 0;
-
-  const finish = (ok, message) => {
-    if (done) return;
-    done = true;
-    try { socket.destroy(); } catch (_) { /* ignore */ }
-    res.json({ ok, message });
-  };
-
-  const opts = { host, port: p, servername: host, rejectUnauthorized: !!validateSsl };
-  const socket = useTls
-    ? tls.connect(opts, () => {})
-    : net.connect({ host, port: p }, () => {});
-
-  socket.setTimeout(8000);
-  socket.on('timeout', () => finish(false, 'Connection timed out'));
-  socket.on('error', (e) => finish(false, e.message || 'Connection failed'));
-  socket.on('data', (buf) => {
-    const s = buf.toString();
-    if (stage === 0 && s.includes('* OK')) {
-      stage = 1;
-      socket.write(`a1 LOGIN "${username}" "${password}"\r\n`);
-    } else if (stage === 1) {
-      if (/a1 OK/i.test(s)) finish(true, 'Login successful — mailbox reachable.');
-      else if (/a1 (NO|BAD)/i.test(s)) finish(false, 'Login rejected — check email & app password.');
-    }
-  });
 });
 
 function getLocalNetworkUrls() {
@@ -5186,7 +5698,18 @@ const platformHelpers = mountPlatformRoutes(app, db, {
   parseBulkTiers
 });
 
-app.use(express.static(appConfig.frontendDir));
+app.use(express.static(appConfig.frontendDir, {
+  setHeaders(res, filePath) {
+    const base = path.basename(filePath);
+    if (base.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+      return;
+    }
+    if (/\.(js|css|woff2?|png|jpe?g|webp|svg|ico|gif)$/i.test(base)) {
+      res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+    }
+  }
+}));
 
 app.listen(port, host, () => {
   if (appConfig.publicUrl) {
@@ -5204,4 +5727,6 @@ app.listen(port, host, () => {
   }
   processExpiredTingiHolds();
   setInterval(processExpiredTingiHolds, 15 * 60 * 1000);
+  purgeExpiredGmail(db);
+  setInterval(() => purgeExpiredGmail(db), 60 * 60 * 1000);
 });

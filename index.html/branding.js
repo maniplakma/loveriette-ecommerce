@@ -32,6 +32,17 @@
     if (!GOOGLE_FONTS.includes(name)) return;
     const id = `gf-brand-${name.replace(/\s+/g, '-')}`;
     if (document.getElementById(id)) return;
+    if (!document.querySelector('link[href*="fonts.googleapis.com"]')) {
+      const pre1 = document.createElement('link');
+      pre1.rel = 'preconnect';
+      pre1.href = 'https://fonts.googleapis.com';
+      document.head.appendChild(pre1);
+      const pre2 = document.createElement('link');
+      pre2.rel = 'preconnect';
+      pre2.href = 'https://fonts.gstatic.com';
+      pre2.crossOrigin = 'anonymous';
+      document.head.appendChild(pre2);
+    }
     const weights = name === 'Syne'
       ? 'wght@700;800'
       : name === 'Bodoni Moda'
@@ -133,7 +144,7 @@
 
   function ensureDesktopBrand() {
     document.querySelectorAll('.nav-inner').forEach((inner) => {
-      if (inner.querySelector('.store-brand')) return;
+      if (inner.querySelector('.store-brand') || inner.querySelector('.nav-brand')) return;
       const brand = document.createElement('a');
       brand.className = 'store-brand';
       brand.href = 'index.html';

@@ -26,10 +26,19 @@
     { id: 'mdi:shield-check', label: 'Premium' }
   ];
 
+  const DEFAULT_ICON_COLOR = '%23ffffff';
+
+  function normalizeIconColor(color) {
+    if (!color) return DEFAULT_ICON_COLOR;
+    const c = String(color).trim();
+    if (c.startsWith('%23')) return c;
+    if (c.startsWith('#')) return `%23${c.slice(1).toLowerCase()}`;
+    return encodeURIComponent(c);
+  }
+
   function productIconUrl(iconId, color) {
     if (!iconId) return '';
-    const q = color ? `?color=${encodeURIComponent(color)}` : '';
-    return `${ICONIFY}${encodeURIComponent(iconId)}.svg${q}`;
+    return `${ICONIFY}${encodeURIComponent(iconId)}.svg?color=${normalizeIconColor(color)}`;
   }
 
   function renderProductIcon(iconId, name, className, color) {
@@ -38,7 +47,7 @@
     if (!iconId) {
       return `<span class="product-icon-fallback">${letter}</span>`;
     }
-    const src = productIconUrl(iconId, color || '%23ff7070');
+    const src = productIconUrl(iconId, color);
     return `<img class="${cls}" src="${src}" alt="${name || ''}" loading="lazy"
       onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'product-icon-fallback',textContent:'${letter.replace(/'/g, "\\'")}'}))">`;
   }

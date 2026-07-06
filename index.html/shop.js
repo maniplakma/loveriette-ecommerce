@@ -2,6 +2,14 @@
 let activeCategory = 'All';
 let searchTimer = null;
 
+const domReady = window.domReady || window.onPageReady || function (fn) {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', fn, { once: true });
+  } else {
+    fn();
+  }
+};
+
 const productsEl = document.getElementById('products');
 const emptyStateEl = document.querySelector('.empty-state');
 const searchInput = document.getElementById('search-input');
@@ -77,7 +85,7 @@ searchInput?.addEventListener('input', () => {
   searchTimer = setTimeout(loadProducts, 300);
 });
 
-document.addEventListener('DOMContentLoaded', () => {
+domReady(() => {
   initPlatformNav('shop');
   if (window.renderShareButtons) {
     renderShareButtons(document.getElementById('shop-share'), '/shop', 'Shop');

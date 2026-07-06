@@ -14,6 +14,7 @@ function sendHtmlPage(res, frontendDir, filename) {
     html = html.replace(/<head(\s[^>]*)?>/i, (m) => `${m}\n  <base href="/">`);
   }
   res.set('Content-Type', 'text/html; charset=utf-8');
+  res.set('Cache-Control', 'no-cache, must-revalidate');
   res.send(html);
 }
 

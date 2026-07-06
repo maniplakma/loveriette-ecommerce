@@ -13,7 +13,7 @@ function renderTerms(sections) {
     card.className = 'info-card legal-card';
     card.innerHTML = `
       <h3>${section.title}</h3>
-      <div class="legal-body flirty-prose">${section.body}</div>
+      <div class="legal-body">${section.body}</div>
     `;
     list.appendChild(card);
   });

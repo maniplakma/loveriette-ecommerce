@@ -5,6 +5,29 @@ const appConfig = require('./config');
 
 const db = new DatabaseSync(appConfig.dbPath);
 
+function integrityCheck(database) {
+  try {
+    const row = database.prepare('PRAGMA integrity_check').get();
+    const result = row?.integrity_check ?? Object.values(row || {})[0];
+    return result === 'ok' ? { ok: true } : { ok: false, result: String(result) };
+  } catch (err) {
+    return { ok: false, result: err.message || String(err) };
+  }
+}
+
+const integrity = integrityCheck(db);
+if (!integrity.ok) {
+  const msg = `[db] CRITICAL: integrity check failed (${integrity.result}). ` +
+    `Restore server.js/ecom.db from ecom.db.pre-deploy-* backup or run: bash scripts/repair-db.sh`;
+  console.error(msg);
+  throw new Error(msg);
+}
+
+try {
+  db.exec('PRAGMA journal_mode = WAL');
+  db.exec('PRAGMA busy_timeout = 5000');
+} catch (_) { /* ignore on read-only or unsupported */ }
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -279,31 +302,31 @@ const defaultSettings = {
   tingi_min_qty: '2',
   tingi_max_qty: '50',
   tingi_hold_days: '10',
-  payment_instructions_text: 'pay via QR only, babe — send the exact amount or we can\'t approve your order.\nmake sure you\'re paying the right QR code, love.\nuploaded receipts only — edited or downloaded screenshots won\'t fly.\nwe\'ll review it fast once you confirm ♡',
+  payment_instructions_text: 'Pay via QR only — send the exact amount or we cannot approve your order.\nMake sure you are paying the correct QR code.\nUploaded receipts only — edited or downloaded screenshots are not accepted.\nWe will review your payment shortly after you confirm.',
   order_guide_steps: JSON.stringify([
     {
       number: '1',
-      title: 'pick your premium',
-      description: 'browse our catalog and find something that speaks to you.',
-      bullets: ['open shop from the menu', 'choose a product and variant (e.g. 1 month)']
+      title: 'Choose a product',
+      description: 'Browse the catalog and select the plan you need.',
+      bullets: ['Open Shop from the menu', 'Choose a product and variant (e.g. 1 month)']
     },
     {
       number: '2',
-      title: 'add to cart',
-      description: 'drop it in your cart — or go straight to checkout if you\'re ready.',
-      bullets: ['tap purchase on the plan card', 'or use the cart icon to collect a few first']
+      title: 'Add to cart',
+      description: 'Add items to your cart or go straight to checkout.',
+      bullets: ['Tap Purchase on the plan card', 'Or use the cart icon to collect multiple items']
     },
     {
       number: '3',
-      title: 'checkout & pay',
-      description: 'complete payment via GCash or your chosen method.',
-      bullets: ['enter your email at checkout', 'upload your payment receipt screenshot', 'hit confirm — we\'ll take it from there']
+      title: 'Checkout and pay',
+      description: 'Complete payment via GCash or your chosen method.',
+      bullets: ['Enter your email at checkout', 'Upload your payment receipt screenshot', 'Tap Confirm — we will review your order']
     },
     {
       number: '4',
-      title: 'get approved & enjoy',
-      description: 'we verify your payment, then deliver your credentials with care.',
-      bullets: ['wait for approval — usually quick, babe', 'open my account → purchases for your details', 'message us anytime if you need help ♡']
+      title: 'Get approved and access',
+      description: 'We verify your payment, then deliver your credentials.',
+      bullets: ['Wait for approval — usually within a few hours', 'Open My Account → Purchases for your details', 'Contact support if you need help']
     }
   ])
 };
@@ -815,19 +838,34 @@ for (const row of db.prepare('SELECT id, name FROM products').all()) {
 
 const seedFaqs = [
   {
-    question: 'how do i get my account?',
-    answer: "once your payment is approved, your credentials (email, password, pin) appear instantly in my account → purchases. easy, babe ♡",
+    question: 'How do I get my account after payment?',
+    answer: 'After your payment is approved, sign in and open My Account → Purchases. Your credentials (email, password, PIN, or access details) appear on the order page for that purchase. Delivery is digital only — nothing is shipped physically. If details are missing after approval, contact support with your order number and payment proof.',
     sort_order: 1
   },
   {
-    question: 'is there a warranty?',
-    answer: 'yes, love — every account comes with a 30-day warranty. if something stops working, message us and we\'ll make it right.',
+    question: 'Is there a warranty on digital products?',
+    answer: 'Yes. Eligible shop items include a warranty period stated on the product page (commonly 30 days from delivery). Warranty covers defects such as login failure or service not working as described when used according to the product rules. It does not cover misuse, sharing against policy, or unauthorized credential changes on shared accounts. Open a support ticket with your order ID to request warranty service.',
     sort_order: 2
   },
   {
-    question: 'can i change the password?',
-    answer: 'for shared accounts, please don\'t change the email or password — it voids the warranty. private accounts? all yours to customize.',
+    question: 'Can I change the password on my account?',
+    answer: 'For shared or profile-type products, do not change the registered email or password unless the listing explicitly allows it — unauthorized changes may void your warranty. For private or solo accounts labeled as fully yours, you may customize credentials after delivery. Always read the product description before modifying anything.',
     sort_order: 3
+  },
+  {
+    question: 'What if I paid the wrong amount?',
+    answer: 'Orders with incorrect payment amounts may be held or rejected until the difference is settled or the order is cancelled. Pay exactly the total shown at checkout and upload a clear, unedited receipt. Contact support before submitting a new payment if you are unsure.',
+    sort_order: 4
+  },
+  {
+    question: 'How do refunds work?',
+    answer: 'Digital goods are generally final once delivered and working as described. Refunds or replacements are considered only for defective, incorrect, or misdescribed items, and must be requested within 24 hours of purchase with valid proof. Chargebacks without contacting us first may result in permanent account suspension.',
+    sort_order: 5
+  },
+  {
+    question: 'How can I reach support?',
+    answer: 'Use the Contact page for Telegram, email, and channel links. When messaging support, include your registered email, order number, and a screenshot of the issue. Response times vary by queue volume; Telegram is usually the fastest during business hours.',
+    sort_order: 6
   }
 ];
 
@@ -898,97 +936,127 @@ if (contactCount === 0) {
 
 const seedTerms = [
   {
-    title: '1. acceptance of terms',
-    body: 'by using loveriette, you agree to these terms — if anything feels off, reach out before you continue, babe.',
+    title: '1. Acceptance of Terms',
+    body: 'By accessing or using Loveriette ("the Platform"), you agree to be bound by these Terms of Service and our Privacy Policy. If you do not agree, you must not use the Platform. You represent that you are at least 18 years of age or have legal parental consent, and that you have the legal capacity to enter into this agreement under applicable law in the Philippines.',
     sort_order: 1
   },
   {
-    title: '2. your account',
-    body: 'create an account with a valid email to shop with us. keep your login safe — you\'re responsible for activity under your account, love.',
+    title: '2. Account Registration & Security',
+    body: 'You must register with a valid email address and maintain accurate account information. You are solely responsible for all activity under your account and for safeguarding your login credentials. Notify us immediately of unauthorized access. We may suspend or terminate accounts with false information, duplicate abuse accounts, or suspected fraud without prior notice.',
     sort_order: 2
   },
   {
-    title: '3. digital products',
-    body: 'everything we sell is digital — app accounts, subscriptions, tools, and more. once delivered, items are non-refundable unless defective or not as described.',
+    title: '3. Digital Products & Services',
+    body: 'All shop items are digital goods or access credentials delivered electronically. Website making and plugging are professional services governed by the scope agreed at purchase or inquiry. Descriptions, stock labels, and warranty periods on product pages form part of your order. You agree not to resell, redistribute, or publicly share purchased credentials unless explicitly permitted in writing.',
     sort_order: 3
   },
   {
-    title: '4. payment & delivery',
-    body: 'pay through our supported methods and upload your receipt. after we verify payment, your product is delivered to your account — timing depends on review speed.',
+    title: '4. Payment, Verification & Delivery',
+    body: 'You must pay the exact amount shown at checkout using approved payment methods. Upload only genuine, unedited payment receipts. We manually verify payments; delivery times depend on review queues and business hours. Orders with incorrect amounts, invalid receipts, or suspected fraud may be rejected. Delivery is complete when credentials or access are posted to your account or issued via the service workflow.',
     sort_order: 4
   },
   {
-    title: '5. play fair',
-    body: 'please don\'t resell without permission, abuse promos, run fraud, hack our systems, or use loveriette for anything illegal — we\'ll protect the community.',
+    title: '5. Prohibited Conduct',
+    body: 'You may not: (a) use the Platform for illegal activity; (b) attempt to hack, scrape, or disrupt our systems; (c) submit fraudulent payments or chargebacks in bad faith; (d) harass staff or other users; (e) circumvent access controls or share admin tools; (f) use plugging or automation to spam, impersonate, or violate Telegram\'s terms; (g) misrepresent your identity or payment source.',
     sort_order: 5
   },
   {
-    title: '6. refunds',
-    body: 'refunds are for defective, incorrect, or misdescribed products only. request within 24 hours of purchase — we review each case with care.',
+    title: '6. Refunds, Replacements & Chargebacks',
+    body: 'Except where required by law, all sales are final once digital goods are delivered and functioning as described. Refunds or replacements are granted only for defective, incorrect, or materially misdescribed items, requested within 24 hours of purchase with order ID and proof. Initiating a payment chargeback without first contacting support may result in immediate and permanent account termination and forfeiture of access.',
     sort_order: 6
   },
   {
-    title: '7. liability',
-    body: 'loveriette is provided as-is. we\'re not liable for indirect or consequential damages from using our services or products.',
+    title: '7. Warranty Disclaimer',
+    body: 'THE PLATFORM AND ALL PRODUCTS ARE PROVIDED "AS IS" AND "AS AVAILABLE" WITHOUT WARRANTIES OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, OR NON-INFRINGEMENT. We do not guarantee uninterrupted uptime of third-party services (e.g., streaming apps, Telegram). Warranty on specific shop items, if any, is limited to the period and terms stated on the product page.',
     sort_order: 7
   },
   {
-    title: '8. account termination',
-    body: 'we may suspend or terminate accounts that break these terms, commit fraud, or abuse our services — no prior notice required in serious cases.',
+    title: '8. Limitation of Liability',
+    body: 'TO THE MAXIMUM EXTENT PERMITTED BY LAW, LOVERIETTE AND ITS OPERATORS SHALL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, OR FOR LOST PROFITS, DATA, OR GOODWILL. OUR TOTAL LIABILITY FOR ANY CLAIM ARISING FROM YOUR USE OF THE PLATFORM SHALL NOT EXCEED THE AMOUNT YOU PAID FOR THE SPECIFIC ORDER GIVING RISE TO THE CLAIM IN THE 30 DAYS BEFORE THE CLAIM.',
     sort_order: 8
   },
   {
-    title: '9. changes to terms',
-    body: 'we may update these terms anytime. continued use after changes means you accept the updated version — check back when you visit, babe.',
+    title: '9. Account Suspension & Termination',
+    body: 'We may suspend or terminate your account at any time for violation of these Terms, fraud, abuse, excessive refund requests, chargebacks, or conduct harmful to the Platform or other users. Upon termination, you lose access to undelivered or delivered digital goods without refund, except where law requires otherwise.',
     sort_order: 9
   },
   {
-    title: '10. Contact',
-    body: 'If you have questions about these Terms of Service, please reach out through our Telegram channel or the contact page on Loveriette.',
+    title: '10. Changes to Terms',
+    body: 'We may modify these Terms at any time. Material changes will be posted on this page with an updated date. Continued use after changes constitutes acceptance. If you disagree with updated Terms, you must stop using the Platform and close your account.',
     sort_order: 10
+  },
+  {
+    title: '11. Governing Law & Disputes',
+    body: 'These Terms are governed by the laws of the Republic of the Philippines. You agree to first attempt informal resolution by contacting us through official channels. Unresolved disputes shall be subject to the exclusive jurisdiction of competent courts in the Philippines, unless mandatory consumer protection law provides otherwise.',
+    sort_order: 11
+  },
+  {
+    title: '12. Contact',
+    body: 'For questions about these Terms, contact us via the Contact page (Telegram, email) or through your order dashboard. Official support only responds through channels listed on loveriette.com — do not trust unsolicited messages claiming to be staff.',
+    sort_order: 12
   }
 ];
 
 const seedPrivacy = [
   {
     title: '1. Information We Collect',
-    body: 'We collect information you provide when creating an account, making a purchase, or contacting support — including your name, email address, and order history.',
+    body: 'We collect: (a) account data — name, email, password hash, and profile details you provide; (b) order data — products purchased, payment receipts you upload, delivery credentials, and support messages; (c) technical data — IP address, browser type, device information, session cookies, and pages visited; (d) communications — chat, tickets, and inquiry messages. We do not intentionally collect government ID unless you voluntarily provide it for a specific service.',
     sort_order: 1
   },
   {
     title: '2. How We Use Your Information',
-    body: 'Your information is used to process orders, deliver digital products, provide customer support, and improve our services. We do not sell your personal data to third parties.',
+    body: 'We use your data to: create and manage your account; process and verify payments; deliver digital products and services; provide customer support; send order status updates; prevent fraud and abuse; improve Platform security and performance; and comply with legal obligations. We do not sell your personal information to third-party marketers.',
     sort_order: 2
   },
   {
-    title: '3. Data Security',
-    body: 'We implement reasonable security measures to protect your personal information. However, no method of transmission over the internet is 100% secure.',
+    title: '3. Legal Basis & Consent',
+    body: 'We process your information to perform our contract with you (fulfilling orders), for legitimate interests (fraud prevention, security, analytics), and where required by law. By using the Platform, you consent to this Policy. You may withdraw consent for optional communications by contacting us, but this may limit certain features.',
     sort_order: 3
   },
   {
-    title: '4. Cookies & Sessions',
-    body: 'We use cookies and session data to keep you logged in, maintain your cart, and improve your browsing experience on Loveriette.',
+    title: '4. Data Sharing & Third Parties',
+    body: 'We may share limited data with: payment and messaging providers (e.g., Telegram) necessary to deliver services; hosting and infrastructure providers under confidentiality obligations; and law enforcement when legally required. Third-party platforms have their own privacy policies. We require service providers to handle data only for authorized purposes.',
     sort_order: 4
   },
   {
-    title: '5. Third-Party Services',
-    body: 'We may use third-party payment processors and communication platforms (such as Telegram) to deliver our services. These providers have their own privacy policies.',
+    title: '5. Data Retention',
+    body: 'We retain account and order records while your account is active and for a reasonable period afterward for legal, tax, and dispute resolution purposes (typically up to 3 years unless a longer period is required by law). Payment receipt images may be deleted or anonymized after order resolution. You may request deletion subject to legal retention requirements.',
     sort_order: 5
   },
   {
-    title: '6. Your Rights',
-    body: 'You may request access to, correction of, or deletion of your personal data by contacting us through our contact page or Telegram support.',
+    title: '6. Security Measures',
+    body: 'We implement reasonable administrative, technical, and organizational safeguards including encrypted passwords, access controls, and secure hosting. No method of transmission over the internet is 100% secure. You are responsible for protecting your account password and not sharing credentials with others.',
     sort_order: 6
   },
   {
-    title: '7. Changes to This Policy',
-    body: 'We may update this Privacy Policy from time to time. Changes will be posted on this page with an updated date.',
+    title: '7. Cookies & Local Storage',
+    body: 'We use essential cookies and local storage for authentication, cart persistence, theme preferences, and session management. These are necessary for core Platform functionality. You may disable cookies in your browser, but some features may not work correctly.',
     sort_order: 7
   },
   {
-    title: '8. Contact Us',
-    body: 'If you have questions about this Privacy Policy, please reach out through our Telegram channel or the contact page on Loveriette.',
+    title: '8. Your Rights',
+    body: 'Subject to applicable law (including the Philippine Data Privacy Act), you may request: access to personal data we hold about you; correction of inaccurate data; deletion where no legal basis requires retention; and restriction of certain processing. Submit requests via the Contact page with identity verification. We respond within a reasonable timeframe.',
     sort_order: 8
+  },
+  {
+    title: '9. Children\'s Privacy',
+    body: 'The Platform is not directed to children under 13. We do not knowingly collect personal information from children under 13. If you believe a child has provided us data, contact us immediately and we will delete it.',
+    sort_order: 9
+  },
+  {
+    title: '10. International Transfers',
+    body: 'Your data may be processed on servers located outside your country. By using the Platform, you consent to transfer and processing in jurisdictions that may have different data protection laws, with appropriate safeguards where required.',
+    sort_order: 10
+  },
+  {
+    title: '11. Changes to This Policy',
+    body: 'We may update this Privacy Policy from time to time. Changes are posted on this page with an updated effective date. Material changes may be communicated via the Platform or email where appropriate. Continued use after changes constitutes acceptance.',
+    sort_order: 11
+  },
+  {
+    title: '12. Contact Us',
+    body: 'For privacy-related requests or questions, contact us through the official channels on our Contact page (Telegram or email). Include "Privacy Request" in your message and sufficient information to verify your identity.',
+    sort_order: 12
   }
 ];
 
@@ -1016,6 +1084,50 @@ try {
       INSERT INTO settings (key, value) VALUES (?, ?)
       ON CONFLICT(key) DO UPDATE SET value = excluded.value
     `).run('flirty_faq_terms_v1', '1');
+  }
+} catch (_) { /* ignore */ }
+
+try {
+  const strictFlag = db.prepare('SELECT value FROM settings WHERE key = ?').get('strict_legal_faqs_v2');
+  if (!strictFlag) {
+    db.prepare('DELETE FROM faqs').run();
+    const faqIns = db.prepare('INSERT INTO faqs (question, answer, sort_order) VALUES (?, ?, ?)');
+    for (const f of seedFaqs) faqIns.run(f.question, f.answer, f.sort_order);
+
+    db.prepare('DELETE FROM terms_sections').run();
+    const termIns = db.prepare('INSERT INTO terms_sections (title, body, sort_order) VALUES (?, ?, ?)');
+    for (const t of seedTerms) termIns.run(t.title, t.body, t.sort_order);
+
+    db.prepare('DELETE FROM privacy_sections').run();
+    const privIns = db.prepare('INSERT INTO privacy_sections (title, body, sort_order) VALUES (?, ?, ?)');
+    for (const p of seedPrivacy) privIns.run(p.title, p.body, p.sort_order);
+
+    db.prepare(`
+      INSERT INTO settings (key, value) VALUES (?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value
+    `).run('strict_legal_faqs_v2', '1');
+  }
+} catch (_) { /* ignore */ }
+
+try {
+  const socialFlag = db.prepare('SELECT value FROM settings WHERE key = ?').get('default_social_links_v1');
+  if (!socialFlag) {
+    const defaultSocial = JSON.stringify([
+      { key: 'telegram', label: 'Telegram', url: 'https://t.me/skyloverie', enabled: true },
+      { key: 'email', label: 'Email', url: 'mailto:riettemadzehn@gmail.com', enabled: true },
+      { key: 'channel', label: 'Telegram Channel', url: 'https://t.me/lovebyriette', enabled: true }
+    ]);
+    const existing = db.prepare('SELECT value FROM settings WHERE key = ?').get('social_links');
+    if (!existing || !String(existing.value || '').trim() || String(existing.value).trim() === '[]') {
+      db.prepare(`
+        INSERT INTO settings (key, value) VALUES (?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+      `).run('social_links', defaultSocial);
+    }
+    db.prepare(`
+      INSERT INTO settings (key, value) VALUES (?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value
+    `).run('default_social_links_v1', '1');
   }
 } catch (_) { /* ignore */ }
 
@@ -1189,6 +1301,16 @@ function resetWebsiteData() {
   if (!admin) throw new Error('Default admin account not found');
 
   const wipeTables = [
+    'website_inquiry_messages',
+    'website_inquiries',
+    'plugging_activity_log',
+    'plugging_proxies',
+    'plugging_accounts',
+    'plugging_orders',
+    'plugging_requests',
+    'activity_feed',
+    'page_visits',
+    'product_reviews',
     'refund_records',
     'account_replacement_history',
     'store_updates',
@@ -1209,10 +1331,16 @@ function resetWebsiteData() {
     'admin_notifications'
   ];
 
-  db.exec('BEGIN');
+  db.exec('BEGIN IMMEDIATE');
   try {
+    db.exec('PRAGMA foreign_keys = OFF');
     for (const table of wipeTables) {
-      db.exec(`DELETE FROM ${table}`);
+      try {
+        db.exec(`DELETE FROM ${table}`);
+      } catch (err) {
+        if (String(err.message || '').includes('no such table')) continue;
+        throw new Error(`Failed wiping ${table}: ${err.message || err}`);
+      }
     }
     db.prepare('DELETE FROM users WHERE id != ?').run(admin.id);
     db.exec('UPDATE redeem_codes SET used_count = 0');
@@ -1240,10 +1368,11 @@ function resetWebsiteData() {
       WHERE id = ?
     `).run(admin.id);
 
+    db.exec('PRAGMA foreign_keys = ON');
     db.exec('COMMIT');
-    return { adminId: admin.id, adminEmail };
+    return { adminId: admin.id, adminEmail: admin.email };
   } catch (err) {
-    db.exec('ROLLBACK');
+    try { db.exec('ROLLBACK'); } catch (_) { /* transaction may already be closed */ }
     throw err;
   }
 }
@@ -1252,5 +1381,56 @@ db.resetWebsiteData = resetWebsiteData;
 
 const { initPlatformDb } = require('./platform-db');
 initPlatformDb(db);
+
+const { initGmailSchema } = require('./gmail-schema');
+initGmailSchema(db);
+
+/** Verify checkout-critical columns exist (production DB may lag behind code). */
+function ensureCriticalSchema() {
+  const required = {
+    orders: ['order_seq', 'tingi_drop_enabled', 'fulfillment_mode', 'receipt_url', 'reject_reason'],
+    order_items: ['variant_id']
+  };
+  const missing = [];
+  for (const [table, cols] of Object.entries(required)) {
+    const have = new Set(db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name));
+    for (const col of cols) {
+      if (!have.has(col)) missing.push(`${table}.${col}`);
+    }
+  }
+  if (!missing.length) return { ok: true, missing: [] };
+
+  const fixes = {
+    'orders.order_seq': 'ALTER TABLE orders ADD COLUMN order_seq INTEGER',
+    'orders.tingi_drop_enabled': 'ALTER TABLE orders ADD COLUMN tingi_drop_enabled INTEGER NOT NULL DEFAULT 0',
+    'orders.fulfillment_mode': "ALTER TABLE orders ADD COLUMN fulfillment_mode TEXT NOT NULL DEFAULT 'auto'",
+    'orders.receipt_url': 'ALTER TABLE orders ADD COLUMN receipt_url TEXT',
+    'orders.reject_reason': 'ALTER TABLE orders ADD COLUMN reject_reason TEXT',
+    'order_items.variant_id': 'ALTER TABLE order_items ADD COLUMN variant_id INTEGER'
+  };
+  for (const key of missing) {
+    const sql = fixes[key];
+    if (!sql) continue;
+    try {
+      db.exec(sql);
+    } catch (err) {
+      console.error(`[db] schema fix failed for ${key}:`, err.message);
+    }
+  }
+  const stillMissing = [];
+  for (const [table, cols] of Object.entries(required)) {
+    const have = new Set(db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name));
+    for (const col of cols) {
+      if (!have.has(col)) stillMissing.push(`${table}.${col}`);
+    }
+  }
+  if (stillMissing.length) {
+    console.error('[db] CRITICAL missing columns after repair:', stillMissing.join(', '));
+  }
+  return { ok: !stillMissing.length, missing: stillMissing };
+}
+
+db.ensureCriticalSchema = ensureCriticalSchema;
+ensureCriticalSchema();
 
 module.exports = db;

@@ -2,7 +2,6 @@ const params = new URLSearchParams(window.location.search);
 
 const orderNumber = params.get('order');
 const serviceType = params.get('type') || 'shop';
-const lendingRef = params.get('ref');
 const websitePackage = params.get('package');
 
 async function api(url, options = {}) {
@@ -27,47 +26,33 @@ function orderLabel(order) {
 }
 
 function statusCopy(type, status) {
-  if (type === 'lending') {
-    return {
-      title: 'Application received, gorgeous',
-      desc: 'We got your loan application — we\'ll review it and reach out soon. Save your reference number below.',
-      steps: [
-        'We review your application details',
-        'You\'ll hear from us about approval or next steps',
-        'Questions? Hit us up on the Contact page anytime'
-      ],
-      primaryHref: '/lending',
-      primaryText: 'Browse Loan Plans',
-      secondaryHref: lendingRef ? `/lending/application/${encodeURIComponent(lendingRef)}` : '/lending',
-      secondaryText: 'View application status'
-    };
-  }
-
   if (type === 'website') {
+    const inquiryRef = params.get('ref');
+    const chatHref = inquiryRef ? `/website-making/inquiry/${encodeURIComponent(inquiryRef)}` : 'dashboard.html';
     return {
-      title: 'Inquiry sent — we\'re excited, babe',
-      desc: 'Your website inquiry is in our inbox. We\'ll get back to you soon with next steps.',
+      title: 'Inquiry received',
+      desc: 'Your website inquiry is in our inbox. Open your chat thread to follow up anytime.',
       steps: [
         'We read your message and package request',
-        'We\'ll contact you via email to discuss details',
-        'Need something sooner? Visit Contact anytime'
+        'Reply in your inquiry chat if you have questions',
+        'We\'ll update you as your project moves forward'
       ],
-      primaryHref: '/website-making',
-      primaryText: 'Browse Packages',
-      secondaryHref: 'dashboard.html',
-      secondaryText: 'My Account'
+      primaryHref: chatHref,
+      primaryText: inquiryRef ? 'Open Inquiry Chat' : 'Browse Packages',
+      secondaryHref: '/website-making',
+      secondaryText: inquiryRef ? 'Browse Packages' : 'My Account'
     };
   }
 
   if (type === 'plugging') {
     if (status === 'approved') {
       return {
-        title: 'Approved — you\'re in, babe ♡',
-        desc: 'Your plugging order is live. Head to the status page for your access key and workspace.',
+        title: 'Order approved',
+        desc: 'Your plugging order is active. Open the status page for your access key and workspace.',
         steps: [
-          'Payment verified — you\'re all set',
-          'Grab your access key from the status page',
-          'Open your workspace and start plugging'
+          'Payment verified',
+          'Access key available on the status page',
+          'Open your workspace to get started'
         ],
         primaryHref: orderNumber ? `/plugging/status?order=${encodeURIComponent(orderNumber)}` : '/plugging',
         primaryText: 'View Access Key',
@@ -77,8 +62,8 @@ function statusCopy(type, status) {
     }
     if (status === 'pending_approval' || status === 'pending') {
       return {
-        title: 'Receipt received — hang tight, love',
-        desc: 'We got your payment proof. Once verified, your access key appears on the status page.',
+        title: 'Receipt received',
+        desc: 'We received your payment proof. After verification, your access key will appear on the status page.',
         steps: [
           'We verify your receipt',
           'Order approved — access key on status page',
@@ -91,7 +76,7 @@ function statusCopy(type, status) {
       };
     }
     return {
-      title: 'Order placed — almost there',
+      title: 'Order placed',
       desc: 'Complete payment if you haven\'t yet, then upload your receipt so we can activate your order.',
       steps: [
         'Send payment using your chosen method',
@@ -105,46 +90,45 @@ function statusCopy(type, status) {
     };
   }
 
-  // shop (default)
   if (status === 'approved') {
     return {
-      title: 'Approved — enjoy your premium, babe ♡',
+      title: 'Order approved',
       desc: 'Your order is complete. Open My Account to view credentials and manage your purchase.',
       steps: [
-        'Payment verified — you\'re all set',
+        'Payment verified',
         'Credentials appear in My Account',
         'Need help? Contact us anytime'
       ],
       primaryHref: 'dashboard.html',
       primaryText: 'View My Account',
-      secondaryHref: 'index.html#products',
+      secondaryHref: '/shop',
       secondaryText: 'Continue Shopping'
     };
   }
   if (status === 'pending') {
     return {
-      title: 'Receipt received — we\'re on it, gorgeous',
-      desc: 'We\'re reviewing your payment. Your credentials land in My Account once approved.',
+      title: 'Receipt received',
+      desc: 'We\'re reviewing your payment. Credentials will appear in My Account once approved.',
       steps: [
         'We verify your payment receipt',
         'Order approved — credentials in My Account',
         'Need help? Contact us anytime'
       ],
-      primaryHref: 'index.html#products',
+      primaryHref: '/shop',
       primaryText: 'Continue Shopping',
       secondaryHref: 'dashboard.html',
       secondaryText: 'My Account'
     };
   }
   return {
-    title: 'Thank you for trusting us, babe',
+    title: 'Thank you for your order',
     desc: 'Complete your payment if you haven\'t yet — then we\'ll verify and deliver your order.',
     steps: [
       'We verify your payment receipt',
       'Order approved — credentials in My Account',
       'Need help? Contact us anytime'
     ],
-    primaryHref: 'index.html#products',
+    primaryHref: '/shop',
     primaryText: 'Continue Shopping',
     secondaryHref: 'dashboard.html',
     secondaryText: 'My Account'
@@ -152,6 +136,8 @@ function statusCopy(type, status) {
 }
 
 function applyThanksContent({ title, lead, refLabel, refValue, total, status, steps, primaryHref, primaryText, secondaryHref, secondaryText, emailLine, isApproved }) {
+  const heroTitle = document.querySelector('.thanks-hero h1');
+  if (heroTitle && title) heroTitle.textContent = title;
   document.getElementById('thanks-trust-line').textContent = lead;
   document.getElementById('thanks-order-label').textContent = refLabel;
   document.getElementById('thanks-order-id').textContent = refValue;
@@ -198,7 +184,7 @@ async function loadShopThanks() {
 
   applyThanksContent({
     title: 'Thank you for your purchase!',
-    lead: `Thank you for trusting ${storeName} — we're honored to have you, babe ♡`,
+    lead: `Thank you for choosing ${storeName}. We'll notify you when your order is approved.`,
     refLabel: 'Order',
     refValue: `#${orderLabel(order)}`,
     total: formatMoney(order.total),
@@ -233,7 +219,8 @@ async function loadPluggingThanks() {
   const status = statusCopy('plugging', order.status);
 
   applyThanksContent({
-    lead: 'Your plugging payment is in — we\'re so glad you chose us, babe ♡',
+    title: 'Thank you for your order',
+    lead: 'Your plugging payment was submitted successfully.',
     refLabel: 'Order',
     refValue: order.orderRef,
     total: formatMoney(order.total),
@@ -244,38 +231,14 @@ async function loadPluggingThanks() {
     secondaryText: status.secondaryText,
     isApproved: order.status === 'approved'
   });
-
-  document.querySelector('.thanks-hero h1').textContent = 'Thank you, gorgeous!';
 }
 
-async function loadLendingThanks() {
-  const app = lendingRef
-    ? await api(`/api/lending/application/${encodeURIComponent(lendingRef)}`).catch(() => null)
-    : null;
-  const status = statusCopy('lending', app?.status);
-
-  applyThanksContent({
-    lead: 'We got your application — fingers crossed for you, babe ♡',
-    refLabel: 'Reference',
-    refValue: app?.applicationId || lendingRef || '—',
-    total: app?.planName || 'Loan application',
-    status,
-    primaryHref: status.primaryHref,
-    primaryText: status.primaryText,
-    secondaryHref: status.secondaryHref,
-    secondaryText: status.secondaryText,
-    isApproved: app?.status === 'approved'
-  });
-
-  document.querySelector('.thanks-hero h1').textContent = 'Application sent!';
-  document.getElementById('thanks-order-total').textContent = app?.planName ? app.planName : 'Pending review';
-}
-
-function loadWebsiteThanks() {
+async function loadWebsiteThanks() {
   const status = statusCopy('website');
 
   applyThanksContent({
-    lead: 'Your inquiry just landed — we\'ll be in touch soon, love ♡',
+    title: 'Thank you for your inquiry',
+    lead: 'Your inquiry was received. We\'ll respond as soon as possible.',
     refLabel: 'Package',
     refValue: websitePackage || 'Website inquiry',
     total: 'Inquiry received',
@@ -287,7 +250,6 @@ function loadWebsiteThanks() {
     isApproved: false
   });
 
-  document.querySelector('.thanks-hero h1').textContent = 'Thank you, babe!';
   document.getElementById('thanks-order-dot').hidden = true;
 }
 
@@ -296,7 +258,7 @@ async function loadThanks() {
   const errorEl = document.getElementById('thanks-error');
   const content = document.getElementById('thanks-content');
 
-  const hasRef = orderNumber || lendingRef || serviceType === 'website';
+  const hasRef = orderNumber || serviceType === 'website';
   if (!hasRef) {
     loading.hidden = true;
     errorEl.hidden = false;
@@ -306,8 +268,6 @@ async function loadThanks() {
   try {
     if (serviceType === 'plugging' && orderNumber) {
       await loadPluggingThanks();
-    } else if (serviceType === 'lending') {
-      await loadLendingThanks();
     } else if (serviceType === 'website') {
       loadWebsiteThanks();
     } else if (orderNumber) {

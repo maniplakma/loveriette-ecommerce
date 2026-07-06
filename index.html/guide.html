@@ -6,18 +6,23 @@
   <base href="/">
 
   <meta charset="UTF-8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <title>Guide — loveriette</title>
+  <link rel="stylesheet" href="theme-critical.css?v=20260705cleanup">
+  <script src="theme-boot.js?v=20260705cleanup"></script>
 
   <link rel="stylesheet" href="style.css?v=20260615brand-gloss">
   <link rel="stylesheet" href="mobile.css?v=20260615typography">
+  <link rel="stylesheet" href="performance-mobile.css?v=20260705cleanup">
 
-  <link rel="stylesheet" href="theme.css">
+  <link rel="stylesheet" href="theme.css?v=20260703audit">
 
-  <script src="theme.js"></script>
-  <script src="theme-colors.js?v=20260614persist"></script>
+  <script src="theme.js?v=20260705cleanup" defer></script>
+  <script src="theme-colors.js?v=20260705cleanup" defer></script>
 
 </head>
 
@@ -28,19 +33,13 @@
     <div class="nav-inner">
 
       <ul class="nav-left">
-
-        <li><a href="index.html" class="nav-link">Home</a></li>
-
-        <li><a href="index.html#products" class="nav-link">Products</a></li>
-
-        <li><a href="faqs.html" class="nav-link">FAQs</a></li>
-
-        <li><a href="guide.html" class="nav-pill active">Guide</a></li>
-
-        <li><a href="about.html" class="nav-link">About Me</a></li>
-
+        <li><a href="/" class="nav-link">Home</a></li>
+        <li><a href="/shop" class="nav-link">Shop</a></li>
+        <li><a href="/plugging" class="nav-link">Plugging</a></li>
+        <li><a href="/website-making" class="nav-link">Website Making</a></li>
+        <li><a href="about.html" class="nav-link">About</a></li>
+        <li><a href="faqs.html" class="nav-link">FAQ</a></li>
         <li><a href="contact.html" class="nav-link">Contact</a></li>
-
       </ul>
 
       <ul class="nav-right">
@@ -76,6 +75,7 @@
     </div>
 
   </nav>
+  <script src="nav-shell.js?v=20260705cleanup"></script>
 
 
 
@@ -83,17 +83,15 @@
 
     <header class="info-header info-header--flirty">
 
-      <span class="info-header-eyebrow">let us guide you</span>
+      <h1>How to Order</h1>
 
-      <h1><span class="info-title-bold">how to</span> <span class="info-title-script">order</span></h1>
-
-      <p class="info-header-tagline">follow these steps — we'll take care of the rest, babe</p>
+      <p class="info-header-tagline">Step-by-step instructions for placing and paying for your order.</p>
 
     </header>
 
-    <div id="guide-loading" class="guide-state flirty-prose">loading your guide…</div>
+    <div id="guide-loading" class="guide-state">Loading guide…</div>
 
-    <div id="guide-error" class="guide-state guide-state--error flirty-prose" hidden>couldn't load the guide — refresh and try again, love.</div>
+    <div id="guide-error" class="guide-state guide-state--error" hidden>Could not load the guide. Please refresh and try again.</div>
 
     <section id="guide-steps" class="guide-steps" hidden aria-label="Order tutorial steps"></section>
 
@@ -114,15 +112,11 @@
     </div>
 
   </footer>
+<script src="notifications.js"></script>
 
+  <script src="branding.js?v=20260703audit" defer></script>
 
-
-  <script src="flirty-copy.js"></script>
-  <script src="notifications.js"></script>
-
-  <script src="branding.js"></script>
-
-  <script src="nav.js"></script>
+  <script src="nav.js?v=20260703audit" defer></script>
   <script src="mobile.js?v=20260614mobile"></script>
 
   <script src="guide.js"></script>

@@ -1,5 +1,5 @@
 /**
- * Platform schema: lending, website-making, CMS, SEO, analytics.
+ * Platform schema: website-making, CMS, SEO, analytics.
  * Loaded by db.js after core tables exist.
  */
 function initPlatformDb(db) {
@@ -123,58 +123,9 @@ function initPlatformDb(db) {
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
-    CREATE TABLE IF NOT EXISTS loan_plans (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      slug TEXT NOT NULL UNIQUE,
-      description TEXT NOT NULL DEFAULT '',
-      min_amount INTEGER NOT NULL DEFAULT 1000,
-      max_amount INTEGER NOT NULL DEFAULT 50000,
-      interest_rate REAL NOT NULL DEFAULT 3.0,
-      admin_fee INTEGER NOT NULL DEFAULT 0,
-      penalty_rate REAL NOT NULL DEFAULT 2.0,
-      term_months INTEGER NOT NULL DEFAULT 3,
-      repayment_schedule TEXT NOT NULL DEFAULT '[]',
-      features TEXT NOT NULL DEFAULT '[]',
-      meta_title TEXT,
-      meta_description TEXT,
-      og_image TEXT,
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      is_enabled INTEGER NOT NULL DEFAULT 1,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS loan_applications (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      application_id TEXT NOT NULL UNIQUE,
-      user_id INTEGER,
-      plan_id INTEGER,
-      status TEXT NOT NULL DEFAULT 'pending',
-      form_data TEXT NOT NULL DEFAULT '{}',
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (plan_id) REFERENCES loan_plans(id) ON DELETE SET NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS lending_content (
+    CREATE TABLE IF NOT EXISTS platform_content (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS lending_kyc (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      title TEXT NOT NULL,
-      description TEXT NOT NULL DEFAULT '',
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      is_required INTEGER NOT NULL DEFAULT 1
-    );
-
-    CREATE TABLE IF NOT EXISTS lending_documents (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      title TEXT NOT NULL,
-      description TEXT NOT NULL DEFAULT '',
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      is_required INTEGER NOT NULL DEFAULT 1
     );
 
     CREATE TABLE IF NOT EXISTS website_packages (
@@ -304,9 +255,28 @@ function initPlatformDb(db) {
       failed_count INTEGER NOT NULL DEFAULT 0,
       cycles_count INTEGER NOT NULL DEFAULT 0,
       last_error TEXT NOT NULL DEFAULT '',
+      proxy_url TEXT NOT NULL DEFAULT '',
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (order_id) REFERENCES plugging_orders(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS plugging_activity_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      account_id INTEGER NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'info',
+      message TEXT NOT NULL DEFAULT '',
+      target_ref TEXT NOT NULL DEFAULT '',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (account_id) REFERENCES plugging_accounts(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS plugging_proxies (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      label TEXT NOT NULL DEFAULT '',
+      url TEXT NOT NULL,
+      is_enabled INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE TABLE IF NOT EXISTS footer_content (
@@ -320,17 +290,31 @@ function initPlatformDb(db) {
     'CREATE INDEX IF NOT EXISTS idx_product_reviews_product ON product_reviews(product_id)',
     'CREATE INDEX IF NOT EXISTS idx_page_visits_path ON page_visits(path)',
     'CREATE INDEX IF NOT EXISTS idx_page_visits_created ON page_visits(created_at)',
-    'CREATE INDEX IF NOT EXISTS idx_loan_applications_status ON loan_applications(status)',
     'CREATE INDEX IF NOT EXISTS idx_website_inquiries_status ON website_inquiries(status)',
     'CREATE INDEX IF NOT EXISTS idx_plugging_requests_status ON plugging_requests(status)',
     'CREATE INDEX IF NOT EXISTS idx_plugging_orders_status ON plugging_orders(status)',
     'CREATE INDEX IF NOT EXISTS idx_plugging_accounts_order ON plugging_accounts(order_id)',
+    'CREATE INDEX IF NOT EXISTS idx_plugging_activity_account ON plugging_activity_log(account_id, id DESC)',
     'CREATE INDEX IF NOT EXISTS idx_plugging_plans_product ON plugging_plans(product_id)',
     'CREATE INDEX IF NOT EXISTS idx_activity_feed_created ON activity_feed(created_at)'
   ];
   for (const sql of platformIndexes) {
     try { db.exec(sql); } catch (_) { /* ignore */ }
   }
+
+  try { db.exec(`ALTER TABLE plugging_accounts ADD COLUMN proxy_url TEXT NOT NULL DEFAULT ''`); } catch (_) { /* exists */ }
+
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS plugging_proxies (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        label TEXT NOT NULL DEFAULT '',
+        url TEXT NOT NULL,
+        is_enabled INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+  } catch (_) { /* ignore */ }
 
   // Backfill product slugs
   try {
@@ -346,35 +330,13 @@ function initPlatformDb(db) {
     }
   } catch (_) { /* ignore */ }
 
-  const defaultLending = {
-    lending_enabled: '1',
-    lending_hero_title: 'Flexible Lending Solutions',
-    lending_hero_subtitle: 'Fast approval, transparent rates, and flexible repayment plans tailored for you.',
-    lending_interest_note: 'Rates vary by plan. No hidden charges.',
-    lending_contact_email: '',
-    lending_contact_phone: '',
-    lending_borrower_responsibilities: JSON.stringify([
-      'Make repayments on or before the due date',
-      'Keep contact information up to date',
-      'Notify us immediately if you face payment difficulties',
-      'Provide accurate information during application'
-    ]),
-    lending_terms: JSON.stringify([
-      { title: 'Eligibility', body: 'Applicants must be 18+ with valid government ID and proof of income.' },
-      { title: 'Approval', body: 'All applications are subject to review. Approval is not guaranteed.' },
-      { title: 'Repayment', body: 'Late payments may incur penalties as stated in your loan plan.' }
-    ]),
-    lending_apply_fields: JSON.stringify([
-      { key: 'full_name', label: 'Full Name', type: 'text', required: true },
-      { key: 'email', label: 'Email', type: 'email', required: true },
-      { key: 'phone', label: 'Phone Number', type: 'tel', required: true },
-      { key: 'amount', label: 'Loan Amount (₱)', type: 'number', required: true },
-      { key: 'purpose', label: 'Purpose of Loan', type: 'textarea', required: true }
-    ])
+  const defaultPlatform = {
+    shop_enabled: '1',
+    website_making_enabled: '1'
   };
-  const upsertLending = db.prepare('INSERT INTO lending_content (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING');
-  for (const [k, v] of Object.entries(defaultLending)) {
-    try { upsertLending.run(k, v); } catch (_) { /* ignore */ }
+  const upsertPlatform = db.prepare('INSERT INTO platform_content (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING');
+  for (const [k, v] of Object.entries(defaultPlatform)) {
+    try { upsertPlatform.run(k, v); } catch (_) { /* ignore */ }
   }
 
   const defaultPlugging = {
@@ -426,59 +388,24 @@ function initPlatformDb(db) {
           { icon: 'star', title: 'Premium Quality', text: 'Curated services at affordable prices.' }
         ]
       }), 1],
-      ['service_benefits', 'cards', 'Service Benefits', 'Everything you need in one platform', '', JSON.stringify({
-        items: [
-          { title: 'Digital Products', text: 'Premium subscriptions and tools at fair prices.', link: '/shop' },
-          { title: 'Lending', text: 'Flexible loans with transparent terms.', link: '/lending' },
-          { title: 'Website Making', text: 'Professional websites built for your business.', link: '/website-making' }
-        ]
-      }), 2],
-      ['service_categories', 'categories', 'Our Services', 'Four powerful services, one platform', '', JSON.stringify({
+      ['service_categories', 'categories', 'Our Services', 'Shop, websites, and plugging — one platform', '', JSON.stringify({
         items: [
           { title: 'Plugging', desc: 'Telegram message auto forwarder — automatically relay messages to your groups and channels.', link: '/plugging', icon: 'plug', cta: 'Plugging', primary: true },
           { title: 'Shop', desc: 'Premium digital products, apps, and subscriptions delivered instantly after purchase.', link: '/shop', icon: 'cart', cta: 'Browse Shop' },
-          { title: 'Lending', desc: 'Personal and business loans with flexible terms, fast approval, and transparent rates.', link: '/lending', icon: 'loan', cta: 'Lending' },
-          { title: 'Websites', desc: 'Custom ecommerce sites, auto-order platforms, and ongoing maintenance for your brand.', link: '/website-making', icon: 'web', cta: 'Websites' }
+          { title: 'Website Making', desc: 'Custom ecommerce sites, auto-order platforms, and ongoing maintenance for your brand.', link: '/website-making', icon: 'web', cta: 'View Packages' }
         ]
-      }), 3]
+      }), 2]
     ];
     sections.forEach((s) => ins.run(...s));
-  }
-
-  if (db.prepare('SELECT COUNT(*) AS c FROM cms_statistics').get().c === 0) {
-    const ins = db.prepare('INSERT INTO cms_statistics (label, value, icon, sort_order) VALUES (?, ?, ?, ?)');
-    [
-      ['Happy Customers', '2,500+', 'users', 0],
-      ['Products Sold', '10,000+', 'cart', 1],
-      ['Loans Approved', '150+', 'loan', 2],
-      ['Websites Built', '80+', 'web', 3]
-    ].forEach((r) => ins.run(...r));
   }
 
   if (db.prepare('SELECT COUNT(*) AS c FROM cms_faqs WHERE scope = ?').get('home').c === 0) {
     const ins = db.prepare('INSERT INTO cms_faqs (scope, question, answer, sort_order) VALUES (?, ?, ?, ?)');
     [
-      ['home', 'What services do you offer?', 'We offer digital products, lending services, and professional website development.', 0],
+      ['home', 'What services do you offer?', 'We offer digital products, website development, and plugging services.', 0],
       ['home', 'How do I place an order?', 'Browse our shop, select a product, checkout, and upload your payment receipt.', 1],
       ['home', 'Is my payment secure?', 'Yes. We verify payments manually and never store card details.', 2]
     ].forEach((r) => ins.run(...r));
-  }
-
-  if (db.prepare('SELECT COUNT(*) AS c FROM loan_plans').get().c === 0) {
-    const ins = db.prepare(`
-      INSERT INTO loan_plans (name, slug, description, min_amount, max_amount, interest_rate, admin_fee, penalty_rate, term_months, repayment_schedule, features, sort_order)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    ins.run('Quick Cash', 'quick-cash', 'Short-term loan for immediate needs.', 1000, 10000, 3.5, 200, 2.0, 1, '["Monthly"]', '["Fast approval","1 month term","Low admin fee"]', 0);
-    ins.run('Personal Loan', 'personal-loan', 'Flexible personal loan with monthly repayments.', 5000, 50000, 2.8, 500, 1.5, 6, '["Monthly x6"]', '["Up to ₱50k","6 month term","Flexible repayment"]', 1);
-    ins.run('Business Loan', 'business-loan', 'Capital for small business growth.', 10000, 100000, 2.5, 1000, 1.5, 12, '["Monthly x12"]', '["Up to ₱100k","12 month term","Business support"]', 2);
-  }
-
-  if (db.prepare('SELECT COUNT(*) AS c FROM lending_kyc').get().c === 0) {
-    const ins = db.prepare('INSERT INTO lending_kyc (title, description, sort_order) VALUES (?, ?, ?)');
-    ins.run('Valid Government ID', 'Passport, driver\'s license, or national ID', 0);
-    ins.run('Proof of Income', 'Payslip, bank statement, or business permit', 1);
-    ins.run('Proof of Address', 'Utility bill or barangay certificate (within 3 months)', 2);
   }
 
   if (db.prepare('SELECT COUNT(*) AS c FROM website_packages').get().c === 0) {
@@ -496,15 +423,6 @@ function initPlatformDb(db) {
       ['Monthly Website Rental', 'rental', 'rental', 'Rent a ready-made website.', 'Get a fully managed website with monthly subscription.', 2500, '₱2,500/month', '["Ready-made site","Hosting included","Monthly updates","Support included"]', 6]
     ];
     pkgs.forEach((p) => ins.run(...p));
-  }
-
-  if (db.prepare('SELECT COUNT(*) AS c FROM cms_faqs WHERE scope = ?').get('lending').c === 0) {
-    const ins = db.prepare('INSERT INTO cms_faqs (scope, question, answer, sort_order) VALUES (?, ?, ?, ?)');
-    [
-      ['lending', 'How long does approval take?', 'Most applications are reviewed within 1-2 business days.', 0],
-      ['lending', 'What are the interest rates?', 'Rates vary by plan. See individual loan plans for details.', 1],
-      ['lending', 'Can I pay early?', 'Yes. Early repayment is allowed with no extra penalty.', 2]
-    ].forEach((r) => ins.run(...r));
   }
 
   if (db.prepare('SELECT COUNT(*) AS c FROM cms_faqs WHERE scope = ?').get('website').c === 0) {
@@ -531,15 +449,13 @@ function initPlatformDb(db) {
   if (db.prepare('SELECT COUNT(*) AS c FROM activity_feed').get().c === 0) {
     const ins = db.prepare('INSERT INTO activity_feed (feed_type, message) VALUES (?, ?)');
     ins.run('order', 'Welcome to the Loveriette platform!');
-    ins.run('general', 'New lending service is now available');
     ins.run('website', 'Website making packages updated');
   }
 
   const defaultServices = [
     { title: 'Plugging', desc: 'Telegram message auto forwarder — automatically relay messages to your groups and channels.', link: '/plugging', icon: 'plug', cta: 'Plugging', primary: true },
     { title: 'Shop', desc: 'Premium digital products, apps, and subscriptions delivered instantly after purchase.', link: '/shop', icon: 'cart', cta: 'Browse Shop' },
-    { title: 'Lending', desc: 'Personal and business loans with flexible terms, fast approval, and transparent rates.', link: '/lending', icon: 'loan', cta: 'Lending' },
-    { title: 'Websites', desc: 'Custom ecommerce sites, auto-order platforms, and ongoing maintenance for your brand.', link: '/website-making', icon: 'web', cta: 'Websites' }
+    { title: 'Website Making', desc: 'Custom ecommerce sites, auto-order platforms, and ongoing maintenance for your brand.', link: '/website-making', icon: 'web', cta: 'View Packages' }
   ];
   const catRow = db.prepare("SELECT id, content_json FROM cms_sections WHERE section_key = 'service_categories'").get();
   if (catRow) {
@@ -561,6 +477,8 @@ function initPlatformDb(db) {
     content.items = items;
     db.prepare('UPDATE cms_sections SET content_json = ? WHERE id = ?').run(JSON.stringify(content), catRow.id);
   }
+
+  migrateWebsiteInquiryChat(db);
 
   return { slugify };
 }
@@ -771,8 +689,264 @@ function ensurePluggingExamples(db) {
     `).run();
   } catch (_) { /* ignore */ }
 
+  // Do not bulk-disable testimonials — lending rows are removed by scope filter only.
+}
+
+function migrateWebsiteInquiryChat(db) {
+  const crypto = require('crypto');
+  const cols = db.prepare('PRAGMA table_info(website_inquiries)').all().map((c) => c.name);
+  const addCol = (sql) => { try { db.exec(sql); } catch (_) { /* ignore */ } };
+  if (!cols.includes('inquiry_ref')) addCol('ALTER TABLE website_inquiries ADD COLUMN inquiry_ref TEXT');
+  if (!cols.includes('updated_at')) addCol('ALTER TABLE website_inquiries ADD COLUMN updated_at TEXT DEFAULT CURRENT_TIMESTAMP');
+  if (!cols.includes('unread_by_admin')) addCol('ALTER TABLE website_inquiries ADD COLUMN unread_by_admin INTEGER NOT NULL DEFAULT 1');
+  if (!cols.includes('unread_by_client')) addCol('ALTER TABLE website_inquiries ADD COLUMN unread_by_client INTEGER NOT NULL DEFAULT 0');
+  if (!cols.includes('admin_notes')) addCol('ALTER TABLE website_inquiries ADD COLUMN admin_notes TEXT NOT NULL DEFAULT \'\'');
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS website_inquiry_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      inquiry_id INTEGER NOT NULL,
+      sender_type TEXT NOT NULL CHECK(sender_type IN ('client','admin')),
+      body TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (inquiry_id) REFERENCES website_inquiries(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_website_inquiry_messages_inquiry ON website_inquiry_messages(inquiry_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_website_inquiries_ref ON website_inquiries(inquiry_ref);
+  `);
+
+  const noRef = db.prepare("SELECT id, message FROM website_inquiries WHERE inquiry_ref IS NULL OR inquiry_ref = ''").all();
+  const updRef = db.prepare('UPDATE website_inquiries SET inquiry_ref = ? WHERE id = ?');
+  const insMsg = db.prepare('INSERT INTO website_inquiry_messages (inquiry_id, sender_type, body) SELECT ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM website_inquiry_messages WHERE inquiry_id = ?)');
+  for (const row of noRef) {
+    let ref = `WEB-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+    while (db.prepare('SELECT 1 FROM website_inquiries WHERE inquiry_ref = ?').get(ref)) {
+      ref = `WEB-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+    }
+    updRef.run(ref, row.id);
+    if (row.message) insMsg.run(row.id, 'client', row.message, row.id);
+  }
+
   try {
-    db.prepare('UPDATE cms_testimonials SET is_enabled = 0').run();
+    if (!db.prepare("SELECT 1 FROM platform_content WHERE key = '_homepage_restore_v1'").get()) {
+      const insSection = db.prepare(`
+        INSERT INTO cms_sections (section_key, section_type, title, subtitle, body, content_json, sort_order, is_enabled)
+        VALUES (?, ?, ?, ?, '', ?, ?, 1)
+      `);
+      const ensureSection = (key, type, title, subtitle, content, sortOrder) => {
+        if (!db.prepare('SELECT 1 FROM cms_sections WHERE section_key = ?').get(key)) {
+          insSection.run(key, type, title, subtitle, JSON.stringify(content), sortOrder);
+        }
+      };
+      ensureSection('why_choose_us', 'features', 'Why Choose Us', 'Trusted by thousands of customers', {
+        items: [
+          { icon: 'shield', title: 'Secure & Reliable', text: 'Enterprise-grade security for every transaction.' },
+          { icon: 'zap', title: 'Fast Delivery', text: 'Instant access to digital products after approval.' },
+          { icon: 'heart', title: 'Dedicated Support', text: 'Real people ready to help via chat and tickets.' },
+          { icon: 'star', title: 'Premium Quality', text: 'Curated services at affordable prices.' }
+        ]
+      }, 1);
+      ensureSection('service_benefits', 'cards', 'Service Benefits', 'Everything you need in one platform', {
+        items: [
+          { title: 'Digital Products', text: 'Premium subscriptions and tools at fair prices.', link: '/shop' },
+          { title: 'Website Making', text: 'Professional websites built for your business.', link: '/website-making' },
+          { title: 'Telegram Plugging', text: 'Automated message forwarding for Telegram.', link: '/plugging' }
+        ]
+      }, 2);
+
+      const featuredCount = db.prepare('SELECT COUNT(*) AS c FROM products WHERE is_featured = 1 AND is_enabled != 0').get().c;
+      if (featuredCount === 0) {
+        db.prepare(`
+          UPDATE products SET is_featured = 1
+          WHERE id IN (SELECT id FROM products WHERE is_enabled != 0 ORDER BY sold_count DESC, views DESC, id ASC LIMIT 4)
+        `).run();
+      }
+
+      const extraFaqs = [
+        ['home', 'How long does delivery take?', 'Digital products are delivered after payment approval, usually within minutes to a few hours.', 3],
+        ['home', 'What payment methods do you accept?', 'Supported local payment methods are shown at checkout. Upload your receipt to confirm payment.', 4],
+        ['home', 'How does website making work?', 'Choose a package, submit an inquiry, and our team will contact you with next steps.', 5]
+      ];
+      const faqIns = db.prepare('INSERT OR IGNORE INTO cms_faqs (scope, question, answer, sort_order, is_enabled) VALUES (?, ?, ?, ?, 1)');
+      extraFaqs.forEach((f) => { try { faqIns.run(...f); } catch (_) { /* ignore dupes */ } });
+
+      db.prepare("INSERT INTO platform_content (key, value) VALUES ('_homepage_restore_v1', '1') ON CONFLICT(key) DO UPDATE SET value = excluded.value").run();
+    }
+  } catch (_) { /* ignore */ }
+
+  try {
+    if (!db.prepare("SELECT 1 FROM platform_content WHERE key = '_services_subtitle_v2'").get()) {
+      db.prepare("UPDATE cms_sections SET subtitle = ? WHERE section_key = 'service_categories'")
+        .run('Shop, websites, and plugging — one platform');
+      db.prepare("INSERT INTO platform_content (key, value) VALUES ('_services_subtitle_v2', '1') ON CONFLICT(key) DO UPDATE SET value = excluded.value").run();
+    }
+  } catch (_) { /* ignore */ }
+
+  try {
+    if (!db.prepare("SELECT 1 FROM platform_content WHERE key = '_lending_removed_v1'").get()) {
+      db.exec(`
+        DROP TABLE IF EXISTS loan_applications;
+        DROP TABLE IF EXISTS loan_plans;
+        DROP TABLE IF EXISTS lending_kyc;
+        DROP TABLE IF EXISTS lending_documents;
+        DROP TABLE IF EXISTS lending_content;
+      `);
+      db.prepare("DELETE FROM cms_faqs WHERE scope = 'lending'").run();
+      db.prepare("DELETE FROM admin_notifications WHERE type = 'lending'").run();
+      const catRow = db.prepare("SELECT id, content_json FROM cms_sections WHERE section_key = 'service_categories'").get();
+      if (catRow) {
+        let content = {};
+        try { content = JSON.parse(catRow.content_json || '{}'); } catch (_) { content = {}; }
+        if (Array.isArray(content.items)) {
+          content.items = content.items.filter((i) => i.link !== '/lending');
+          db.prepare('UPDATE cms_sections SET content_json = ?, subtitle = ? WHERE id = ?')
+            .run(JSON.stringify(content), 'Shop, websites, and plugging — one platform', catRow.id);
+        }
+      }
+      db.prepare("INSERT INTO platform_content (key, value) VALUES ('_lending_removed_v1', '1') ON CONFLICT(key) DO UPDATE SET value = excluded.value").run();
+    }
+  } catch (_) { /* ignore */ }
+
+  try {
+    if (!db.prepare("SELECT 1 FROM platform_content WHERE key = '_homepage_content_v3'").get()) {
+      const defaults = {
+        why_choose_us: {
+          items: [
+            { icon: 'shield', title: 'Secure & Reliable', text: 'Enterprise-grade security for every transaction.' },
+            { icon: 'zap', title: 'Fast Delivery', text: 'Instant access to digital products after approval.' },
+            { icon: 'heart', title: 'Dedicated Support', text: 'Real people ready to help via chat and tickets.' },
+            { icon: 'star', title: 'Premium Quality', text: 'Curated services at affordable prices.' }
+          ]
+        },
+        service_benefits: {
+          items: [
+            { title: 'Digital Products', text: 'Premium subscriptions and tools at fair prices.', link: '/shop' },
+            { title: 'Website Making', text: 'Professional websites built for your business.', link: '/website-making' },
+            { title: 'Telegram Plugging', text: 'Automated message forwarding for Telegram.', link: '/plugging' }
+          ]
+        },
+        service_categories: {
+          items: [
+            { title: 'Plugging', desc: 'Telegram message auto forwarder — automatically relay messages to your groups and channels.', link: '/plugging', icon: 'plug', cta: 'View Plugging', primary: true },
+            { title: 'Shop', desc: 'Premium digital products, apps, and subscriptions delivered after purchase.', link: '/shop', icon: 'cart', cta: 'Browse Shop' },
+            { title: 'Website Making', desc: 'Custom ecommerce sites, auto-order platforms, and ongoing maintenance.', link: '/website-making', icon: 'web', cta: 'View Packages' }
+          ]
+        }
+      };
+      const fixSection = (key, fallback) => {
+        const row = db.prepare('SELECT id, content_json FROM cms_sections WHERE section_key = ?').get(key);
+        if (!row) return;
+        let content = {};
+        try { content = JSON.parse(row.content_json || '{}'); } catch (_) { content = {}; }
+        if (!Array.isArray(content.items) || !content.items.length) {
+          content.items = fallback.items;
+          db.prepare('UPDATE cms_sections SET content_json = ? WHERE id = ?').run(JSON.stringify(content), row.id);
+        }
+      };
+      fixSection('why_choose_us', defaults.why_choose_us);
+      fixSection('service_benefits', defaults.service_benefits);
+      fixSection('service_categories', defaults.service_categories);
+
+      if (db.prepare('SELECT COUNT(*) AS c FROM cms_statistics WHERE is_enabled = 1').get().c < 3) {
+        const ins = db.prepare('INSERT OR IGNORE INTO cms_statistics (label, value, icon, sort_order, is_enabled) VALUES (?, ?, ?, ?, 1)');
+        [
+          ['Happy Customers', '2,500+', 'users', 0],
+          ['Products Sold', '10,000+', 'cart', 1],
+          ['Websites Built', '80+', 'web', 2],
+          ['Orders Delivered', '15,000+', 'star', 3]
+        ].forEach((r) => { try { ins.run(...r); } catch (_) { /* ignore */ } });
+      }
+      db.prepare("UPDATE cms_statistics SET is_enabled = 0 WHERE label LIKE '%Loan%' OR label LIKE '%Lending%'").run();
+      if (!db.prepare("SELECT 1 FROM cms_statistics WHERE is_enabled = 1 AND label = 'Orders Delivered'").get()) {
+        db.prepare("INSERT INTO cms_statistics (label, value, icon, sort_order, is_enabled) VALUES ('Orders Delivered', '15,000+', 'star', 3, 1)").run();
+      }
+
+      db.prepare("INSERT INTO platform_content (key, value) VALUES ('_homepage_content_v3', '1') ON CONFLICT(key) DO UPDATE SET value = excluded.value").run();
+    }
+  } catch (_) { /* ignore */ }
+
+  try {
+    if (!db.prepare("SELECT 1 FROM platform_content WHERE key = '_homepage_stats_v4'").get()) {
+      db.prepare("UPDATE cms_statistics SET is_enabled = 0 WHERE label LIKE '%Loan%' OR label LIKE '%Lending%'").run();
+      if (!db.prepare("SELECT 1 FROM cms_statistics WHERE label = 'Orders Delivered'").get()) {
+        db.prepare("INSERT INTO cms_statistics (label, value, icon, sort_order, is_enabled) VALUES ('Orders Delivered', '15,000+', 'star', 3, 1)").run();
+      } else {
+        db.prepare("UPDATE cms_statistics SET is_enabled = 1, value = '15,000+', sort_order = 3 WHERE label = 'Orders Delivered'").run();
+      }
+      db.prepare("INSERT INTO platform_content (key, value) VALUES ('_homepage_stats_v4', '1') ON CONFLICT(key) DO UPDATE SET value = excluded.value").run();
+    }
+  } catch (_) { /* ignore */ }
+
+  try {
+    if (!db.prepare("SELECT 1 FROM platform_content WHERE key = '_testimonials_restore_v1'").get()) {
+      db.prepare("UPDATE cms_testimonials SET is_enabled = 0 WHERE service_type = 'lending'").run();
+      db.prepare("DELETE FROM cms_testimonials WHERE service_type = 'lending'").run();
+      const enabledCount = db.prepare('SELECT COUNT(*) AS c FROM cms_testimonials WHERE is_enabled = 1').get().c;
+      if (enabledCount === 0) {
+        const ins = db.prepare(`
+          INSERT INTO cms_testimonials (service_type, author_name, author_role, body, rating, sort_order, is_enabled)
+          VALUES (?, ?, ?, ?, ?, ?, 1)
+        `);
+        const rows = [
+          ['shop', 'Maria C.', 'Verified Buyer', 'Fast delivery and legit premium account. Will order again.', 5, 0],
+          ['plugging', 'James R.', 'Plugging Customer', 'Setup was smooth and message forwarding works perfectly.', 5, 1],
+          ['website', 'Ana L.', 'Website Client', 'Professional team built exactly what I needed for my online store.', 5, 2],
+          ['general', 'Ken P.', 'Repeat Customer', 'Trusted seller — responsive support and fair prices every time.', 5, 3],
+          ['shop', 'Sofia M.', 'Verified Buyer', 'Payment verified quickly and credentials arrived in my dashboard.', 5, 4],
+          ['general', 'Daniel T.', 'Long-time Client', 'Best place for digital products and bulk orders.', 5, 5]
+        ];
+        rows.forEach((r) => ins.run(...r));
+      } else {
+        db.prepare("UPDATE cms_testimonials SET is_enabled = 1 WHERE service_type != 'lending'").run();
+      }
+      db.prepare("INSERT INTO platform_content (key, value) VALUES ('_testimonials_restore_v1', '1') ON CONFLICT(key) DO UPDATE SET value = excluded.value").run();
+    }
+  } catch (_) { /* ignore */ }
+
+  try {
+    if (!db.prepare("SELECT 1 FROM platform_content WHERE key = '_cms_faqs_long_v2'").get()) {
+      const homeFaqs = [
+        ['home', 'What services do you offer?', 'Loveriette is a multi-service digital platform. Our Shop offers premium app accounts, streaming subscriptions, and creative tools with verified delivery after payment. Website Making covers ecommerce stores, auto-order sites, landing pages, and ongoing maintenance. Plugging is a self-service Telegram message auto-forwarder that runs on your own account.', 0],
+        ['home', 'How do I place an order?', 'Create an account or sign in, then browse the Shop and add items to your cart. At checkout, choose your payment method and pay the exact amount shown. Upload a clear payment receipt before submitting. Once approved, credentials appear in My Account → Purchases.', 1],
+        ['home', 'How long does delivery take?', 'Most digital shop orders are processed within minutes to a few hours after payment verification. Orders outside business hours are handled at the next active period. Website and plugging services follow their respective inquiry or access-key workflows.', 2],
+        ['home', 'What payment methods do you accept?', 'Accepted methods are shown at checkout (e.g. GCash, QRPH). Pay the exact total and upload only genuine, unedited receipts. Incorrect amounts may delay or void your order.', 3],
+        ['home', 'Is my payment secure?', 'We do not store card or banking passwords. Payments are verified manually with reasonable safeguards. Never share your login or OTP with unofficial support contacts.', 4],
+        ['home', 'How does website making work?', 'Compare packages on the Website Making page, submit an inquiry with your requirements, and our team responds with scope, timeline, and payment steps.', 5]
+      ];
+      const plugFaqs = [
+        ['plugging', 'What is Telegram plugging?', 'Plugging auto-forwards messages from a source Telegram chat to your target groups or channels using your own Telegram account. You control source, targets, and forwarding rules inside your private workspace.', 0],
+        ['plugging', 'Is setup done manually by admins?', 'No. After payment approval you receive an access key. Enter it on the Plugging page, verify your Telegram with OTP, configure source and targets, then start forwarding yourself.', 1],
+        ['plugging', 'Do I need to share my Telegram password?', 'Never. You only enter your phone number and the one-time code Telegram sends — the same as normal Telegram login. We never ask for your Telegram password.', 2],
+        ['plugging', 'Can I run plugging on multiple devices?', 'Your workspace session is tied to your access key and plan duration. Use one active workspace per key unless your plan states otherwise. Contact support before sharing keys.', 3]
+      ];
+      db.prepare("DELETE FROM cms_faqs WHERE scope IN ('home', 'plugging')").run();
+      const ins = db.prepare('INSERT INTO cms_faqs (scope, question, answer, sort_order, is_enabled) VALUES (?, ?, ?, ?, 1)');
+      [...homeFaqs, ...plugFaqs].forEach((r) => ins.run(...r));
+      db.prepare("INSERT INTO platform_content (key, value) VALUES ('_cms_faqs_long_v2', '1') ON CONFLICT(key) DO UPDATE SET value = excluded.value").run();
+    }
+  } catch (_) { /* ignore */ }
+
+  try {
+    if (!db.prepare("SELECT 1 FROM platform_content WHERE key = '_website_faqs_ensure_v1'").get()) {
+      const count = db.prepare("SELECT COUNT(*) AS c FROM cms_faqs WHERE scope = 'website' AND is_enabled = 1").get().c;
+      if (count === 0) {
+        const ins = db.prepare('INSERT INTO cms_faqs (scope, question, answer, sort_order, is_enabled) VALUES (?, ?, ?, ?, 1)');
+        [
+          ['website', 'How long does it take to build a website?', 'Typical turnaround is 1–2 weeks depending on complexity.', 0],
+          ['website', 'Do you provide hosting?', 'Yes, hosting is included in rental and maintenance packages.', 1],
+          ['website', 'Can I request changes after launch?', 'Minor edits are included in maintenance plans.', 2]
+        ].forEach((r) => ins.run(...r));
+      }
+      db.prepare("INSERT INTO platform_content (key, value) VALUES ('_website_faqs_ensure_v1', '1') ON CONFLICT(key) DO UPDATE SET value = excluded.value").run();
+    }
+  } catch (_) { /* ignore */ }
+
+  try {
+    if (!db.prepare("SELECT 1 FROM platform_content WHERE key = '_homepage_trim_v5'").get()) {
+      db.prepare("DELETE FROM cms_sections WHERE section_key = 'service_benefits'").run();
+      db.prepare('UPDATE cms_statistics SET is_enabled = 0').run();
+      db.prepare("INSERT INTO platform_content (key, value) VALUES ('_homepage_trim_v5', '1') ON CONFLICT(key) DO UPDATE SET value = excluded.value").run();
+    }
   } catch (_) { /* ignore */ }
 }
 

@@ -1,0 +1,80 @@
+/**
+ * Critical paint layer — load FIRST in <head>.
+ * Matches style.css :root defaults so first paint never shows wrong/old theme.
+ * theme-colors.js may override later only when admin palette differs.
+ */
+:root {
+  color-scheme: dark;
+  --primary-color: #e50914;
+  --secondary-color: #ff3b3b;
+  --background-color: #080404;
+  --font-color: #f0ecec;
+  --surface-color: #120608;
+  --surface-alt-color: #1a080a;
+  --border-color: #3a1520;
+  --muted-color: #b8a0a4;
+  --tint-color: #2a1015;
+  --button-gradient: linear-gradient(135deg, #ff3b3b 0%, #b20710 55%, #8b0000 100%);
+  --on-primary-color: #ffffff;
+  --shadow-color: rgba(229, 9, 20, 0.22);
+  --glass-bg: rgba(12, 4, 6, 0.72);
+  --glass-border: rgba(229, 9, 20, 0.22);
+  --bg: #080404;
+  --surface: #120608;
+  --surface-2: #1a080a;
+  --border: #3a1520;
+  --text: #f0ecec;
+  --text-muted: #b8a0a4;
+  --accent: #e50914;
+  --accent-2: #ff3b3b;
+  --btn-bg: linear-gradient(135deg, #ff3b3b 0%, #b20710 55%, #8b0000 100%);
+  --on-primary: #ffffff;
+  --glow-red: 0 0 24px rgba(229, 9, 20, 0.45);
+}
+
+html {
+  background-color: #080404;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html.light-mode,
+body.light-mode {
+  background-color: var(--background-color);
+  color: var(--font-color);
+}
+
+body {
+  margin: 0;
+  background-color: var(--background-color);
+  color: var(--font-color);
+}
+
+.top-nav {
+  contain: layout style;
+}
+
+.products,
+.package-grid,
+.catalog-header {
+  contain: layout style;
+}
+
+/* Mobile nav — hide raw links until nav-shell.js runs (prevents expanded→collapsed CLS) */
+@media (max-width: 768px) {
+  .nav-inner:not([data-mobile-ready]) {
+    min-height: 48px;
+  }
+
+  .nav-inner:not([data-mobile-ready]) > .nav-left,
+  .nav-inner:not([data-mobile-ready]) > .nav-right,
+  .nav-inner:not([data-mobile-ready]) > .store-brand {
+    display: none !important;
+  }
+}
+
+img,
+svg {
+  max-width: 100%;
+  height: auto;
+}

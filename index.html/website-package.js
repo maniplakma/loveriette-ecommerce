@@ -1,60 +1,144 @@
 const slug = location.pathname.split('/').pop();
 let packageId = null;
+let packageData = null;
 
-function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+function esc(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+}
 
-async function loadPackage() {
-  const p = await fetch('/api/website-making/packages/' + encodeURIComponent(slug)).then((r) => r.json());
-  if (p.error) {
-    document.getElementById('pkg-content').innerHTML = '<p>Package not found.</p>';
-    return;
-  }
+function categoryLabel(cat) {
+  const map = {
+    ecommerce: 'Ecommerce',
+    'auto-order': 'Auto Order',
+    rental: 'Rental',
+    custom: 'Custom Build',
+    business: 'Business',
+    'landing-page': 'Landing Page',
+    maintenance: 'Maintenance'
+  };
+  return map[cat] || (cat ? String(cat).replace(/-/g, ' ') : 'Website Package');
+}
+
+function renderPackage(p) {
   packageId = p.id;
-  document.title = `${p.name} — loveriette`;
-  if (window.applySeoMeta) applySeoMeta({ title: document.title, description: p.description, url: p.shareUrl });
+  packageData = p;
+  const title = p.metaTitle || p.name;
+  document.title = `${title} — loveriette`;
+  if (window.applySeoMeta) {
+    applySeoMeta({
+      title: document.title,
+      description: p.metaDescription || p.description || p.longDescription,
+      image: p.ogImage || p.imageUrl,
+      url: p.shareUrl
+    });
+  }
+
+  const features = (p.features || []).map((f) => `<li>${esc(f)}</li>`).join('');
+  const related = (p.relatedPackages || []).map((r) => `
+    <a href="/website-making/${esc(r.slug)}" class="package-card package-card--compact">
+      ${r.imageUrl ? `<div class="package-card-media"><img src="${esc(r.imageUrl)}" alt="" loading="lazy"></div>` : ''}
+      <div class="package-card-body">
+        <h3>${esc(r.name)}</h3>
+        <p class="package-price">${esc(r.priceLabel || '₱' + Number(r.price).toLocaleString())}</p>
+      </div>
+    </a>`).join('');
 
   document.getElementById('pkg-content').innerHTML = `
-    <a href="/website-making">← All Packages</a>
-    <h1>${esc(p.name)}</h1>
-    <div class="package-price">${esc(p.priceLabel || '₱' + Number(p.price).toLocaleString())}</div>
-    <p>${esc(p.longDescription || p.description)}</p>
-    <ul class="package-features">${(p.features||[]).map((f) => `<li>${esc(f)}</li>`).join('')}</ul>
-    <div class="package-actions">
-      <button type="button" class="btn-primary-platform" id="order-btn">Order Now</button>
-      <button type="button" class="btn-outline-platform" id="inquiry-btn">Send Inquiry</button>
-    </div>`;
+    <div class="service-hero service-hero--flirty package-detail-hero">
+      <a href="/website-making" class="back-explore">← All Packages</a>
+      ${p.category ? `<span class="package-detail-badge">${esc(categoryLabel(p.category))}</span>` : ''}
+      <h1 class="title-alt">${esc(p.name)}</h1>
+      <p class="package-detail-price">${esc(p.priceLabel || '₱' + Number(p.price).toLocaleString())}</p>
+      ${p.description ? `<p class="package-detail-lead">${esc(p.description)}</p>` : ''}
+    </div>
+    <div class="package-detail-grid">
+      ${p.imageUrl ? `<div class="package-detail-media"><img src="${esc(p.imageUrl)}" alt="${esc(p.name)}" loading="eager"></div>` : ''}
+      <div class="package-detail-main">
+        <section class="package-detail-section">
+          <h2 class="title-alt">What's included</h2>
+          <div class="package-detail-body">${esc(p.longDescription || p.description || 'Contact us for full package details.')}</div>
+          ${features ? `<ul class="package-features">${features}</ul>` : ''}
+        </section>
+        <div class="package-actions package-detail-actions">
+          <button type="button" class="btn-primary-platform" id="order-btn">Order Now</button>
+          <button type="button" class="btn-outline-platform" id="inquiry-btn">Send Inquiry</button>
+        </div>
+      </div>
+    </div>
+    ${related ? `
+      <section class="package-detail-related">
+        <h2 class="title-alt">Other packages</h2>
+        <div class="package-grid package-grid--related">${related}</div>
+      </section>` : ''}`;
 
-  if (window.renderShareButtons) renderShareButtons(document.getElementById('pkg-share'), p.shareUrl, p.name);
+  if (window.renderShareButtons) {
+    renderShareButtons(document.getElementById('pkg-share'), p.shareUrl, p.name);
+  }
 
   document.getElementById('inquiry-btn').addEventListener('click', () => {
     document.getElementById('inquiry-modal').showModal();
   });
-
   document.getElementById('order-btn').addEventListener('click', () => {
     document.getElementById('inquiry-modal').showModal();
-    document.querySelector('#inquiry-form textarea').value = `I would like to order the ${p.name} package.`;
+    const ta = document.querySelector('#inquiry-form textarea');
+    if (ta) ta.value = `I would like to order the ${p.name} package.`;
   });
+}
+
+async function loadPackage() {
+  const el = document.getElementById('pkg-content');
+  try {
+    const fetcher = window.ApiCache
+      ? (url) => ApiCache.fetchJson(url, {}, 60000)
+      : (url) => fetch(url).then((r) => r.json());
+    const p = await fetcher('/api/website-making/packages/' + encodeURIComponent(slug));
+    if (p.error) {
+      el.innerHTML = '<div class="empty-state"><p>Package not found.</p><a href="/website-making" class="btn-outline-platform">← Back to packages</a></div>';
+      return;
+    }
+    renderPackage(p);
+  } catch (e) {
+    el.innerHTML = '<div class="empty-state"><p>Could not load package. Please try again.</p><a href="/website-making" class="btn-outline-platform">← Back to packages</a></div>';
+    console.warn('Package load failed', e);
+  }
 }
 
 document.getElementById('inquiry-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const fd = new FormData(e.target);
-  const body = { packageId, name: fd.get('name'), email: fd.get('email'), phone: fd.get('phone'), message: fd.get('message') };
+  const body = {
+    packageId,
+    name: fd.get('name'),
+    email: fd.get('email'),
+    phone: fd.get('phone'),
+    message: fd.get('message')
+  };
   try {
     const res = await fetch('/api/website-making/inquiry', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify(body)
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(body)
     });
     const json = await res.json();
     if (!res.ok) throw new Error(json.error);
     document.getElementById('inquiry-modal').close();
-    const pkgName = document.querySelector('#pkg-content h1')?.textContent || 'Website package';
-    location.href = `order-thanks.html?type=website&package=${encodeURIComponent(pkgName)}`;
+    const email = encodeURIComponent(String(body.email || ''));
+    const dest = json.inquiryUrl
+      ? `${json.inquiryUrl}?email=${email}`
+      : `order-thanks.html?type=website&ref=${encodeURIComponent(json.inquiryRef || '')}&email=${email}`;
+    location.href = dest;
   } catch (err) {
     if (window.showToast) showToast(err.message || 'Failed to send');
   }
 });
 
-document.addEventListener('DOMContentLoaded', () => {
+const domReady = window.domReady || window.onPageReady || function (fn) {
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fn, { once: true });
+  else fn();
+};
+
+domReady(() => {
   initPlatformNav('website');
-  loadPackage().catch(() => {});
+  loadPackage();
 });

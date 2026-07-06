@@ -1,5 +1,5 @@
 /**
- * Platform API routes: CMS, lending, website-making, analytics, SEO.
+ * Platform API routes: CMS, website-making, analytics, SEO.
  */
 function mountPlatformRoutes(app, db, deps) {
   const {
@@ -25,6 +25,35 @@ function mountPlatformRoutes(app, db, deps) {
     try { return JSON.parse(raw); } catch (_) { return fallback; }
   }
 
+  const HOMEPAGE_SECTION_DEFAULTS = {
+    why_choose_us: {
+      items: [
+        { icon: 'shield', title: 'Secure & Reliable', text: 'Enterprise-grade security for every transaction.' },
+        { icon: 'zap', title: 'Fast Delivery', text: 'Instant access to digital products after approval.' },
+        { icon: 'heart', title: 'Dedicated Support', text: 'Real people ready to help via chat and tickets.' },
+        { icon: 'star', title: 'Premium Quality', text: 'Curated services at affordable prices.' }
+      ]
+    },
+    service_categories: {
+      items: [
+        { title: 'Plugging', desc: 'Telegram message auto forwarder — relay messages across your groups and channels.', link: '/plugging', icon: 'plug', cta: 'View Plugging', primary: true },
+        { title: 'Shop', desc: 'Premium digital products and subscriptions delivered after purchase.', link: '/shop', icon: 'cart', cta: 'Browse Shop' },
+        { title: 'Website Making', desc: 'Custom ecommerce sites and ongoing maintenance for your brand.', link: '/website-making', icon: 'web', cta: 'View Packages' }
+      ]
+    }
+  };
+
+  function ensureSectionItems(section) {
+    if (!section?.key) return section;
+    const fallback = HOMEPAGE_SECTION_DEFAULTS[section.key];
+    if (!fallback) return section;
+    const content = section.content && typeof section.content === 'object' ? { ...section.content } : {};
+    if (!Array.isArray(content.items) || !content.items.length) {
+      content.items = fallback.items;
+    }
+    return { ...section, content };
+  }
+
   function genAppId() {
     return crypto.randomBytes(6).toString('hex');
   }
@@ -33,8 +62,44 @@ function mountPlatformRoutes(app, db, deps) {
     return `PLG-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
   }
 
-  function getLendingSettings() {
-    const rows = db.prepare('SELECT key, value FROM lending_content').all();
+  function genInquiryRef() {
+    let ref = `WEB-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+    while (db.prepare('SELECT 1 FROM website_inquiries WHERE inquiry_ref = ?').get(ref)) {
+      ref = `WEB-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+    }
+    return ref;
+  }
+
+  function mapInquiryRow(row) {
+    if (!row) return null;
+    return {
+      id: row.id,
+      inquiryRef: row.inquiry_ref,
+      packageId: row.package_id,
+      packageName: row.package_name || null,
+      name: row.name,
+      email: row.email,
+      phone: row.phone,
+      message: row.message,
+      status: row.status,
+      adminNotes: row.admin_notes || '',
+      unreadByAdmin: !!row.unread_by_admin,
+      unreadByClient: !!row.unread_by_client,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      chatUrl: row.inquiry_ref ? `/website-making/inquiry/${row.inquiry_ref}` : null
+    };
+  }
+
+  function getInquiryMessages(inquiryId) {
+    return db.prepare(`
+      SELECT id, sender_type AS senderType, body, created_at AS createdAt
+      FROM website_inquiry_messages WHERE inquiry_id = ? ORDER BY id ASC
+    `).all(inquiryId);
+  }
+
+  function getPlatformSettings() {
+    const rows = db.prepare('SELECT key, value FROM platform_content').all();
     const out = {};
     rows.forEach((r) => { out[r.key] = r.value; });
     return out;
@@ -53,17 +118,26 @@ function mountPlatformRoutes(app, db, deps) {
       SELECT id, name, slug, description, icon, category, features, sort_order, is_enabled
       FROM plugging_products ${prodWhere} ORDER BY sort_order ASC, id ASC
     `).all();
-    return products.map((prod) => {
-      const variantWhere = enabledOnly ? 'AND is_enabled = 1' : '';
-      const variants = db.prepare(`
-        SELECT id, name, slug, description, price, price_label AS priceLabel, duration,
-               max_sources AS maxSources, max_destinations AS maxDestinations, features, sort_order, is_enabled
-        FROM plugging_plans WHERE product_id = ? ${variantWhere}
-        ORDER BY sort_order ASC, id ASC
-      `).all(prod.id).map((v) => ({
+    if (!products.length) return [];
+    const productIds = products.map((p) => p.id);
+    const placeholders = productIds.map(() => '?').join(',');
+    const variantWhere = enabledOnly ? 'AND is_enabled = 1' : '';
+    const allPlans = db.prepare(`
+      SELECT id, product_id, name, slug, description, price, price_label AS priceLabel, duration,
+             max_sources AS maxSources, max_destinations AS maxDestinations, features, sort_order, is_enabled
+      FROM plugging_plans WHERE product_id IN (${placeholders}) ${variantWhere}
+      ORDER BY product_id ASC, sort_order ASC, id ASC
+    `).all(...productIds);
+    const plansByProduct = {};
+    allPlans.forEach((v) => {
+      if (!plansByProduct[v.product_id]) plansByProduct[v.product_id] = [];
+      plansByProduct[v.product_id].push({
         ...v,
         features: parseJson(v.features, [])
-      }));
+      });
+    });
+    return products.map((prod) => {
+      const variants = plansByProduct[prod.id] || [];
       const prices = variants.map((v) => Number(v.price)).filter((n) => n > 0);
       const startingPrice = prices.length ? Math.min(...prices) : 0;
       return {
@@ -126,7 +200,16 @@ function mountPlatformRoutes(app, db, deps) {
       SELECT id, name, slug, icon, price, category FROM products
       WHERE id != ? AND category = ? AND is_enabled != 0
       ORDER BY sold_count DESC LIMIT 4
-    `).all(product.id, product.category).map((r) => withPlanListing(r));
+    `).all(product.id, product.category).map((r) => ({
+      id: r.id,
+      name: r.name,
+      slug: r.slug,
+      icon: r.icon,
+      price: r.price,
+      category: r.category,
+      startingPrice: r.price,
+      shareUrl: r.slug ? `/product/${r.slug}` : `/product.html?id=${r.id}`
+    }));
     return mapProductSeo(product);
   }
 
@@ -150,8 +233,6 @@ function mountPlatformRoutes(app, db, deps) {
   const pageRoutes = [
     ['/', 'index.html'],
     ['/shop', 'shop.html'],
-    ['/lending', 'lending.html'],
-    ['/lending/apply', 'lending-apply.html'],
     ['/website-making', 'website-making.html'],
     ['/plugging', 'plugging.html']
   ];
@@ -172,19 +253,15 @@ function mountPlatformRoutes(app, db, deps) {
     sendHtmlPage(res, frontendDir, 'product.html');
   });
 
-  app.get('/lending/plan/:slug', (req, res) => {
-    if (isInvalidPageSlug(req.params.slug)) return res.redirect(302, '/lending');
+  app.get('/website-making/inquiry/:ref', (req, res) => {
+    const ref = String(req.params.ref || '').trim();
+    if (!ref || ref.length > 32) return res.redirect(302, '/website-making');
     trackVisit(req);
-    sendHtmlPage(res, frontendDir, 'lending-plan.html');
-  });
-
-  app.get('/lending/application/:appId', (req, res) => {
-    if (isInvalidPageSlug(req.params.appId)) return res.redirect(302, '/lending');
-    trackVisit(req);
-    sendHtmlPage(res, frontendDir, 'lending-application.html');
+    sendHtmlPage(res, frontendDir, 'website-inquiry.html');
   });
 
   app.get('/website-making/:slug', (req, res) => {
+    if (req.params.slug === 'inquiry') return res.redirect(302, '/website-making');
     if (isInvalidPageSlug(req.params.slug)) return res.redirect(302, '/website-making');
     trackVisit(req);
     sendHtmlPage(res, frontendDir, 'website-package.html');
@@ -198,13 +275,10 @@ function mountPlatformRoutes(app, db, deps) {
 
   // ── Public CMS ──
   app.get('/api/homepage', (req, res) => {
-    res.set('Cache-Control', 'public, max-age=30');
+    res.set('Cache-Control', 'public, max-age=45, stale-while-revalidate=120');
     const sections = db.prepare(
-      'SELECT section_key AS key, section_type AS type, title, subtitle, body, content_json AS contentJson, sort_order AS sortOrder FROM cms_sections WHERE is_enabled = 1 ORDER BY sort_order ASC'
-    ).all().map((s) => ({ ...s, content: parseJson(s.contentJson, {}) }));
-    const statistics = db.prepare(
-      'SELECT label, value, icon FROM cms_statistics WHERE is_enabled = 1 ORDER BY sort_order ASC'
-    ).all();
+      'SELECT section_key AS key, section_type AS type, title, subtitle, body, content_json AS contentJson, sort_order AS sortOrder FROM cms_sections WHERE is_enabled = 1 AND section_key != ? ORDER BY sort_order ASC'
+    ).all('service_benefits').map((s) => ensureSectionItems({ ...s, content: parseJson(s.contentJson, {}) }));
     const faqs = db.prepare(
       'SELECT question, answer FROM cms_faqs WHERE scope = ? AND is_enabled = 1 ORDER BY sort_order ASC'
     ).all('home');
@@ -215,18 +289,21 @@ function mountPlatformRoutes(app, db, deps) {
       'SELECT title, body FROM cms_announcements WHERE (scope = ? OR scope = ?) AND is_enabled = 1 ORDER BY id DESC LIMIT 5'
     ).all('all', 'home');
     const activity = db.prepare(
-      "SELECT feed_type AS type, message, meta_json AS metaJson, created_at AS createdAt FROM activity_feed WHERE feed_type IN ('order', 'lending') ORDER BY id DESC LIMIT 15"
+      "SELECT feed_type AS type, message, meta_json AS metaJson, created_at AS createdAt FROM activity_feed WHERE feed_type = 'order' ORDER BY id DESC LIMIT 15"
     ).all().map(mapActivityFeedRow);
-    const featured = db.prepare(
-      "SELECT * FROM products WHERE is_featured = 1 AND is_enabled != 0 ORDER BY id ASC LIMIT 6"
-    ).all().map(withPlanListing);
-    res.json({ sections, statistics, faqs, banners, announcements, activity, featured, footer: getFooterContent() });
+    const testimonials = db.prepare(`
+      SELECT service_type AS serviceType, author_name AS authorName, author_role AS authorRole,
+             body, rating, avatar_url AS avatarUrl
+      FROM cms_testimonials WHERE is_enabled = 1 AND service_type != 'lending'
+      ORDER BY sort_order ASC, id ASC LIMIT 12
+    `).all();
+    res.json({ sections, faqs, banners, announcements, activity, testimonials, footer: getFooterContent() });
   });
 
   app.get('/api/activity-feed', (req, res) => {
-    res.set('Cache-Control', 'public, max-age=15');
+    res.set('Cache-Control', 'public, max-age=15, stale-while-revalidate=45');
     res.json(db.prepare(
-      "SELECT feed_type AS type, message, meta_json AS metaJson, created_at AS createdAt FROM activity_feed WHERE feed_type IN ('order', 'lending') ORDER BY id DESC LIMIT 20"
+      "SELECT feed_type AS type, message, meta_json AS metaJson, created_at AS createdAt FROM activity_feed WHERE feed_type = 'order' ORDER BY id DESC LIMIT 20"
     ).all().map(mapActivityFeedRow));
   });
 
@@ -248,94 +325,6 @@ function mountPlatformRoutes(app, db, deps) {
       'SELECT id, author_name AS authorName, rating, body, created_at AS createdAt FROM product_reviews WHERE product_id = ? AND is_published = 1 ORDER BY id DESC'
     ).all(id);
     res.json(reviews);
-  });
-
-  // ── Lending public ──
-  app.get('/api/lending', (req, res) => {
-    res.set('Cache-Control', 'public, max-age=30');
-    const settings = getLendingSettings();
-    const plans = db.prepare(`
-      SELECT id, name, slug, description, min_amount AS minAmount, max_amount AS maxAmount,
-             interest_rate AS interestRate, admin_fee AS adminFee, penalty_rate AS penaltyRate,
-             term_months AS termMonths, repayment_schedule AS repaymentSchedule, features,
-             meta_title AS metaTitle, meta_description AS metaDescription
-      FROM loan_plans WHERE is_enabled = 1 ORDER BY sort_order ASC
-    `).all().map((p) => ({
-      ...p,
-      features: parseJson(p.features, []),
-      repaymentSchedule: parseJson(p.repaymentSchedule, []),
-      shareUrl: `/lending/plan/${p.slug}`
-    }));
-    const faqs = db.prepare(
-      'SELECT question, answer FROM cms_faqs WHERE scope = ? AND is_enabled = 1 ORDER BY sort_order ASC'
-    ).all('lending');
-    const kyc = db.prepare('SELECT title, description, is_required AS required FROM lending_kyc ORDER BY sort_order ASC').all();
-    const documents = db.prepare('SELECT title, description, is_required AS required FROM lending_documents ORDER BY sort_order ASC').all();
-    res.json({
-      enabled: settings.lending_enabled !== '0',
-      heroTitle: settings.lending_hero_title,
-      heroSubtitle: settings.lending_hero_subtitle,
-      interestNote: settings.lending_interest_note,
-      contactEmail: settings.lending_contact_email,
-      contactPhone: settings.lending_contact_phone,
-      borrowerResponsibilities: parseJson(settings.lending_borrower_responsibilities, []),
-      terms: parseJson(settings.lending_terms, []),
-      applyFields: parseJson(settings.lending_apply_fields, []),
-      plans,
-      faqs,
-      kyc,
-      documents,
-      shareUrl: '/lending',
-      applyUrl: '/lending/apply'
-    });
-  });
-
-  app.get('/api/lending/plans/:slug', (req, res) => {
-    const plan = db.prepare('SELECT * FROM loan_plans WHERE slug = ? AND is_enabled = 1').get(req.params.slug);
-    if (!plan) return res.status(404).json({ error: 'Plan not found' });
-    res.json({
-      ...plan,
-      minAmount: plan.min_amount,
-      maxAmount: plan.max_amount,
-      interestRate: plan.interest_rate,
-      adminFee: plan.admin_fee,
-      penaltyRate: plan.penalty_rate,
-      termMonths: plan.term_months,
-      features: parseJson(plan.features, []),
-      repaymentSchedule: parseJson(plan.repayment_schedule, []),
-      shareUrl: `/lending/plan/${plan.slug}`
-    });
-  });
-
-  app.post('/api/lending/apply', (req, res) => {
-    const settings = getLendingSettings();
-    if (settings.lending_enabled === '0') {
-      return res.status(403).json({ error: 'Lending is currently unavailable' });
-    }
-    const { planId, formData } = req.body || {};
-    const appId = genAppId();
-    const userId = req.session?.userId || null;
-    db.prepare(`
-      INSERT INTO loan_applications (application_id, user_id, plan_id, status, form_data)
-      VALUES (?, ?, ?, 'pending', ?)
-    `).run(appId, userId, planId || null, JSON.stringify(formData || {}));
-    logActivity('lending', `New loan application submitted`, { applicationId: appId });
-    db.prepare(`
-      INSERT INTO admin_notifications (type, title, body) VALUES ('lending', 'New Loan Application', ?)
-    `).run(`Application ${appId} submitted`);
-    res.status(201).json({ applicationId: appId, shareUrl: `/lending/application/${appId}` });
-  });
-
-  app.get('/api/lending/application/:appId', (req, res) => {
-    const row = db.prepare(`
-      SELECT la.application_id AS applicationId, la.status, la.form_data AS formData, la.created_at AS createdAt,
-             lp.name AS planName, lp.slug AS planSlug
-      FROM loan_applications la
-      LEFT JOIN loan_plans lp ON lp.id = la.plan_id
-      WHERE la.application_id = ?
-    `).get(req.params.appId);
-    if (!row) return res.status(404).json({ error: 'Application not found' });
-    res.json({ ...row, formData: parseJson(row.formData, {}) });
   });
 
   // ── Website making public ──
@@ -360,29 +349,96 @@ function mountPlatformRoutes(app, db, deps) {
   });
 
   app.get('/api/website-making/packages/:slug', (req, res) => {
+    res.set('Cache-Control', 'public, max-age=30');
     const pkg = db.prepare('SELECT * FROM website_packages WHERE slug = ? AND is_enabled = 1').get(req.params.slug);
     if (!pkg) return res.status(404).json({ error: 'Package not found' });
+    const others = db.prepare(`
+      SELECT id, name, slug, category, description, price, price_label AS priceLabel, image_url AS imageUrl
+      FROM website_packages WHERE is_enabled = 1 AND slug != ? ORDER BY sort_order ASC LIMIT 3
+    `).all(pkg.slug).map((p) => ({
+      ...p,
+      shareUrl: `/website-making/${p.slug}`
+    }));
     res.json({
       ...pkg,
       priceLabel: pkg.price_label,
       longDescription: pkg.long_description,
       features: parseJson(pkg.features, []),
       imageUrl: pkg.image_url,
-      shareUrl: `/website-making/${pkg.slug}`
+      metaTitle: pkg.meta_title,
+      metaDescription: pkg.meta_description,
+      ogImage: pkg.og_image,
+      shareUrl: `/website-making/${pkg.slug}`,
+      relatedPackages: others
     });
   });
 
   app.post('/api/website-making/inquiry', (req, res) => {
     const { packageId, name, email, phone, message } = req.body || {};
     if (!name || !email) return res.status(400).json({ error: 'Name and email are required' });
-    db.prepare(`
-      INSERT INTO website_inquiries (package_id, name, email, phone, message) VALUES (?, ?, ?, ?, ?)
-    `).run(packageId || null, String(name).trim(), String(email).trim(), phone || '', message || '');
-    logActivity('website', `${name} sent a website inquiry`, { email });
+    const inquiryRef = genInquiryRef();
+    const msg = String(message || '').trim();
+    const r = db.prepare(`
+      INSERT INTO website_inquiries (package_id, name, email, phone, message, inquiry_ref, status, unread_by_admin, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 'new', 1, datetime('now'))
+    `).run(packageId || null, String(name).trim(), String(email).trim(), phone || '', msg, inquiryRef);
+    if (msg) {
+      db.prepare(`
+        INSERT INTO website_inquiry_messages (inquiry_id, sender_type, body) VALUES (?, 'client', ?)
+      `).run(r.lastInsertRowid, msg);
+    }
+    logActivity('website', `${name} sent a website inquiry`, { email, inquiryRef });
     db.prepare(`
       INSERT INTO admin_notifications (type, title, body) VALUES ('website', 'Website Inquiry', ?)
-    `).run(`${name} (${email}) sent an inquiry`);
-    res.status(201).json({ ok: true });
+    `).run(`${name} (${email}) — ${inquiryRef}`);
+    res.status(201).json({
+      ok: true,
+      inquiryRef,
+      inquiryUrl: `/website-making/inquiry/${inquiryRef}`
+    });
+  });
+
+  app.get('/api/website-making/inquiry/:ref', (req, res) => {
+    const row = db.prepare(`
+      SELECT wi.*, wp.name AS package_name FROM website_inquiries wi
+      LEFT JOIN website_packages wp ON wp.id = wi.package_id
+      WHERE wi.inquiry_ref = ?
+    `).get(req.params.ref);
+    if (!row) return res.status(404).json({ error: 'Inquiry not found' });
+    const emailCheck = String(req.query.email || '').trim().toLowerCase();
+    if (emailCheck && emailCheck !== String(row.email).toLowerCase()) {
+      return res.status(403).json({ error: 'Email does not match this inquiry' });
+    }
+    db.prepare('UPDATE website_inquiries SET unread_by_client = 0 WHERE id = ?').run(row.id);
+    res.json({
+      inquiry: mapInquiryRow(row),
+      messages: getInquiryMessages(row.id)
+    });
+  });
+
+  app.post('/api/website-making/inquiry/:ref/messages', (req, res) => {
+    const row = db.prepare('SELECT * FROM website_inquiries WHERE inquiry_ref = ?').get(req.params.ref);
+    if (!row) return res.status(404).json({ error: 'Inquiry not found' });
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    if (!email || email !== String(row.email).toLowerCase()) {
+      return res.status(403).json({ error: 'Valid email required to reply' });
+    }
+    const body = String(req.body?.message || '').trim();
+    if (!body) return res.status(400).json({ error: 'Message is required' });
+    db.prepare(`
+      INSERT INTO website_inquiry_messages (inquiry_id, sender_type, body) VALUES (?, 'client', ?)
+    `).run(row.id, body);
+    db.prepare(`
+      UPDATE website_inquiries SET unread_by_admin = 1, updated_at = datetime('now'),
+        status = CASE WHEN status = 'closed' THEN 'open' ELSE status END
+      WHERE id = ?
+    `).run(row.id);
+    try {
+      db.prepare(`
+        INSERT INTO admin_notifications (type, title, body) VALUES ('website', 'Inquiry Reply', ?)
+      `).run(`${row.name} replied on ${row.inquiry_ref}`);
+    } catch (_) { /* ignore */ }
+    res.status(201).json({ ok: true, messages: getInquiryMessages(row.id) });
   });
 
   // ── Plugging public ──
@@ -414,9 +470,10 @@ function mountPlatformRoutes(app, db, deps) {
 
   app.get('/api/plugging/products/:slug', (req, res) => {
     res.set('Cache-Control', 'public, max-age=30');
-    const product = mapPluggingProducts(db, true).find((p) => p.slug === req.params.slug);
+    const all = mapPluggingProducts(db, true);
+    const product = all.find((p) => p.slug === req.params.slug);
     if (!product) return res.status(404).json({ error: 'Product not found' });
-    const others = mapPluggingProducts(db, true).filter((p) => p.slug !== product.slug).slice(0, 3);
+    const others = all.filter((p) => p.slug !== product.slug).slice(0, 3);
     res.json({ product, related: others });
   });
 
@@ -471,13 +528,11 @@ function mountPlatformRoutes(app, db, deps) {
   app.get('/sitemap.xml', (req, res) => {
     const base = `${req.protocol}://${req.get('host')}`;
     const urls = [
-      '/', '/shop', '/lending', '/lending/apply', '/website-making', '/plugging',
+      '/', '/shop', '/website-making', '/plugging',
       '/faqs.html', '/about.html', '/contact.html'
     ];
     db.prepare("SELECT slug FROM products WHERE is_enabled != 0 AND slug IS NOT NULL").all()
       .forEach((p) => urls.push(`/product/${p.slug}`));
-    db.prepare('SELECT slug FROM loan_plans WHERE is_enabled = 1').all()
-      .forEach((p) => urls.push(`/lending/plan/${p.slug}`));
     db.prepare('SELECT slug FROM website_packages WHERE is_enabled = 1').all()
       .forEach((p) => urls.push(`/website-making/${p.slug}`));
     const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${
@@ -489,9 +544,9 @@ function mountPlatformRoutes(app, db, deps) {
   // ── Platform analytics (admin) ──
   app.get('/admin/platform/stats', requireAdmin, (req, res) => {
     const productSales = db.prepare("SELECT COALESCE(SUM(total), 0) AS v FROM orders WHERE status = 'approved'").get().v;
-    const lendingApps = db.prepare('SELECT COUNT(*) AS c FROM loan_applications').get().c;
-    const approvedLoans = db.prepare("SELECT COUNT(*) AS c FROM loan_applications WHERE status = 'approved'").get().c;
     const websiteInquiries = db.prepare('SELECT COUNT(*) AS c FROM website_inquiries').get().c;
+    const newWebsiteInquiries = db.prepare("SELECT COUNT(*) AS c FROM website_inquiries WHERE status IN ('new','open') OR unread_by_admin = 1").get().c;
+    const pendingPluggingOrders = db.prepare("SELECT COUNT(*) AS c FROM plugging_orders WHERE status IN ('pending_payment','pending_approval')").get().c;
     const pluggingRequests = db.prepare('SELECT COUNT(*) AS c FROM plugging_requests').get().c;
     const activePlugs = db.prepare("SELECT COUNT(*) AS c FROM plugging_requests WHERE status = 'active'").get().c;
     const visitorsToday = db.prepare(`
@@ -507,15 +562,14 @@ function mountPlatformRoutes(app, db, deps) {
     `).all();
     const servicePerf = [
       { service: 'Ecommerce', metric: 'Sales', value: productSales },
-      { service: 'Lending', metric: 'Applications', value: lendingApps },
       { service: 'Website Making', metric: 'Inquiries', value: websiteInquiries },
       { service: 'Plugging', metric: 'Requests', value: pluggingRequests }
     ];
     res.json({
       productSales,
-      lendingApplications: lendingApps,
-      approvedLoans,
       websiteInquiries,
+      newWebsiteInquiries,
+      pendingPluggingOrders,
       pluggingRequests,
       activePlugs,
       visitorsToday,
@@ -528,11 +582,11 @@ function mountPlatformRoutes(app, db, deps) {
   // ── Admin CMS ──
   app.get('/admin/cms/homepage', requireAdmin, (req, res) => {
     res.json({
-      sections: db.prepare('SELECT * FROM cms_sections ORDER BY sort_order ASC').all(),
-      statistics: db.prepare('SELECT * FROM cms_statistics ORDER BY sort_order ASC').all(),
+      sections: db.prepare('SELECT * FROM cms_sections WHERE section_key != ? ORDER BY sort_order ASC').all('service_benefits'),
       faqs: db.prepare('SELECT * FROM cms_faqs ORDER BY scope, sort_order ASC').all(),
       banners: db.prepare('SELECT * FROM cms_banners ORDER BY sort_order ASC').all(),
       announcements: db.prepare('SELECT * FROM cms_announcements ORDER BY id DESC').all(),
+      testimonials: db.prepare('SELECT * FROM cms_testimonials ORDER BY sort_order ASC, id ASC').all(),
       footer: getFooterContent()
     });
   });
@@ -547,28 +601,6 @@ function mountPlatformRoutes(app, db, deps) {
       WHERE section_key = ?
     `).run(title, subtitle, body, contentJson != null ? JSON.stringify(contentJson) : null,
       sortOrder, isEnabled != null ? (isEnabled ? 1 : 0) : null, req.params.key);
-    res.json({ ok: true });
-  });
-
-  app.post('/admin/cms/statistics', requireAdmin, (req, res) => {
-    const { label, value, icon, sortOrder } = req.body || {};
-    const r = db.prepare('INSERT INTO cms_statistics (label, value, icon, sort_order) VALUES (?, ?, ?, ?)')
-      .run(label, value, icon || '', sortOrder || 0);
-    res.status(201).json({ id: r.lastInsertRowid });
-  });
-
-  app.put('/admin/cms/statistics/:id', requireAdmin, (req, res) => {
-    const { label, value, icon, sortOrder, isEnabled } = req.body || {};
-    db.prepare(`
-      UPDATE cms_statistics SET label = COALESCE(?, label), value = COALESCE(?, value),
-        icon = COALESCE(?, icon), sort_order = COALESCE(?, sort_order),
-        is_enabled = COALESCE(?, is_enabled) WHERE id = ?
-    `).run(label, value, icon, sortOrder, isEnabled != null ? (isEnabled ? 1 : 0) : null, req.params.id);
-    res.json({ ok: true });
-  });
-
-  app.delete('/admin/cms/statistics/:id', requireAdmin, (req, res) => {
-    db.prepare('DELETE FROM cms_statistics WHERE id = ?').run(req.params.id);
     res.json({ ok: true });
   });
 
@@ -675,89 +707,24 @@ function mountPlatformRoutes(app, db, deps) {
     res.json({ ok: true });
   });
 
-  // ── Admin lending ──
-  app.get('/admin/lending', requireAdmin, (req, res) => {
+  // ── Admin modules (service availability) ──
+  app.get('/admin/modules', requireAdmin, (req, res) => {
+    const plugging = getPluggingSettings();
+    const platform = getPlatformSettings();
     res.json({
-      settings: getLendingSettings(),
-      plans: db.prepare('SELECT * FROM loan_plans ORDER BY sort_order ASC').all(),
-      applications: db.prepare(`
-        SELECT la.*, lp.name AS plan_name FROM loan_applications la
-        LEFT JOIN loan_plans lp ON lp.id = la.plan_id ORDER BY la.id DESC LIMIT 100
-      `).all(),
-      kyc: db.prepare('SELECT * FROM lending_kyc ORDER BY sort_order ASC').all(),
-      documents: db.prepare('SELECT * FROM lending_documents ORDER BY sort_order ASC').all(),
-      faqs: db.prepare("SELECT * FROM cms_faqs WHERE scope = 'lending' ORDER BY sort_order ASC").all()
+      shop: platform.shop_enabled !== '0',
+      plugging: plugging.plugging_enabled !== '0',
+      websiteMaking: platform.website_making_enabled !== '0'
     });
   });
 
-  app.put('/admin/lending/settings', requireAdmin, (req, res) => {
-    const upsert = db.prepare('INSERT INTO lending_content (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value');
-    Object.entries(req.body || {}).forEach(([k, v]) => {
-      upsert.run(k, typeof v === 'object' ? JSON.stringify(v) : String(v));
-    });
-    res.json({ ok: true });
-  });
-
-  app.post('/admin/lending/plans', requireAdmin, (req, res) => {
+  app.put('/admin/modules', requireAdmin, (req, res) => {
     const b = req.body || {};
-    let slug = b.slug || slugify(b.name);
-    if (db.prepare('SELECT 1 FROM loan_plans WHERE slug = ?').get(slug)) slug = `${slug}-${Date.now()}`;
-    const r = db.prepare(`
-      INSERT INTO loan_plans (name, slug, description, min_amount, max_amount, interest_rate, admin_fee, penalty_rate, term_months, repayment_schedule, features, sort_order, is_enabled)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(b.name, slug, b.description || '', b.minAmount || 1000, b.maxAmount || 50000,
-      b.interestRate || 3, b.adminFee || 0, b.penaltyRate || 2, b.termMonths || 3,
-      JSON.stringify(b.repaymentSchedule || []), JSON.stringify(b.features || []), b.sortOrder || 0, b.isEnabled !== false ? 1 : 0);
-    res.status(201).json({ id: r.lastInsertRowid, slug, shareUrl: `/lending/plan/${slug}` });
-  });
-
-  app.put('/admin/lending/plans/:id', requireAdmin, (req, res) => {
-    const b = req.body || {};
-    const existing = db.prepare('SELECT * FROM loan_plans WHERE id = ?').get(req.params.id);
-    if (!existing) return res.status(404).json({ error: 'Plan not found' });
-    let slug = b.slug ?? existing.slug;
-    if (b.slug && b.slug !== existing.slug && db.prepare('SELECT 1 FROM loan_plans WHERE slug = ? AND id != ?').get(slug, req.params.id)) {
-      slug = `${slug}-${Date.now()}`;
-    }
-    db.prepare(`
-      UPDATE loan_plans SET name = COALESCE(?, name), slug = ?, description = COALESCE(?, description),
-        min_amount = COALESCE(?, min_amount), max_amount = COALESCE(?, max_amount),
-        interest_rate = COALESCE(?, interest_rate), admin_fee = COALESCE(?, admin_fee),
-        penalty_rate = COALESCE(?, penalty_rate), term_months = COALESCE(?, term_months),
-        repayment_schedule = COALESCE(?, repayment_schedule), features = COALESCE(?, features),
-        meta_title = COALESCE(?, meta_title), meta_description = COALESCE(?, meta_description),
-        sort_order = COALESCE(?, sort_order), is_enabled = COALESCE(?, is_enabled)
-      WHERE id = ?
-    `).run(b.name, slug, b.description, b.minAmount, b.maxAmount, b.interestRate, b.adminFee,
-      b.penaltyRate, b.termMonths,
-      b.repaymentSchedule != null ? JSON.stringify(b.repaymentSchedule) : null,
-      b.features != null ? JSON.stringify(b.features) : null,
-      b.metaTitle, b.metaDescription, b.sortOrder,
-      b.isEnabled != null ? (b.isEnabled ? 1 : 0) : null, req.params.id);
-    res.json({ ok: true, shareUrl: `/lending/plan/${slug}` });
-  });
-
-  app.delete('/admin/lending/plans/:id', requireAdmin, (req, res) => {
-    db.prepare('DELETE FROM loan_plans WHERE id = ?').run(req.params.id);
-    res.json({ ok: true });
-  });
-
-  app.put('/admin/lending/applications/:id', requireAdmin, (req, res) => {
-    const { status } = req.body || {};
-    db.prepare('UPDATE loan_applications SET status = ?, updated_at = datetime(\'now\') WHERE id = ?')
-      .run(status, req.params.id);
-    res.json({ ok: true });
-  });
-
-  app.post('/admin/lending/kyc', requireAdmin, (req, res) => {
-    const { title, description, sortOrder, isRequired } = req.body || {};
-    const r = db.prepare('INSERT INTO lending_kyc (title, description, sort_order, is_required) VALUES (?, ?, ?, ?)')
-      .run(title, description || '', sortOrder || 0, isRequired !== false ? 1 : 0);
-    res.status(201).json({ id: r.lastInsertRowid });
-  });
-
-  app.delete('/admin/lending/kyc/:id', requireAdmin, (req, res) => {
-    db.prepare('DELETE FROM lending_kyc WHERE id = ?').run(req.params.id);
+    const upsertPlugging = db.prepare('INSERT INTO plugging_content (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value');
+    const upsertPlatform = db.prepare('INSERT INTO platform_content (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value');
+    if (typeof b.shop === 'boolean') upsertPlatform.run('shop_enabled', b.shop ? '1' : '0');
+    if (typeof b.plugging === 'boolean') upsertPlugging.run('plugging_enabled', b.plugging ? '1' : '0');
+    if (typeof b.websiteMaking === 'boolean') upsertPlatform.run('website_making_enabled', b.websiteMaking ? '1' : '0');
     res.json({ ok: true });
   });
 
@@ -813,9 +780,50 @@ function mountPlatformRoutes(app, db, deps) {
     res.json({ ok: true });
   });
 
+  app.get('/admin/website-making/inquiries/:id', requireAdmin, (req, res) => {
+    const row = db.prepare(`
+      SELECT wi.*, wp.name AS package_name FROM website_inquiries wi
+      LEFT JOIN website_packages wp ON wp.id = wi.package_id WHERE wi.id = ?
+    `).get(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Inquiry not found' });
+    db.prepare('UPDATE website_inquiries SET unread_by_admin = 0 WHERE id = ?').run(row.id);
+    res.json({ inquiry: mapInquiryRow(row), messages: getInquiryMessages(row.id) });
+  });
+
+  app.post('/admin/website-making/inquiries/:id/messages', requireAdmin, (req, res) => {
+    const row = db.prepare('SELECT * FROM website_inquiries WHERE id = ?').get(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Inquiry not found' });
+    const body = String(req.body?.message || '').trim();
+    if (!body) return res.status(400).json({ error: 'Message is required' });
+    db.prepare(`
+      INSERT INTO website_inquiry_messages (inquiry_id, sender_type, body) VALUES (?, 'admin', ?)
+    `).run(row.id, body);
+    db.prepare(`
+      UPDATE website_inquiries SET unread_by_client = 1, updated_at = datetime('now'),
+        status = CASE WHEN status = 'new' THEN 'open' ELSE status END
+      WHERE id = ?
+    `).run(row.id);
+    res.status(201).json({ ok: true, messages: getInquiryMessages(row.id) });
+  });
+
   app.put('/admin/website-making/inquiries/:id', requireAdmin, (req, res) => {
-    db.prepare('UPDATE website_inquiries SET status = ? WHERE id = ?').run(req.body?.status || 'reviewed', req.params.id);
-    res.json({ ok: true });
+    const status = req.body?.status;
+    const adminNotes = req.body?.adminNotes;
+    const allowed = ['new', 'open', 'reviewed', 'contacted', 'in_progress', 'closed'];
+    if (status && !allowed.includes(status)) return res.status(400).json({ error: 'Invalid status' });
+    const row = db.prepare('SELECT id FROM website_inquiries WHERE id = ?').get(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Inquiry not found' });
+    if (status != null) {
+      db.prepare('UPDATE website_inquiries SET status = ?, updated_at = datetime(\'now\') WHERE id = ?').run(status, req.params.id);
+    }
+    if (adminNotes != null) {
+      db.prepare('UPDATE website_inquiries SET admin_notes = ? WHERE id = ?').run(String(adminNotes), req.params.id);
+    }
+    const updated = db.prepare(`
+      SELECT wi.*, wp.name AS package_name FROM website_inquiries wi
+      LEFT JOIN website_packages wp ON wp.id = wi.package_id WHERE wi.id = ?
+    `).get(req.params.id);
+    res.json({ ok: true, inquiry: mapInquiryRow(updated) });
   });
 
   app.post('/admin/website-making/portfolio', requireAdmin, (req, res) => {

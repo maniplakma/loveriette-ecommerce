@@ -3,25 +3,44 @@
 <head>
   <base href="/">
   <meta charset="UTF-8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="theme-color" content="#080404">
-  <meta name="description" content="Premium digital products, lending services, and professional website development.">
+  <meta name="description" content="Premium digital products, website development, and plugging services.">
   <title>loveriette — Premium Multi-Service Platform</title>
+  <link rel="stylesheet" href="theme-critical.css?v=20260705cleanup">
+  <script src="api-cache.js?v=20260707restore"></script>
+  <script src="theme-boot.js?v=20260705cleanup"></script>
   <link rel="stylesheet" href="style.css?v=20260627hero">
   <link rel="stylesheet" href="mobile.css?v=20260626platform">
-  <link rel="stylesheet" href="theme.css">
-  <link rel="stylesheet" href="platform.css?v=20260628shop">
-  <link rel="stylesheet" href="site-decorations.css?v=20260626">
-  <script src="theme.js"></script>
-  <script src="theme-colors.js?v=20260614persist"></script>
-  <script src="api-cache.js"></script>
+  <link rel="stylesheet" href="performance-mobile.css?v=20260705cleanup">
+  <link rel="stylesheet" href="theme.css?v=20260703audit">
+  <link rel="stylesheet" href="platform.css?v=20260707fix">
+  <link rel="stylesheet" href="typography.css?v=20260707fix">
+  <script src="theme.js?v=20260705cleanup" defer></script>
+  <script src="theme-colors.js?v=20260705cleanup" defer></script>
+  <link rel="preload" href="/api/activity-feed" as="fetch" crossorigin="use-credentials">
+  <script>
+    window.__activityPrefetch = fetch('/api/activity-feed', { credentials: 'include' })
+      .then(function (r) { return r.ok ? r.json() : []; })
+      .catch(function () { return []; });
+  </script>
 </head>
-<body class="page-home">
+<body class="page-home is-new-buyer">
   <div class="announcement-bar" id="announcement-bar" hidden></div>
 
   <nav class="top-nav">
     <div class="nav-inner">
-      <ul class="nav-left"></ul>
+      <ul class="nav-left">
+        <li><a href="/" class="nav-pill active">Home</a></li>
+        <li><a href="/shop" class="nav-link">Shop</a></li>
+        <li><a href="/plugging" class="nav-link">Plugging</a></li>
+        <li><a href="/website-making" class="nav-link">Website Making</a></li>
+        <li><a href="about.html" class="nav-link">About</a></li>
+        <li><a href="faqs.html" class="nav-link">FAQ</a></li>
+        <li><a href="contact.html" class="nav-link">Contact</a></li>
+      </ul>
       <ul class="nav-right">
         <li>
           <button class="icon-btn cart-btn" type="button" aria-label="Cart" onclick="location.href='cart.html'">
@@ -39,10 +58,7 @@
       </ul>
     </div>
   </nav>
-
-  <div class="site-deco site-deco--spider" aria-hidden="true">
-    <img src="/assets/deco-spiderman-cut.png?v=2" alt="" width="118" height="200" loading="lazy" decoding="async">
-  </div>
+  <script src="nav-shell.js?v=20260705cleanup"></script>
 
   <section class="hero-section" aria-label="Welcome">
     <header class="site-header site-header--banner">
@@ -58,10 +74,7 @@
           <span class="hero-display-row">
             <span class="hero-display-stack">
               <span class="hero-display-shadow" aria-hidden="true">Loveriette</span>
-              <span class="hero-display-bold hero-display-premiums">
-                premiums
-                <img class="hero-display-bow" src="/assets/deco-bow-cut.png?v=2" alt="" width="54" height="54" aria-hidden="true">
-              </span>
+              <span class="hero-display-bold hero-display-premiums">premiums</span>
             </span>
             <span class="hero-display-script">desire</span>
           </span>
@@ -72,18 +85,17 @@
   </section>
 
   <!-- Service categories -->
-  <section class="platform-section">
+  <section class="platform-section platform-section--services" id="services-section">
     <div class="platform-section-head">
       <h2 id="service-categories-title">Our Services</h2>
-      <p id="service-categories-sub">Four powerful services, one platform</p>
+      <p id="service-categories-sub">Shop, websites, and plugging — one platform</p>
     </div>
     <div class="service-cards-grid" id="service-categories-grid"></div>
   </section>
 
-  <!-- Real-time activity feed -->
-  <section class="platform-section" id="activity-section">
-    <img class="site-deco site-deco--flowers" src="/assets/deco-flowers-cut.png?v=2" alt="" width="180" height="220" loading="lazy" decoding="async" aria-hidden="true">
-    <div class="platform-section-head">
+  <!-- Live activity — directly below services -->
+  <section class="platform-section platform-section--activity" id="activity-section">
+    <div class="platform-section-head platform-section-head--compact">
       <h2>Live Activity</h2>
       <p>See what's happening right now</p>
     </div>
@@ -94,11 +106,25 @@
     </div>
   </section>
 
+  <!-- Why choose us -->
+  <section class="platform-section" id="why-choose-section">
+    <div class="platform-section-head">
+      <h2 id="why-choose-title">Why Choose Us</h2>
+      <p id="why-choose-sub">Trusted by thousands of customers</p>
+    </div>
+    <div class="benefits-grid" id="why-choose-grid">
+      <article class="benefit-card benefit-card--float"><span class="benefit-card-gloss" aria-hidden="true"></span><span class="service-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg></span><h4>Secure &amp; Reliable</h4><p>Enterprise-grade security for every transaction and account delivery.</p></article>
+      <article class="benefit-card benefit-card--float"><span class="benefit-card-gloss" aria-hidden="true"></span><span class="service-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg></span><h4>Fast Delivery</h4><p>Digital products and access details delivered promptly after approval.</p></article>
+      <article class="benefit-card benefit-card--float"><span class="benefit-card-gloss" aria-hidden="true"></span><span class="service-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></span><h4>Dedicated Support</h4><p>Real support via chat, tickets, and contact channels when you need help.</p></article>
+      <article class="benefit-card benefit-card--float"><span class="benefit-card-gloss" aria-hidden="true"></span><span class="service-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg></span><h4>Premium Quality</h4><p>Curated products and services at fair, transparent prices.</p></article>
+    </div>
+  </section>
+
   <!-- About Me + guides -->
   <section class="platform-section about-portfolio-section" id="about-portfolio-section">
     <div class="platform-section-head">
-      <h2>about me</h2>
-      <p class="about-portfolio-sub" id="about-portfolio-sub">the girl behind your premium fix — come say hi</p>
+      <h2>About Us</h2>
+      <p class="about-portfolio-sub" id="about-portfolio-sub">Your trusted source for premium digital products and services</p>
     </div>
     <div class="about-portfolio-layout">
       <article class="about-portfolio about-portfolio--home" id="home-about-portfolio" aria-label="Store profile">
@@ -109,7 +135,7 @@
             <img id="home-about-photo" class="about-photo" src="/assets/store-logo.png" alt="">
           </div>
           <div class="about-portfolio-intro">
-            <p class="about-eyebrow">hey, it's</p>
+            <p class="about-eyebrow">Welcome to</p>
             <h3 id="home-about-name" class="about-name">loveriette</h3>
             <p class="about-location" id="home-about-location" hidden>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -120,23 +146,14 @@
           </div>
         </header>
         <div class="about-divider" aria-hidden="true"><span>✦</span></div>
-        <blockquote id="home-about-bio" class="about-bio-text">your go-to for premium digital goodies — shop, lend, build, and plug with someone who actually cares ♡</blockquote>
+        <blockquote id="home-about-bio" class="about-bio-text">Lovebyriette offers digital products and premium accounts at affordable prices. Reliable, fast service, and open for supplying and bulk orders.</blockquote>
         <div class="about-social-strip" id="home-about-social-wrap">
-          <p class="about-social-label">find me online</p>
+          <p class="about-social-label">Connect with us</p>
           <div id="home-about-socials" class="about-social-orbit" aria-label="Social links"></div>
         </div>
       </article>
       <nav class="guide-links-panel" id="guide-links-grid" aria-label="Guides and quick links"></nav>
     </div>
-  </section>
-
-  <!-- Featured products -->
-  <section class="platform-section">
-    <div class="platform-section-head">
-      <h2>Featured Products</h2>
-      <p><a href="/shop" style="color:var(--theme-primary)">View all products →</a></p>
-    </div>
-    <div class="related-products-grid" id="featured-products"></div>
   </section>
 
   <!-- FAQ -->
@@ -148,9 +165,6 @@
   </section>
 
   <footer class="site-footer">
-    <div class="site-deco site-deco--web" aria-hidden="true">
-      <img src="/assets/deco-web-cut.png?v=2" alt="" width="280" height="280" loading="lazy" decoding="async">
-    </div>
     <p class="footer-copy" id="footer-tagline">Premium digital services for everyone.</p>
     <div class="footer-socials" id="footer-socials"></div>
     <p class="footer-copy">© 2026 LOVERIETTE. ALL RIGHTS RESERVED.</p>
@@ -165,11 +179,11 @@
   <script src="flirty-copy.js"></script>
   <script src="notifications.js"></script>
   <script src="toast.js"></script>
-  <script src="branding.js"></script>
-  <script src="nav.js"></script>
-  <script src="mobile.js"></script>
+  <script src="branding.js?v=20260703audit" defer></script>
+  <script src="nav.js?v=20260703audit" defer></script>
+  <script src="mobile.js?v=20260703audit" defer></script>
   <script src="platform-nav.js"></script>
-  <script src="homepage.js"></script>
+  <script src="homepage.js?v=20260707fix"></script>
   <script src="ezyshell-redirect.js"></script>
 </body>
 </html>

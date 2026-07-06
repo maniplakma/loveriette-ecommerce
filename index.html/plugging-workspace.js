@@ -1,6 +1,8 @@
 let workspace = null;
 let selectedId = null;
 let pendingOtpAccountId = null;
+let activityPollTimer = null;
+let activityLastId = 0;
 
 async function api(url, opts = {}) {
   const res = await fetch(url, { credentials: 'include', ...opts, headers: { 'Content-Type': 'application/json', ...opts.headers } });
@@ -11,6 +13,96 @@ async function api(url, opts = {}) {
 
 function esc(s) {
   return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+}
+
+function formatActivityTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso.includes('T') ? iso : `${iso.replace(' ', 'T')}Z`);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function activityKindLabel(kind) {
+  const map = { success: 'Complete', error: 'Error', cycle: 'Detected', started: 'Started', stopped: 'Stopped', info: 'Info' };
+  return map[kind] || kind;
+}
+
+function stopActivityPoll() {
+  if (activityPollTimer) {
+    clearInterval(activityPollTimer);
+    activityPollTimer = null;
+  }
+  activityLastId = 0;
+}
+
+function renderActivityItems(items, mode = 'append') {
+  const feed = document.getElementById('plug-activity-feed');
+  const empty = document.getElementById('plug-activity-empty');
+  if (!feed) return;
+  if (mode === 'replace') feed.innerHTML = '';
+  items.forEach((item) => {
+    if (feed.querySelector(`[data-activity-id="${item.id}"]`)) return;
+    const row = document.createElement('div');
+    row.className = `plug-activity-item plug-activity-${item.kind}`;
+    row.dataset.activityId = item.id;
+    row.innerHTML = `
+      <span class="plug-activity-time">${esc(formatActivityTime(item.createdAt))}</span>
+      <span class="plug-activity-badge">${esc(activityKindLabel(item.kind))}</span>
+      <span class="plug-activity-msg">${esc(item.message)}</span>`;
+    feed.appendChild(row);
+  });
+  if (empty) empty.hidden = feed.children.length > 0;
+  feed.scrollTop = feed.scrollHeight;
+}
+
+async function loadActivity(accountId, reset = false) {
+  if (!accountId) return;
+  try {
+    const since = reset ? 0 : activityLastId;
+    const data = await api(`/api/plugging/workspace/accounts/${accountId}/activity?since=${since}&limit=80`);
+    if (reset) {
+      activityLastId = 0;
+      renderActivityItems(data.items || [], 'replace');
+    } else if (data.items?.length) {
+      renderActivityItems(data.items, 'append');
+    }
+    if (data.items?.length) {
+      activityLastId = Math.max(activityLastId, ...data.items.map((i) => i.id));
+    }
+  } catch (_) { /* ignore */ }
+}
+
+function startActivityPoll(accountId) {
+  stopActivityPoll();
+  loadActivity(accountId, true);
+  activityPollTimer = setInterval(async () => {
+    await loadActivity(accountId, false);
+    await refreshWorkspaceStats(accountId);
+  }, 4000);
+}
+
+function updateAccountStats(accountId) {
+  const a = workspace?.accounts?.find((x) => x.id === accountId);
+  if (!a) return;
+  const stats = document.querySelectorAll('.plug-stat strong');
+  if (stats.length >= 3) {
+    stats[0].textContent = a.successCount;
+    stats[1].textContent = a.failedCount;
+    stats[2].textContent = a.cyclesCount;
+  }
+  const badge = document.querySelector('.plug-detail-header .plug-status-badge');
+  if (badge) {
+    badge.textContent = a.runnerStatus;
+    badge.classList.toggle('running', a.runnerStatus === 'running');
+  }
+  const liveDot = document.getElementById('plug-activity-live');
+  if (liveDot) liveDot.classList.toggle('active', a.runnerStatus === 'running');
+}
+
+async function refreshWorkspaceStats(accountId) {
+  workspace = await api('/api/plugging/workspace');
+  renderAccountList();
+  updateAccountStats(accountId);
 }
 
 async function tryLoadWorkspace() {
@@ -30,6 +122,16 @@ function showWorkspace() {
     `${workspace.planName} · up to ${workspace.maxSources} account(s)`;
   renderAccountList();
   if (selectedId) renderAccountDetail(selectedId);
+  else renderEmptyDetail();
+}
+
+function renderEmptyDetail() {
+  stopActivityPoll();
+  document.getElementById('account-detail').innerHTML = `
+    <div class="plug-empty-detail">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+      <p>Select an account above to configure forwarding and view live activity.</p>
+    </div>`;
 }
 
 function accountDotClass(a) {
@@ -42,16 +144,17 @@ function accountDotClass(a) {
 function renderAccountList() {
   const list = document.getElementById('account-list');
   if (!workspace.accounts?.length) {
-    list.innerHTML = '<li style="padding:0.5rem;font-size:0.8rem;color:var(--plug-muted)">No accounts yet</li>';
+    list.innerHTML = '<li class="plug-account-empty">No accounts yet — add one using the form above.</li>';
     return;
   }
   list.innerHTML = workspace.accounts.map((a) => `
     <li class="plug-account-item ${a.id === selectedId ? 'active' : ''}" data-id="${a.id}">
       <span class="plug-account-dot ${accountDotClass(a)}"></span>
-      <div>
+      <div class="plug-account-item-body">
         <strong>${esc(a.label || a.phone || 'Account')}</strong>
         <small>+${esc(a.phone)} · ${a.targetCount} target${a.targetCount !== 1 ? 's' : ''}</small>
       </div>
+      <span class="plug-account-status">${esc(a.runnerStatus)}</span>
     </li>`).join('');
   list.querySelectorAll('.plug-account-item').forEach((el) => {
     el.addEventListener('click', () => {
@@ -62,11 +165,38 @@ function renderAccountList() {
   });
 }
 
+async function submitAddAccount() {
+  const msg = document.getElementById('add-account-msg');
+  msg.hidden = true;
+  try {
+    const json = await api('/api/plugging/workspace/accounts', {
+      method: 'POST',
+      body: JSON.stringify({
+        phone: document.getElementById('new-phone').value,
+        label: document.getElementById('new-label').value
+      })
+    });
+    pendingOtpAccountId = json.accountId;
+    selectedId = json.accountId;
+    document.getElementById('new-phone').value = '';
+    document.getElementById('new-label').value = '';
+    msg.hidden = false;
+    msg.className = 'plug-form-msg';
+    msg.textContent = json.message || 'Code sent — check Telegram.';
+    await refreshWorkspace();
+  } catch (e) {
+    msg.hidden = false;
+    msg.className = 'plug-form-msg plug-form-error';
+    msg.textContent = e.message;
+  }
+}
+
 function renderAccountDetail(id) {
+  stopActivityPoll();
   const a = workspace.accounts.find((x) => x.id === id);
   const el = document.getElementById('account-detail');
   if (!a) {
-    el.innerHTML = '<p style="color:#9aa0a6">Account not found.</p>';
+    renderEmptyDetail();
     return;
   }
 
@@ -80,25 +210,25 @@ function renderAccountDetail(id) {
         <span class="plug-status-badge ${a.runnerStatus === 'running' ? 'running' : ''}">${esc(a.runnerStatus)}</span>
       </div>
       <div class="plug-actions">
-        ${authed ? `<button type="button" class="plug-btn plug-btn-primary" data-action="start">▶ Start Forwarder</button>
-        <button type="button" class="plug-btn plug-btn-ghost" data-action="stop">Stop</button>
-        <button type="button" class="plug-btn plug-btn-ghost" data-action="save">Save Config</button>` : ''}
-        <button type="button" class="plug-btn plug-btn-danger" data-action="delete">Delete</button>
+        ${authed ? `<button type="button" class="btn-primary-platform plug-btn-compact" data-action="start">▶ Start</button>
+        <button type="button" class="btn-outline-platform plug-btn-compact" data-action="stop">Stop</button>
+        <button type="button" class="btn-outline-platform plug-btn-compact" data-action="save">Save</button>` : ''}
+        <button type="button" class="plug-btn plug-btn-danger plug-btn-compact" data-action="delete">Delete</button>
       </div>
     </div>
 
     ${needsOtp && !authed ? `
     <div class="plug-panel">
       <h3>Telegram Verification</h3>
-      <p style="font-size:0.85rem;color:var(--plug-muted);margin:0 0 1rem">We sent a login code to your Telegram app. Enter it below to connect your account.</p>
+      <p class="plug-panel-desc">We sent a login code to your Telegram app. Enter it below.</p>
       <div class="plug-otp-row">
-        <div>
-          <label>Code from Telegram</label>
-          <input id="otp-code" placeholder="12345" inputmode="numeric">
+        <div class="plug-form-field">
+          <label for="otp-code">Code from Telegram</label>
+          <input id="otp-code" class="plug-field-input plug-field-mono" placeholder="12345" inputmode="numeric">
         </div>
-        <button type="button" class="plug-btn plug-btn-primary" id="verify-otp">Verify</button>
+        <button type="button" class="btn-primary-platform plug-btn-compact" id="verify-otp">Verify</button>
       </div>
-      <p id="otp-msg" hidden style="font-size:0.85rem;margin:0.5rem 0 0"></p>
+      <p id="otp-msg" class="plug-form-msg" hidden></p>
     </div>` : ''}
 
     ${authed ? `
@@ -109,22 +239,41 @@ function renderAccountDetail(id) {
     </div>
     <div class="plug-panel">
       <h3>Forwarding Setup</h3>
-      <p style="font-size:0.82rem;color:var(--plug-muted);margin:-0.5rem 0 1rem">Configure source, targets, and delay — then hit Start. The forwarder runs on your Telegram account automatically.</p>
+      <p class="plug-panel-desc">Configure source, targets, and delay — then hit Start.</p>
       <label>Source chat / channel link</label>
-      <input id="cfg-source" value="${esc(a.sourceLink)}" placeholder="https://t.me/sourcechannel">
+      <input id="cfg-source" class="plug-field-input" value="${esc(a.sourceLink)}" placeholder="https://t.me/sourcechannel">
       <label>Display name (optional prefix)</label>
-      <input id="cfg-display" value="${esc(a.displayName)}" placeholder="Reseller Name">
+      <input id="cfg-display" class="plug-field-input" value="${esc(a.displayName)}" placeholder="Reseller Name">
       <label>Delay (minutes between forwards)</label>
-      <input id="cfg-delay" type="number" min="0" value="${a.delayMinutes}">
+      <input id="cfg-delay" class="plug-field-input" type="number" min="0" value="${a.delayMinutes}">
       <label>Target groups — one link per line</label>
-      <textarea id="cfg-targets" placeholder="https://t.me/yourgroup1\nhttps://t.me/yourgroup2">${esc(a.targetsText)}</textarea>
-      ${a.lastError ? `<p style="color:var(--plug-danger);font-size:0.8rem">Last error: ${esc(a.lastError)}</p>` : ''}
+      <textarea id="cfg-targets" class="plug-field-textarea" placeholder="https://t.me/yourgroup1\nhttps://t.me/yourgroup2">${esc(a.targetsText)}</textarea>
+      ${a.lastError ? `<p class="plug-last-error">Last error: ${esc(a.lastError)}</p>` : ''}
+    </div>
+    <div class="plug-panel plug-activity-panel">
+      <div class="plug-activity-head">
+        <div>
+          <h3>Live Activity</h3>
+          <p class="plug-panel-desc">Real-time log — complete forwards, errors, and status.</p>
+        </div>
+        <div class="plug-activity-head-actions">
+          <span class="plug-activity-live ${a.runnerStatus === 'running' ? 'active' : ''}" id="plug-activity-live">
+            <span class="plug-activity-live-dot"></span> Live
+          </span>
+          <button type="button" class="btn-outline-platform plug-btn-sm" data-action="clear-activity">Clear</button>
+        </div>
+      </div>
+      <div class="plug-activity-wrap">
+        <p id="plug-activity-empty" class="plug-activity-empty">No activity yet. Start the forwarder to see live logs.</p>
+        <div id="plug-activity-feed" class="plug-activity-feed"></div>
+      </div>
     </div>` : (!needsOtp ? `
-    <div class="plug-panel"><p style="margin:0;color:var(--plug-muted)">Waiting for Telegram verification…</p></div>` : '')}
+    <div class="plug-panel"><p class="plug-panel-desc" style="margin:0">Waiting for Telegram verification…</p></div>` : '')}
   `;
 
   el.querySelector('[data-action="delete"]')?.addEventListener('click', async () => {
     if (!confirm('Delete this account?')) return;
+    stopActivityPoll();
     await api(`/api/plugging/workspace/accounts/${id}`, { method: 'DELETE' });
     selectedId = null;
     await refreshWorkspace();
@@ -147,12 +296,23 @@ function renderAccountDetail(id) {
     try {
       await api(`/api/plugging/workspace/accounts/${id}/start`, { method: 'POST' });
       await refreshWorkspace();
+      startActivityPoll(id);
     } catch (e) { alert(e.message); }
   });
 
   el.querySelector('[data-action="stop"]')?.addEventListener('click', async () => {
     await api(`/api/plugging/workspace/accounts/${id}/stop`, { method: 'POST' });
     await refreshWorkspace();
+    loadActivity(id, true);
+  });
+
+  el.querySelector('[data-action="clear-activity"]')?.addEventListener('click', async () => {
+    await api(`/api/plugging/workspace/accounts/${id}/activity`, { method: 'DELETE' });
+    activityLastId = 0;
+    const feed = document.getElementById('plug-activity-feed');
+    if (feed) feed.innerHTML = '';
+    const empty = document.getElementById('plug-activity-empty');
+    if (empty) empty.hidden = false;
   });
 
   document.getElementById('verify-otp')?.addEventListener('click', async () => {
@@ -167,24 +327,19 @@ function renderAccountDetail(id) {
       await refreshWorkspace();
     } catch (e) {
       msg.hidden = false;
-      msg.style.color = '#e57373';
+      msg.className = 'plug-form-msg plug-form-error';
       msg.textContent = e.message;
     }
   });
+
+  if (authed) startActivityPoll(id);
 }
 
 async function refreshWorkspace() {
   workspace = await api('/api/plugging/workspace');
   renderAccountList();
-  if (selectedId) {
-    renderAccountDetail(selectedId);
-  } else {
-    document.getElementById('account-detail').innerHTML = `
-      <div class="plug-empty-state">
-        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/></svg>
-        <p>Select an account or add your Telegram number to get started.</p>
-      </div>`;
-  }
+  if (selectedId) renderAccountDetail(selectedId);
+  else renderEmptyDetail();
 }
 
 document.getElementById('unlock-btn').addEventListener('click', async () => {
@@ -202,33 +357,10 @@ document.getElementById('unlock-btn').addEventListener('click', async () => {
   }
 });
 
-document.getElementById('add-account-btn').addEventListener('click', async () => {
-  const msg = document.getElementById('add-account-msg');
-  msg.hidden = true;
-  try {
-    const json = await api('/api/plugging/workspace/accounts', {
-      method: 'POST',
-      body: JSON.stringify({
-        phone: document.getElementById('new-phone').value,
-        label: document.getElementById('new-label').value
-      })
-    });
-    pendingOtpAccountId = json.accountId;
-    selectedId = json.accountId;
-    document.getElementById('new-phone').value = '';
-    msg.hidden = false;
-    msg.style.color = '#81c995';
-    msg.textContent = json.message || 'Code sent';
-    await refreshWorkspace();
-    renderAccountDetail(selectedId);
-  } catch (e) {
-    msg.hidden = false;
-    msg.style.color = '#e57373';
-    msg.textContent = e.message;
-  }
-});
+document.getElementById('add-account-btn').addEventListener('click', submitAddAccount);
 
 document.getElementById('logout-btn').addEventListener('click', async () => {
+  stopActivityPoll();
   await api('/api/plugging/workspace/logout', { method: 'POST' });
   location.reload();
 });

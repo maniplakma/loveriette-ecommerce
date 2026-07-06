@@ -1,3 +1,27 @@
+const DEFAULT_CONTACT_CHANNELS = [
+  {
+    icon: 'telegram',
+    title: 'Telegram',
+    description: 'Chat with us directly on Telegram for the fastest response.',
+    link_text: '@skyloverie',
+    link_url: 'https://t.me/skyloverie'
+  },
+  {
+    icon: 'email',
+    title: 'Email',
+    description: 'Send us an email and we will get back to you as soon as possible.',
+    link_text: 'riettemadzehn@gmail.com',
+    link_url: 'mailto:riettemadzehn@gmail.com'
+  },
+  {
+    icon: 'channel',
+    title: 'Telegram Channel',
+    description: 'Join our Telegram channel for updates, promos, and announcements.',
+    link_text: '@lovebyriette',
+    link_url: 'https://t.me/lovebyriette'
+  }
+];
+
 function linkText(url) {
   if (!url) return '';
   if (url.startsWith('mailto:')) return url.replace('mailto:', '');
@@ -7,40 +31,63 @@ function linkText(url) {
   catch { return url; }
 }
 
-function renderContact(links) {
+function renderContact(channels) {
   const list = document.querySelector('.contact-list');
   if (!list) return;
   list.innerHTML = '';
-  if (!links.length) {
-    list.innerHTML = '<p class="page-empty">No contact links configured yet. Check back soon or message us through your order dashboard.</p>';
+  if (!channels.length) {
+    list.innerHTML = '<p class="page-empty">No contact channels available. Please try again later.</p>';
     return;
   }
-  links.forEach((s) => {
-    const icon = window.socialIcon ? window.socialIcon(s.key) : '';
+  channels.forEach((ch) => {
+    const icon = window.socialIcon ? window.socialIcon(ch.icon || ch.key || 'link') : '';
+    const label = ch.title || ch.label || ch.key || 'Contact';
+    const url = ch.link_url || ch.url || '';
+    const display = ch.link_text || linkText(url);
     const card = document.createElement('article');
     card.className = 'info-card contact-card';
     card.innerHTML = `
       <div class="contact-icon">${icon}</div>
       <div class="contact-body">
-        <h3>${s.label || s.key}</h3>
-        <a href="${s.url}" target="_blank" rel="noopener noreferrer">${linkText(s.url)}</a>
+        <h3>${label}</h3>
+        ${ch.description ? `<p class="contact-desc">${ch.description}</p>` : ''}
+        <a href="${url}" target="_blank" rel="noopener noreferrer">${display}</a>
       </div>
     `;
     list.appendChild(card);
   });
 }
 
+function channelsToSocialLinks(channels) {
+  return channels.map((ch) => ({
+    key: ch.icon || 'link',
+    label: ch.title || ch.label || '',
+    url: ch.link_url || ch.url || '',
+    enabled: true
+  })).filter((l) => l.url);
+}
+
 async function loadContact() {
-  let links = [];
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('subject') === 'password-reset') {
+    const header = document.querySelector('.info-header p');
+    if (header) {
+      header.textContent = 'To reset your password, contact us with the email on your account. We will verify your identity and send you a new password.';
+    }
+  }
+
+  let channels = [];
   try {
-    const res = await fetch('/social', { credentials: 'include' });
+    const res = await fetch('/contact', { credentials: 'include' });
     if (res.ok) {
       const data = await res.json();
-      if (Array.isArray(data)) links = data;
+      if (Array.isArray(data)) channels = data.filter((c) => c.link_url);
     }
   } catch { /* ignore */ }
-  renderContact(links);
-  if (window.renderFooterSocials) window.renderFooterSocials(links);
+
+  if (!channels.length) channels = DEFAULT_CONTACT_CHANNELS;
+  renderContact(channels);
+  if (window.renderFooterSocials) window.renderFooterSocials(channelsToSocialLinks(channels));
 }
 
 loadContact();

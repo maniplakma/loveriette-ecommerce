@@ -5,8 +5,10 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const appConfig = require('./config');
+const { sendHtmlPage } = require('./send-html-page');
 const { sendLoginCode, verifyLoginCode } = require('./plugging-telegram');
 const { startRunner, stopRunner, isRunning } = require('./plugging-runner');
+const { pickProxyForNewAccount, listPluggingProxies, autoEnableProxySetting, ensureAccountProxy } = require('./plugging-proxy');
 
 function mountPluggingService(app, db, deps) {
   const {
@@ -70,9 +72,48 @@ function mountPluggingService(app, db, deps) {
     `).get(String(key || '').trim());
   }
 
+  function ensurePlugMasterOrder() {
+    const key = String(appConfig.plugMasterKey || '').trim();
+    if (!key) return null;
+
+    const existing = db.prepare(`
+      SELECT po.*, pp.name AS plan_name, pp.max_sources AS maxSources, pp.max_destinations AS maxDestinations
+      FROM plugging_orders po
+      LEFT JOIN plugging_plans pp ON pp.id = po.plan_id
+      WHERE po.access_key = ? AND po.status = 'approved'
+    `).get(key);
+    if (existing) return existing;
+
+    const plan = db.prepare(`
+      SELECT * FROM plugging_plans WHERE is_enabled = 1 ORDER BY max_sources DESC, max_destinations DESC, id ASC LIMIT 1
+    `).get() || db.prepare('SELECT * FROM plugging_plans ORDER BY id ASC LIMIT 1').get();
+
+    db.prepare(`
+      INSERT INTO plugging_orders (
+        order_ref, plan_id, customer_name, email, total, status, access_key, approved_at
+      ) VALUES ('PLG-MASTER', ?, 'Master Workspace', 'master@localhost', 0, 'approved', ?, datetime('now'))
+    `).run(plan?.id || null, key);
+
+    return db.prepare(`
+      SELECT po.*, pp.name AS plan_name, pp.max_sources AS maxSources, pp.max_destinations AS maxDestinations
+      FROM plugging_orders po
+      LEFT JOIN plugging_plans pp ON pp.id = po.plan_id
+      WHERE po.access_key = ? AND po.status = 'approved'
+    `).get(key);
+  }
+
+  function resolvePlugAccessKey(key) {
+    const trimmed = String(key || '').trim();
+    if (!trimmed) return null;
+    if (appConfig.plugMasterKey && trimmed === appConfig.plugMasterKey) {
+      return ensurePlugMasterOrder();
+    }
+    return getApprovedOrderByAccessKey(trimmed);
+  }
+
   function requirePlugWorkspace(req, res, next) {
     const key = getCookie(req, COOKIE) || req.headers['x-plug-access-key'];
-    const order = getApprovedOrderByAccessKey(key);
+    const order = resolvePlugAccessKey(key);
     if (!order) return res.status(401).json({ error: 'Invalid or expired access key. Enter your key at /plugging/workspace' });
     req.plugOrder = order;
     next();
@@ -184,7 +225,7 @@ function mountPluggingService(app, db, deps) {
   // ── Workspace auth ──
   app.post('/api/plugging/workspace/unlock', (req, res) => {
     const key = String(req.body?.accessKey || '').trim();
-    const order = getApprovedOrderByAccessKey(key);
+    const order = resolvePlugAccessKey(key);
     if (!order) return res.status(401).json({ error: 'Invalid access key or payment not approved yet' });
     res.cookie(COOKIE, key, COOKIE_OPTS);
     res.json({ ok: true, orderRef: order.order_ref, planName: order.plan_name });
@@ -218,11 +259,12 @@ function mountPluggingService(app, db, deps) {
 
     try {
       const settings = getPluggingSettings();
-      const sent = await sendLoginCode(settings, `+${normalized}`);
+      const proxy = pickProxyForNewAccount(db, settings);
+      const sent = await sendLoginCode(settings, `+${normalized}`, '', proxy);
       const r = db.prepare(`
-        INSERT INTO plugging_accounts (order_id, label, phone, session_string, auth_status, phone_code_hash)
-        VALUES (?, ?, ?, ?, 'code_sent', ?)
-      `).run(req.plugOrder.id, String(label || '').trim(), normalized, sent.sessionString, sent.phoneCodeHash);
+        INSERT INTO plugging_accounts (order_id, label, phone, session_string, auth_status, phone_code_hash, proxy_url)
+        VALUES (?, ?, ?, ?, 'code_sent', ?, ?)
+      `).run(req.plugOrder.id, String(label || '').trim(), normalized, sent.sessionString, sent.phoneCodeHash, proxy);
       res.status(201).json({ accountId: r.lastInsertRowid, message: 'Telegram code sent. Check your Telegram app.' });
     } catch (err) {
       res.status(500).json({ error: err.message || 'Could not send Telegram code' });
@@ -242,7 +284,8 @@ function mountPluggingService(app, db, deps) {
         phone: `+${account.phone}`,
         code,
         phoneCodeHash: account.phone_code_hash,
-        sessionString: account.session_string
+        sessionString: account.session_string,
+        proxyUrl: account.proxy_url || ''
       });
       db.prepare(`
         UPDATE plugging_accounts SET session_string = ?, auth_status = 'authenticated', phone_code_hash = NULL,
@@ -283,6 +326,7 @@ function mountPluggingService(app, db, deps) {
       .get(req.params.id, req.plugOrder.id);
     if (!account) return res.status(404).json({ error: 'Account not found' });
     try {
+      ensureAccountProxy(db, account.id, getPluggingSettings());
       startRunner(db, account.id, getPluggingSettings);
       res.json({ ok: true, runnerStatus: 'running' });
     } catch (err) {
@@ -291,10 +335,31 @@ function mountPluggingService(app, db, deps) {
   });
 
   app.post('/api/plugging/workspace/accounts/:id/stop', requirePlugWorkspace, (req, res) => {
+    const account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ? AND order_id = ?')
+      .get(req.params.id, req.plugOrder.id);
+    if (!account) return res.status(404).json({ error: 'Account not found' });
     stopRunner(Number(req.params.id));
     db.prepare('UPDATE plugging_accounts SET runner_status = ?, updated_at = datetime(\'now\') WHERE id = ?')
       .run('stopped', req.params.id);
+    logPlugActivity(db, account.id, 'stopped', 'Forwarder stopped manually');
     res.json({ ok: true, runnerStatus: 'stopped' });
+  });
+
+  app.get('/api/plugging/workspace/accounts/:id/activity', requirePlugWorkspace, (req, res) => {
+    const account = db.prepare('SELECT id FROM plugging_accounts WHERE id = ? AND order_id = ?')
+      .get(req.params.id, req.plugOrder.id);
+    if (!account) return res.status(404).json({ error: 'Account not found' });
+    const since = Number(req.query.since) || 0;
+    const limit = Number(req.query.limit) || 80;
+    res.json({ items: getAccountActivity(db, account.id, since, limit) });
+  });
+
+  app.delete('/api/plugging/workspace/accounts/:id/activity', requirePlugWorkspace, (req, res) => {
+    const account = db.prepare('SELECT id FROM plugging_accounts WHERE id = ? AND order_id = ?')
+      .get(req.params.id, req.plugOrder.id);
+    if (!account) return res.status(404).json({ error: 'Account not found' });
+    clearAccountActivity(db, account.id);
+    res.json({ ok: true });
   });
 
   app.delete('/api/plugging/workspace/accounts/:id', requirePlugWorkspace, (req, res) => {
@@ -303,7 +368,63 @@ function mountPluggingService(app, db, deps) {
     res.json({ ok: true });
   });
 
+  app.get('/admin/plugging/proxies', requireAdmin, (req, res) => {
+    res.json(listPluggingProxies(db));
+  });
+
+  app.post('/admin/plugging/proxies', requireAdmin, (req, res) => {
+    const { label, url } = req.body || {};
+    const proxyUrl = String(url || '').trim();
+    if (!proxyUrl) return res.status(400).json({ error: 'Proxy URL is required' });
+    if (!/^socks[45]:\/\//i.test(proxyUrl) && !/^https?:\/\//i.test(proxyUrl)) {
+      return res.status(400).json({ error: 'Use socks5://user:pass@host:port format' });
+    }
+    const r = db.prepare(`
+      INSERT INTO plugging_proxies (label, url) VALUES (?, ?)
+    `).run(String(label || '').trim(), proxyUrl);
+    autoEnableProxySetting(db);
+    res.status(201).json({ id: r.lastInsertRowid });
+  });
+
+  app.put('/admin/plugging/proxies/:id', requireAdmin, (req, res) => {
+    const row = db.prepare('SELECT * FROM plugging_proxies WHERE id = ?').get(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Proxy not found' });
+    const b = req.body || {};
+    db.prepare(`
+      UPDATE plugging_proxies SET
+        label = COALESCE(?, label),
+        url = COALESCE(?, url),
+        is_enabled = COALESCE(?, is_enabled)
+      WHERE id = ?
+    `).run(
+      b.label,
+      b.url ? String(b.url).trim() : null,
+      b.isEnabled != null ? (b.isEnabled ? 1 : 0) : null,
+      row.id
+    );
+    res.json({ ok: true });
+  });
+
+  app.delete('/admin/plugging/proxies/:id', requireAdmin, (req, res) => {
+    db.prepare('DELETE FROM plugging_proxies WHERE id = ?').run(req.params.id);
+    res.json({ ok: true });
+  });
+
   // ── Admin orders ──
+  app.get('/admin/plugging/master-key', requireAdmin, (req, res) => {
+    const accessKey = String(appConfig.plugMasterKey || '').trim();
+    if (!accessKey) {
+      return res.json({ enabled: false, message: 'Set PLUG_MASTER_KEY in .env and restart the server.' });
+    }
+    ensurePlugMasterOrder();
+    res.json({
+      enabled: true,
+      accessKey,
+      workspaceUrl: '/plugging/workspace',
+      note: 'Owner master key — bypasses payment approval. Keep secret in production.'
+    });
+  });
+
   app.get('/admin/plugging/orders', requireAdmin, (req, res) => {
     res.json(db.prepare(`
       SELECT po.*, pp.name AS plan_name, pm.name AS payment_method_name

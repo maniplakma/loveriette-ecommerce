@@ -1,24 +1,44 @@
-/* Site uses light theme only — dark mode removed */
-(function bootThemeFromCache() {
-  try {
-    const raw = localStorage.getItem('loveriette-theme-colors');
-    if (!raw) return;
-    const t = JSON.parse(raw);
-    const root = document.documentElement;
-    const map = {
-      background: '--background-color',
-      font: '--font-color',
-      primary: '--primary-color',
-      secondary: '--secondary-color'
-    };
-    Object.entries(map).forEach(([key, prop]) => {
-      if (t[key]) root.style.setProperty(prop, t[key]);
-    });
-    if (t.primary) root.style.setProperty('--a-primary', t.primary);
-    if (t.background) root.style.setProperty('--a-bg', t.background);
-  } catch (_) { /* ignore */ }
+/** Functional vs feature pages — strip broken corner decos on admin/dashboard/auth */
+(function pageContext() {
+  const FUNCTIONAL_PATH = /admin\.html|dashboard\.html|login\.html|signup\.html|faqs\.html|contact\.html|guide\.html|about\.html|terms\.html|privacy\.html|cart\.html|checkout\.html|payment\.html|order-thanks|website-inquiry|website-package|plugging-payment|plugging-status|plugging-subscribe|plugging-workspace|product\.html/i;
+
+  function isFunctionalPage() {
+    const body = document.body;
+    if (!body) return false;
+    if (body.classList.contains('admin-page')) return true;
+    if (body.classList.contains('buyer-dashboard-page')) return true;
+    if (body.classList.contains('auth-page')) return true;
+    if (body.dataset?.noFlirt !== undefined) return true;
+    return FUNCTIONAL_PATH.test((location.pathname || '').toLowerCase());
+  }
+
+  function isFeaturePage() {
+    if (isFunctionalPage()) return false;
+    const body = document.body;
+    const path = (location.pathname || '').toLowerCase();
+    return body.classList.contains('page-home')
+      || body.classList.contains('page-shop')
+      || /^\/(shop|plugging|website-making)\/?$/i.test(path.replace(/\/$/, '') || '/')
+      || /\/(plugging|website-making)\/?$/i.test(path);
+  }
+
+  function stripAdminDecorations() {
+    document.getElementById('site-page-corners')?.remove();
+    document.body?.classList.remove(
+      'site-deco-active',
+      'site-deco-zone--admin',
+      'site-deco-zone--buyer',
+      'site-deco-zone--payment'
+    );
+  }
+
+  window.isFunctionalPage = isFunctionalPage;
+  window.isFeaturePage = isFeaturePage;
+  window.stripAdminDecorations = stripAdminDecorations;
+  if (isFunctionalPage()) stripAdminDecorations();
 })();
 
+/* Site theme bootstrap — no duplicate partial cache apply (see theme-colors.js) */
 (function forceLightTheme() {
   document.documentElement.classList.add('light-mode');
   if (document.body) document.body.classList.add('light-mode');
@@ -82,6 +102,7 @@ window.ensureAdminLink = ensureAdminLink;
 
 function initTheme() {
   removeThemeToggles();
+  if (typeof stripAdminDecorations === 'function') stripAdminDecorations();
   if (document.body?.classList.contains('auth-page')) setNewBuyer(true);
   document.documentElement.classList.add('light-mode');
   if (document.body) document.body.classList.add('light-mode');
@@ -89,7 +110,7 @@ function initTheme() {
 }
 
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initTheme);
+  document.addEventListener('DOMContentLoaded', initTheme, { once: true });
 } else {
   initTheme();
 }
@@ -101,13 +122,10 @@ window.updateThemeMeta = updateThemeMeta;
 window.updateThemeToggleUI = function () {};
 
 (function loadSiteChrome() {
-  const v = '20260626';
-  if (!document.querySelector('link[href*="site-decorations.css"]')) {
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = `/site-decorations.css?v=20260626e`;
-    document.head.appendChild(link);
-  }
+  const v = '20260705cleanup';
+  const functional = typeof isFunctionalPage === 'function' && isFunctionalPage();
+  const feature = typeof isFeaturePage === 'function' && isFeaturePage();
+
   function injectScript(src) {
     if (document.querySelector(`script[src*="${src.split('?')[0]}"]`)) return;
     const s = document.createElement('script');
@@ -115,13 +133,25 @@ window.updateThemeToggleUI = function () {};
     s.defer = true;
     document.body.appendChild(s);
   }
-  function loadChromeScripts() {
-    injectScript(`/site-decorations.js?v=20260626e`);
-    injectScript(`/flirty-site-text.js?v=${v}`);
-    if (!document.querySelector('script[src*="flirty-copy.js"]')) {
+
+  function loadDeferredChrome() {
+    if (functional) {
+      if (typeof stripAdminDecorations === 'function') stripAdminDecorations();
+      return;
+    }
+    if (feature && !document.querySelector('script[src*="flirty-copy.js"]')) {
       injectScript(`/flirty-copy.js?v=${v}`);
     }
   }
-  if (document.body) loadChromeScripts();
-  else document.addEventListener('DOMContentLoaded', loadChromeScripts);
+
+  function scheduleChrome() {
+    if (typeof requestIdleCallback === 'function') {
+      requestIdleCallback(loadDeferredChrome, { timeout: 2000 });
+    } else {
+      setTimeout(loadDeferredChrome, 1);
+    }
+  }
+
+  if (document.body) scheduleChrome();
+  else document.addEventListener('DOMContentLoaded', scheduleChrome, { once: true });
 })();

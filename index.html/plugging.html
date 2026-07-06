@@ -3,25 +3,38 @@
 <head>
   <base href="/">
   <meta charset="UTF-8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="Telegram message auto forwarder — plug and relay messages across your channels.">
   <title>Plugging — loveriette</title>
+  <link rel="stylesheet" href="theme-critical.css?v=20260705cleanup">
+  <script src="theme-boot.js?v=20260705cleanup"></script>
   <link rel="stylesheet" href="/style.css?v=20260626platform">
   <link rel="stylesheet" href="/mobile.css?v=20260626platform">
-  <link rel="stylesheet" href="/theme.css">
-  <link rel="stylesheet" href="/platform.css?v=20260627icons">
+  <link rel="stylesheet" href="performance-mobile.css?v=20260705cleanup">
+  <link rel="stylesheet" href="/theme.css?v=20260703audit">
+  <link rel="stylesheet" href="/platform.css?v=20260705cleanup">
   <link rel="stylesheet" href="/plugging.css?v=2">
   <link rel="stylesheet" href="/plugging-plans.css?v=1">
-  <script src="/theme.js"></script>
-  <script src="/theme-colors.js"></script>
-  <script src="/api-cache.js"></script>
-  <script src="/share-utils.js"></script>
+  <script src="/theme.js?v=20260705cleanup" defer></script>
+  <script src="/theme-colors.js?v=20260705cleanup" defer></script>
+  <script src="/share-utils.js?v=20260703audit" defer></script>
 </head>
 <body class="light-mode">
-  <nav class="top-nav"><div class="nav-inner"><ul class="nav-left"></ul><ul class="nav-right">
+  <nav class="top-nav"><div class="nav-inner"><ul class="nav-left">
+        <li><a href="/" class="nav-link">Home</a></li>
+        <li><a href="/shop" class="nav-link">Shop</a></li>
+        <li><a href="/website-making" class="nav-link">Website Making</a></li>
+        <li><a href="/plugging" class="nav-link">Plugging</a></li>
+                <li><a href="about.html" class="nav-link">About</a></li>
+        <li><a href="faqs.html" class="nav-link">FAQ</a></li>
+        <li><a href="contact.html" class="nav-link">Contact</a></li>
+      </ul><ul class="nav-right">
     <li class="auth-guest"><a href="/login.html" class="nav-link">Sign In</a></li>
     <li class="auth-user" hidden><a href="/dashboard.html" class="nav-link">My Account</a></li>
   </ul></div></nav>
+  <script src="nav-shell.js?v=20260705cleanup"></script>
 
   <div class="service-hero service-hero--flirty">
     <div class="service-hero-flirt">
@@ -32,7 +45,7 @@
       </h1>
     </div>
     <p class="service-hero-flirt-tagline" id="plugging-hero-sub">connect your telegram, set your source and targets — the forwarder runs on your account, instantly. no admin setup needed.</p>
-    <p class="service-hero-flirt-tagline plugging-self-service-note">fully yours in the workspace — connect, forward, and go. that's it, babe ♡</p>
+    <p class="service-hero-flirt-tagline plugging-self-service-note">Fully self-service in your workspace — connect your Telegram, set source and targets, and start forwarding.</p>
   </div>
 
   <section class="platform-section plugging-workspace-section">
@@ -88,6 +101,6 @@
   <script src="/platform-nav.js"></script>
   <script src="/product-icons.js"></script>
   <script src="/plugging-plan-cards.js"></script>
-  <script src="/plugging.js?v=4"></script>
+  <script src="/plugging.js?v=20260707aesthetic"></script>
 </body>
 </html>

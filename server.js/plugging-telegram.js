@@ -44,15 +44,15 @@ function parseProxy(proxyUrl) {
   return undefined;
 }
 
-async function createClient(settings, sessionString = '') {
+async function createClient(settings, sessionString = '', accountProxyUrl = '') {
   if (!loadGramJs()) throw new Error('Telegram library not available');
   const apiId = Number(settings.telegram_api_id || process.env.TELEGRAM_API_ID);
   const apiHash = String(settings.telegram_api_hash || process.env.TELEGRAM_API_HASH || '');
   if (!apiId || !apiHash) throw new Error('Telegram API credentials not configured in admin panel');
 
-  const proxy = settings.proxy_enabled === '1' && settings.proxy_url
-    ? parseProxy(settings.proxy_url)
-    : undefined;
+  const proxyUrl = String(accountProxyUrl || '').trim()
+    || (settings.proxy_enabled === '1' ? String(settings.proxy_url || '').trim() : '');
+  const proxy = proxyUrl ? parseProxy(proxyUrl) : undefined;
 
   const client = new TelegramClient(new StringSession(sessionString || ''), apiId, apiHash, {
     connectionRetries: 5,
@@ -63,8 +63,8 @@ async function createClient(settings, sessionString = '') {
   return client;
 }
 
-async function sendLoginCode(settings, phone, sessionString = '') {
-  const client = await createClient(settings, sessionString);
+async function sendLoginCode(settings, phone, sessionString = '', accountProxyUrl = '') {
+  const client = await createClient(settings, sessionString, accountProxyUrl);
   try {
     const result = await client.sendCode(
       { apiId: Number(settings.telegram_api_id), apiHash: settings.telegram_api_hash },
@@ -80,8 +80,8 @@ async function sendLoginCode(settings, phone, sessionString = '') {
   }
 }
 
-async function verifyLoginCode(settings, { phone, code, phoneCodeHash, sessionString }) {
-  const client = await createClient(settings, sessionString);
+async function verifyLoginCode(settings, { phone, code, phoneCodeHash, sessionString, proxyUrl = '' }) {
+  const client = await createClient(settings, sessionString, proxyUrl);
   try {
     await client.invoke(new Api.auth.SignIn({
       phoneNumber: phone,
@@ -99,8 +99,8 @@ async function verifyLoginCode(settings, { phone, code, phoneCodeHash, sessionSt
   }
 }
 
-async function withAuthorizedClient(settings, sessionString, fn) {
-  const client = await createClient(settings, sessionString);
+async function withAuthorizedClient(settings, sessionString, fn, accountProxyUrl = '') {
+  const client = await createClient(settings, sessionString, accountProxyUrl);
   try {
     if (!(await client.isUserAuthorized())) {
       throw new Error('Telegram session expired — please log in again with your phone number.');

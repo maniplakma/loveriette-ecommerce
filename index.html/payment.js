@@ -88,10 +88,10 @@ function updateConfirmButton() {
       hint.textContent = 'This order is complete';
       hint.classList.remove('upload-confirm-hint--ready');
     } else if (canSubmit) {
-      hint.textContent = 'Receipt attached — tap confirm when you\'re ready, babe ♡';
+      hint.textContent = 'Receipt attached — tap Confirm when ready.';
       hint.classList.add('upload-confirm-hint--ready');
     } else {
-      hint.textContent = 'Select a receipt image first — then confirm your order ♡';
+      hint.textContent = 'Select a receipt image first — then confirm your order ';
       hint.classList.remove('upload-confirm-hint--ready');
     }
   }
@@ -314,9 +314,9 @@ function renderOrder(order) {
     statusEl.className = 'order-status-badges';
   } else {
     const statusText = {
-      pending_payment: 'waiting on your payment, babe...',
-      pending: 'receipt received — hang tight while we review...',
-      approved: 'approved — enjoy your premium ♡'
+      pending_payment: 'Waiting for payment…',
+      pending: 'Receipt received — under review',
+      approved: 'Approved — order complete'
     };
     statusEl.textContent = statusText[order.status] || order.status;
   }

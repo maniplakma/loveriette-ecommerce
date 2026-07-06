@@ -3,24 +3,30 @@
 <head>
   <base href="/">
   <meta charset="UTF-8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>About Me — loveriette</title>
+  <title>About — loveriette</title>
+  <link rel="stylesheet" href="theme-critical.css?v=20260705cleanup">
+  <script src="theme-boot.js?v=20260705cleanup"></script>
   <link rel="stylesheet" href="style.css?v=20260615brand-gloss">
   <link rel="stylesheet" href="mobile.css?v=20260615typography">
-  <link rel="stylesheet" href="theme.css">
-  <link rel="stylesheet" href="platform.css?v=20260627">
-  <script src="theme.js"></script>
-  <script src="theme-colors.js?v=20260614persist"></script>
+  <link rel="stylesheet" href="performance-mobile.css?v=20260705cleanup">
+  <link rel="stylesheet" href="theme.css?v=20260703audit">
+  <link rel="stylesheet" href="platform.css?v=20260705cleanup">
+  <script src="theme.js?v=20260705cleanup" defer></script>
+  <script src="theme-colors.js?v=20260705cleanup" defer></script>
 </head>
 <body>
   <nav class="top-nav">
     <div class="nav-inner">
       <ul class="nav-left">
-        <li><a href="index.html" class="nav-link">Home</a></li>
-        <li><a href="index.html#products" class="nav-link">Products</a></li>
-        <li><a href="faqs.html" class="nav-link">FAQs</a></li>
-        <li><a href="guide.html" class="nav-link">Guide</a></li>
-        <li><a href="about.html" class="nav-pill active">About Me</a></li>
+        <li><a href="/" class="nav-link">Home</a></li>
+        <li><a href="/shop" class="nav-link">Shop</a></li>
+        <li><a href="/plugging" class="nav-link">Plugging</a></li>
+        <li><a href="/website-making" class="nav-link">Website Making</a></li>
+        <li><a href="about.html" class="nav-pill active">About</a></li>
+        <li><a href="faqs.html" class="nav-link">FAQ</a></li>
         <li><a href="contact.html" class="nav-link">Contact</a></li>
       </ul>
       <ul class="nav-right">
@@ -40,12 +46,12 @@
       </ul>
     </div>
   </nav>
+  <script src="nav-shell.js?v=20260705cleanup"></script>
 
   <main class="about-page" id="about-page">
-    <header class="info-header info-header--flirty about-page-head">
-      <span class="info-header-eyebrow">get to know</span>
-      <h1><span class="info-title-bold">about</span> <span class="info-title-script">me</span></h1>
-      <p class="info-header-tagline">the girl behind loveriette — your premium fix, delivered with love</p>
+    <header class="info-header about-page-head">
+      <h1>About Me</h1>
+      <p class="info-header-tagline">Learn more about the store and how we deliver premium access.</p>
     </header>
 
     <article class="about-portfolio about-portfolio--home about-portfolio--page" aria-label="Store profile">
@@ -70,7 +76,7 @@
 
       <div class="about-divider" aria-hidden="true"><span>✦</span></div>
 
-      <blockquote id="about-bio" class="about-bio-text">your go-to for premium digital goodies — shop, lend, build, and plug with someone who actually cares ♡</blockquote>
+      <blockquote id="about-bio" class="about-bio-text">your go-to for premium digital goodies — shop, lend, build, and plug with someone who actually cares </blockquote>
 
       <div class="about-social-strip">
         <p class="about-social-label">find me online</p>
@@ -78,8 +84,8 @@
       </div>
 
       <div class="about-actions">
-        <a href="index.html#products" class="about-btn-primary">browse my shop</a>
-        <a href="contact.html" class="about-btn-ghost">say hi ♡</a>
+        <a href="/shop" class="about-btn-primary">Browse shop</a>
+        <a href="contact.html" class="about-btn-ghost">say hi </a>
       </div>
     </article>
   </main>
@@ -96,8 +102,8 @@
   <script src="social-icons.js"></script>
   <script src="footer-socials.js"></script>
   <script src="notifications.js"></script>
-  <script src="branding.js"></script>
-  <script src="nav.js"></script>
+  <script src="branding.js?v=20260703audit" defer></script>
+  <script src="nav.js?v=20260703audit" defer></script>
   <script src="mobile.js?v=20260614mobile"></script>
   <script src="about.js"></script>
 </body>

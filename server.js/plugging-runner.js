@@ -2,8 +2,24 @@
  * In-process forwarding runners for plugging accounts.
  */
 const { withAuthorizedClient } = require('./plugging-telegram');
+const { logPlugActivity } = require('./plugging-activity');
+const { ensureAccountProxy } = require('./plugging-proxy');
+const {
+  computeStealthDelayMs,
+  initialHumanPauseMs,
+  staggerBetweenTargetsMs,
+  formatWaitMinutes
+} = require('./plugging-stealth');
 
 const runners = new Map();
+const MAX_SEEN_MESSAGES = 400;
+
+function entityLabel(entity) {
+  if (!entity) return '';
+  if (entity.username) return `@${entity.username}`;
+  if (entity.title) return String(entity.title);
+  return String(entity.id);
+}
 
 function parseTargets(text) {
   return String(text || '')
@@ -45,52 +61,86 @@ async function resolveTargetEntities(client, targets) {
 
 function startRunner(db, accountId, getSettings) {
   stopRunner(accountId);
-  const account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ?').get(accountId);
+  let account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ?').get(accountId);
   if (!account || !account.session_string) {
     throw new Error('Account is not logged in to Telegram yet');
   }
+  const settings = getSettings();
+  ensureAccountProxy(db, accountId, settings);
+  account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ?').get(accountId);
+
   const order = db.prepare('SELECT * FROM plugging_orders WHERE id = ? AND status = ?').get(account.order_id, 'approved');
   if (!order) throw new Error('Plugging subscription is not active');
 
-  const state = { running: true, handler: null };
+  const state = { running: true, handler: null, seenIds: new Set() };
   runners.set(accountId, state);
 
   db.prepare('UPDATE plugging_accounts SET runner_status = ?, last_error = ?, updated_at = datetime(\'now\') WHERE id = ?')
     .run('running', '', accountId);
 
+  logPlugActivity(db, accountId, 'started', 'Forwarder starting…');
+
   (async () => {
     try {
-      const settings = getSettings();
       await withAuthorizedClient(settings, account.session_string, async (client) => {
         const { NewMessage } = require('telegram/events');
         const source = await resolveSourceEntity(client, account.source_link);
         const targets = await resolveTargetEntities(client, parseTargets(account.targets_text));
         if (!targets.length) throw new Error('Add at least one target group');
 
-        const delayMs = Math.max(0, Number(account.delay_minutes) || 0) * 60 * 1000;
-        const displayName = account.display_name || account.label || account.phone;
+        const proxyNote = account.proxy_url ? ' · proxy active' : '';
+        logPlugActivity(
+          db, accountId, 'info',
+          `Watching ${entityLabel(source)} → ${targets.length} target(s) · stealth mode${proxyNote}`
+        );
 
         const handler = async (event) => {
           if (!state.running) return;
           const msg = event.message;
           if (!msg || msg.out) return;
+          if (state.seenIds.has(msg.id)) return;
+          state.seenIds.add(msg.id);
+          if (state.seenIds.size > MAX_SEEN_MESSAGES) {
+            const drop = [...state.seenIds].slice(0, 100);
+            drop.forEach((id) => state.seenIds.delete(id));
+          }
+
           try {
             db.prepare('UPDATE plugging_accounts SET cycles_count = cycles_count + 1, updated_at = datetime(\'now\') WHERE id = ?').run(accountId);
-            if (delayMs) await sleep(delayMs);
+            logPlugActivity(db, accountId, 'cycle', `New message detected (id ${msg.id})`);
+
+            const stealthWait = computeStealthDelayMs(account.delay_minutes);
+            const humanPause = initialHumanPauseMs();
+            logPlugActivity(
+              db, accountId, 'info',
+              `Stealth wait ${formatWaitMinutes(humanPause + stealthWait)} (human-like timing)`
+            );
+            await sleep(humanPause);
             if (!state.running) return;
-            const text = displayName ? `${displayName}:\n${msg.text || ''}` : (msg.text || '');
-            for (const target of targets) {
+            await sleep(stealthWait);
+            if (!state.running) return;
+
+            for (let i = 0; i < targets.length; i++) {
+              if (i > 0) await sleep(staggerBetweenTargetsMs());
+              if (!state.running) return;
+              const target = targets[i];
+              const targetName = entityLabel(target);
               try {
                 await client.forwardMessages(target, { messages: [msg.id], fromPeer: source });
                 db.prepare('UPDATE plugging_accounts SET success_count = success_count + 1 WHERE id = ?').run(accountId);
+                logPlugActivity(db, accountId, 'success', `Forwarded message #${msg.id} to ${targetName}`, targetName);
               } catch (fwdErr) {
+                const errMsg = String(fwdErr.message || fwdErr).slice(0, 500);
                 db.prepare('UPDATE plugging_accounts SET failed_count = failed_count + 1, last_error = ? WHERE id = ?')
-                  .run(String(fwdErr.message || fwdErr).slice(0, 500), accountId);
+                  .run(errMsg, accountId);
+                logPlugActivity(db, accountId, 'error', `Failed → ${targetName}: ${errMsg}`, targetName);
               }
             }
           } catch (cycleErr) {
+            const errMsg = String(cycleErr.message || cycleErr).slice(0, 500);
             db.prepare('UPDATE plugging_accounts SET failed_count = failed_count + 1, last_error = ? WHERE id = ?')
-              .run(String(cycleErr.message || cycleErr).slice(0, 500), accountId);
+              .run(errMsg, accountId);
+            logPlugActivity(db, accountId, 'error', `Cycle error: ${errMsg}`);
           }
         };
 
@@ -100,10 +150,12 @@ function startRunner(db, accountId, getSettings) {
           await sleep(5000);
         }
         client.removeEventHandler(handler);
-      });
+      }, account.proxy_url);
     } catch (err) {
+      const errMsg = String(err.message || err).slice(0, 500);
       db.prepare('UPDATE plugging_accounts SET runner_status = ?, last_error = ?, updated_at = datetime(\'now\') WHERE id = ?')
-        .run('stopped', String(err.message || err).slice(0, 500), accountId);
+        .run('stopped', errMsg, accountId);
+      logPlugActivity(db, accountId, 'error', `Forwarder stopped: ${errMsg}`);
       runners.delete(accountId);
     }
   })();

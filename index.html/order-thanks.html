@@ -3,23 +3,29 @@
 <head>
   <base href="/">
   <meta charset="UTF-8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Thank You — loveriette</title>
+  <link rel="stylesheet" href="theme-critical.css?v=20260705cleanup">
+  <script src="theme-boot.js?v=20260705cleanup"></script>
   <link rel="stylesheet" href="style.css?v=20260615brand-gloss">
   <link rel="stylesheet" href="mobile.css?v=20260615typography">
-  <link rel="stylesheet" href="theme.css">
-  <script src="theme.js"></script>
-  <script src="theme-colors.js?v=20260614persist"></script>
+  <link rel="stylesheet" href="performance-mobile.css?v=20260705cleanup">
+  <link rel="stylesheet" href="theme.css?v=20260703audit">
+  <script src="theme.js?v=20260705cleanup" defer></script>
+  <script src="theme-colors.js?v=20260705cleanup" defer></script>
 </head>
 <body>
   <nav class="top-nav">
     <div class="nav-inner">
       <ul class="nav-left">
-        <li><a href="index.html" class="nav-link">Home</a></li>
-        <li><a href="index.html#products" class="nav-link">Products</a></li>
-        <li><a href="faqs.html" class="nav-link">FAQs</a></li>
-        <li><a href="guide.html" class="nav-link">Guide</a></li>
-        <li><a href="about.html" class="nav-link">About Me</a></li>
+        <li><a href="/" class="nav-link">Home</a></li>
+        <li><a href="/shop" class="nav-pill active">Shop</a></li>
+        <li><a href="/plugging" class="nav-link">Plugging</a></li>
+        <li><a href="/website-making" class="nav-link">Website Making</a></li>
+        <li><a href="about.html" class="nav-link">About</a></li>
+        <li><a href="faqs.html" class="nav-link">FAQ</a></li>
         <li><a href="contact.html" class="nav-link">Contact</a></li>
       </ul>
       <ul class="nav-right">
@@ -30,6 +36,7 @@
       </ul>
     </div>
   </nav>
+  <script src="nav-shell.js?v=20260705cleanup"></script>
 
   <main class="thanks-page">
     <div class="thanks-shell" id="thanks-content" hidden>
@@ -40,8 +47,8 @@
               <path d="M20 6L9 17l-5-5"/>
             </svg>
           </div>
-          <h1>Thank you, gorgeous!</h1>
-          <p class="thanks-lead" id="thanks-trust-line">We're so grateful you trusted us — you're the best, babe ♡</p>
+          <h1>Thank you for your order</h1>
+          <p class="thanks-lead" id="thanks-trust-line">We received your order and will notify you when it is approved.</p>
         </div>
 
         <div class="thanks-order-chip">
@@ -91,7 +98,7 @@
         </ol>
 
         <div class="thanks-actions">
-          <a href="index.html#products" class="thanks-btn thanks-btn-primary">Continue Shopping</a>
+          <a href="/shop" class="thanks-btn thanks-btn-primary">Continue Shopping</a>
           <a href="dashboard.html" class="thanks-btn thanks-btn-ghost" id="thanks-account-link">My Account</a>
           <a href="#" class="thanks-btn thanks-btn-ghost" id="thanks-order-link" hidden>View order status</a>
         </div>
@@ -111,12 +118,10 @@
       <a href="terms.html">Terms of Service</a>
     </div>
   </footer>
-
-  <script src="flirty-copy.js"></script>
-  <script src="notifications.js"></script>
+<script src="notifications.js"></script>
   <script src="toast.js"></script>
-  <script src="branding.js"></script>
-  <script src="nav.js"></script>
+  <script src="branding.js?v=20260703audit" defer></script>
+  <script src="nav.js?v=20260703audit" defer></script>
   <script src="mobile.js?v=20260614mobile"></script>
   <script src="order-thanks.js?v=20260626thanks"></script>
 </body>

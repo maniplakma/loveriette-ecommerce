@@ -178,6 +178,23 @@
     return normalized;
   }
 
+  function themePayloadEqual(a, b) {
+    if (!a || !b) return false;
+    const x = normalizeThemePayload(a);
+    const y = normalizeThemePayload(b);
+    return x.background === y.background && x.font === y.font
+      && x.primary === y.primary && x.secondary === y.secondary;
+  }
+
+  let appliedThemeKey = typeof window.__loverietteThemeBootKey === 'string'
+    ? window.__loverietteThemeBootKey
+    : '';
+
+  function themeKey(colors) {
+    const c = normalizeThemePayload(colors || DEFAULTS);
+    return `${c.background}|${c.font}|${c.primary}|${c.secondary}`;
+  }
+
   /** Write all theme tokens to :root — frontend + admin inherit instantly */
   function applyThemeColors(colors) {
     const v = deriveThemeVars(colors || {});
@@ -227,6 +244,14 @@
       window.updateThemeMeta();
     }
     updateAdminThemePreviewSwatches(v);
+    appliedThemeKey = themeKey(colors);
+  }
+
+  function applyThemeColorsIfChanged(colors) {
+    const key = themeKey(colors);
+    if (key === appliedThemeKey) return false;
+    applyThemeColors(colors);
+    return true;
   }
 
   function syncAdminThemeAliases(v) {
@@ -280,26 +305,30 @@
       }
       const data = await res.json();
       const active = resolveActiveTheme(data);
-      applyThemeColors(active);
-      saveThemeToStorage(active);
+      const cached = loadThemeFromStorage();
+      if (!themePayloadEqual(active, cached)) {
+        applyThemeColorsIfChanged(active);
+        saveThemeToStorage(active);
+      }
       return active;
     } catch (err) {
       const cached = loadThemeFromStorage();
       if (cached) {
         const active = resolveActiveTheme(cached);
-        applyThemeColors(active);
+        applyThemeColorsIfChanged(active);
         return active;
       }
-      applyThemeColors(DEFAULTS);
+      applyThemeColorsIfChanged(DEFAULTS);
       saveThemeToStorage(DEFAULTS);
       return DEFAULTS;
     }
   }
 
   const cached = loadThemeFromStorage();
-  applyThemeColors(resolveActiveTheme(cached || DEFAULTS));
+  applyThemeColorsIfChanged(resolveActiveTheme(cached || DEFAULTS));
 
   window.applyThemeColors = applyThemeColors;
+  window.applyThemeColorsIfChanged = applyThemeColorsIfChanged;
   window.reapplySidebarTheme = function reapplySidebarTheme() {
     const cachedColors = loadThemeFromStorage();
     if (cachedColors) applyThemeColors(cachedColors);
@@ -313,5 +342,13 @@
   window.THEME_COLOR_DEFAULTS = DEFAULTS;
   window.resolveActiveTheme = resolveActiveTheme;
 
-  fetchAndApplyThemeColors();
+  function scheduleThemeFetch() {
+    if (typeof requestIdleCallback === 'function') {
+      requestIdleCallback(() => { fetchAndApplyThemeColors(); }, { timeout: 2000 });
+    } else {
+      setTimeout(fetchAndApplyThemeColors, 100);
+    }
+  }
+
+  scheduleThemeFetch();
 })();

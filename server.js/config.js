@@ -8,6 +8,20 @@ const appRoot = process.env.APP_ROOT
   ? path.resolve(process.env.APP_ROOT)
   : path.resolve(serverDir, '..');
 
+(function loadEnvFile() {
+  const envPath = path.join(appRoot, '.env');
+  if (!fs.existsSync(envPath)) return;
+  for (const line of fs.readFileSync(envPath, 'utf8').split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eq = trimmed.indexOf('=');
+    if (eq === -1) continue;
+    const key = trimmed.slice(0, eq).trim();
+    const val = trimmed.slice(eq + 1).trim();
+    if (key && process.env[key] == null) process.env[key] = val;
+  }
+})();
+
 const config = {
   nodeEnv: process.env.NODE_ENV || 'development',
   isProduction: process.env.NODE_ENV === 'production',
@@ -37,9 +51,18 @@ const config = {
   adminEmail: process.env.ADMIN_EMAIL || '',
   adminPassword: process.env.ADMIN_PASSWORD || '',
   adminName: process.env.ADMIN_NAME || 'Site Admin',
+  plugMasterKey: process.env.PLUG_MASTER_KEY || '',
   testBase: process.env.TEST_BASE || '',
   jsonBodyLimit: process.env.JSON_BODY_LIMIT || '12mb',
-  defaultSocialLinksJson: process.env.DEFAULT_SOCIAL_LINKS_JSON || '',
+  defaultSocialLinksJson: process.env.DEFAULT_SOCIAL_LINKS_JSON || JSON.stringify([
+    { key: 'telegram', label: 'Telegram', url: 'https://t.me/skyloverie', enabled: true },
+    { key: 'email', label: 'Email', url: 'mailto:riettemadzehn@gmail.com', enabled: true },
+    { key: 'channel', label: 'Telegram Channel', url: 'https://t.me/lovebyriette', enabled: true }
+  ]),
+  googleClientId: process.env.GOOGLE_CLIENT_ID || '',
+  googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
+  googleRedirectUri: process.env.GOOGLE_REDIRECT_URI || '',
+  tokenEncryptionKey: process.env.TOKEN_ENCRYPTION_KEY || '',
 };
 
 function resolveSessionSecret() {

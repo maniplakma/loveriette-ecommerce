@@ -1,0 +1,163 @@
+/**
+ * Mobile performance + visual stability — load after mobile.css.
+ */
+@media (max-width: 768px) {
+  html {
+    scroll-behavior: auto;
+    overscroll-behavior-y: none;
+  }
+
+  body {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Reduce decorative-font flicker / heavy glow on small screens */
+  .title-bubble,
+  .title-script,
+  .title-alt,
+  .catalog-title,
+  .platform-section-head h2,
+  .service-card h3,
+  .hero-display-script,
+  .hero-display-bold,
+  .hero-display-premiums,
+  .brand-wordmark-front,
+  .checkout-card h1,
+  .checkout-card h2,
+  .payment-card h1,
+  .order-detail-title {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeSpeed;
+    font-synthesis: none;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  }
+
+  .brand-wordmark-back {
+    display: none;
+  }
+
+  .checkout-error,
+  .form-error,
+  .payment-error {
+    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-size: 0.875rem;
+    line-height: 1.45;
+    word-break: break-word;
+  }
+
+  .product-card:not(.catalog-card),
+  .card:not(.package-card),
+  .plan-purchase-card,
+  .nf-plan-card,
+  .plugging-ws-box,
+  .platform-section .faq-item,
+  .dashboard-panel,
+  .checkout-card,
+  .cart-item,
+  .top-nav,
+  .nav-inner,
+  .nav-menu,
+  .buyer-dash-sticky-title,
+  .service-card--premium {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  .product-card:not(.catalog-card),
+  .card:not(.package-card),
+  .plan-purchase-card,
+  .nf-plan-card {
+    background: var(--surface-color) !important;
+  }
+
+  .hero-decor-panel,
+  .hero-decor-wave,
+  .hero-decor-orbit,
+  .hero-decor-waveform,
+  .hero-bg-app {
+    animation: none !important;
+    will-change: auto !important;
+  }
+
+  .catalog-card,
+  .product-card,
+  .package-card,
+  .service-card--premium {
+    transform: none !important;
+  }
+
+  .catalog-card:hover,
+  .product-card:not(.catalog-card):hover,
+  .service-card--premium:hover {
+    transform: none !important;
+  }
+
+  .product-card.catalog-card {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  * {
+    scroll-margin-top: 0;
+  }
+
+  button,
+  .btn-primary,
+  .btn-view,
+  .filter-btn,
+  .nav-link,
+  .nav-signup,
+  .icon-btn {
+    transition-duration: 0.12s !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  body.is-new-buyer .nav-signup {
+    animation: none !important;
+  }
+
+  .feedSlideIn {
+    animation: none !important;
+  }
+}
+
+button,
+a,
+.icon-btn,
+.nav-link,
+.nav-signup,
+.filter-btn,
+.btn-primary-platform {
+  touch-action: manipulation;
+}
+
+.products img,
+.catalog-card-icon img,
+.product-logo img {
+  content-visibility: auto;
+  contain-intrinsic-size: 48px 48px;
+}
+
+.main-content,
+.info-page,
+.service-hero,
+.buyer-dash-main {
+  contain: layout style;
+}
+
+@media (min-width: 769px) {
+  .product-card.catalog-card:hover {
+    transform: translateY(-10px) !important;
+  }
+}

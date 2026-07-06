@@ -42,6 +42,10 @@ function formatMoney(price) {
 }
 
 async function api(url, options = {}) {
+  const method = (options.method || 'GET').toUpperCase();
+  if (method === 'GET' && window.ApiCache) {
+    return ApiCache.fetchJson(url, options, 45000);
+  }
   const res = await fetch(url, {
     ...options,
     headers: { 'Content-Type': 'application/json', ...options.headers },
@@ -177,7 +181,7 @@ function renderRelated(related) {
     </a>`).join('');
 }
 
-function renderProduct(product, allProducts) {
+function renderProduct(product) {
   const sharePath = product.shareUrl || (product.slug ? `/product/${product.slug}` : `/product.html?id=${product.id}`);
   if (window.applySeoMeta) {
     applySeoMeta({
@@ -207,13 +211,29 @@ function renderProduct(product, allProducts) {
   const plans = getPlans(product);
   plansGrid.innerHTML = plans.map((plan) => renderPlanCard(product, plan)).join('');
 
-  renderExploreServices(allProducts, product.id);
   renderReviews(product.reviews);
   renderRelated(product.relatedProducts);
 
   heroEl.hidden = false;
   aboutEl.hidden = false;
   plansSection.hidden = false;
+}
+
+async function loadExploreProducts(product) {
+  let list = product.relatedProducts;
+  if (!list?.length) {
+    try {
+      const cat = encodeURIComponent(product.category || '');
+      list = await api(`/products?category=${cat}&limit=8`);
+    } catch {
+      list = [];
+    }
+  }
+  renderExploreServices(list, product.id);
+  if (!product.relatedProducts?.length) {
+    const related = list.filter((p) => p.id !== product.id).slice(0, 4);
+    if (related.length) renderRelated(related);
+  }
 }
 
 async function addToCart(productId, variantId) {
@@ -240,18 +260,10 @@ async function loadProduct() {
       return;
     }
 
-    const allProducts = await api('/products');
-    if (!product.reviews) {
-      try { product.reviews = await api(`/products/${product.id}/reviews`); } catch { product.reviews = []; }
-    }
-    if (!product.relatedProducts) {
-      product.relatedProducts = allProducts.filter((p) => p.id !== product.id && p.category === product.category).slice(0, 4);
-    }
-    renderProduct(product, allProducts);
+    renderProduct(product);
+    loadExploreProducts(product).catch(() => {});
 
-    try {
-      await api(`/products/${product.id}/view`, { method: 'POST' });
-    } catch { /* ignore */ }
+    api(`/products/${product.id}/view`, { method: 'POST' }).catch(() => {});
   } catch {
     errorEl.hidden = false;
   }

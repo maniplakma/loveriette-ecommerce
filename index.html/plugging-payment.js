@@ -28,7 +28,7 @@ function setPayError(message) {
 }
 
 function validateReceiptFile(file) {
-  if (!file) return 'Upload your receipt first, babe — we need proof';
+  if (!file) return 'Upload your receipt first — proof of payment is required.';
   if (!RECEIPT_TYPES.has(file.type)) return 'Use JPG, PNG, WebP, or GIF only';
   if (file.size > RECEIPT_MAX_BYTES) return 'Keep your receipt under 4MB, love';
   return null;
@@ -44,7 +44,7 @@ function updateSubmitButton() {
 
   if (hint) {
     if (canSubmit) {
-      hint.textContent = 'Receipt attached — tap submit when you\'re ready ♡';
+      hint.textContent = 'Receipt attached — tap submit when you\'re ready ';
       hint.classList.add('upload-confirm-hint--ready');
     } else if (!selectedPm) {
       hint.textContent = 'Pick a payment method first, gorgeous';
@@ -114,7 +114,7 @@ function renderPaymentMethods() {
 
   const methods = paymentCatalog.methods || [];
   if (!methods.length) {
-    wrap.innerHTML = '<p class="plug-flow-error">Payment methods aren\'t set up yet — contact us, babe.</p>';
+    wrap.innerHTML = '<p class="plug-flow-error">Payment methods are not configured yet — contact support.</p>';
     return;
   }
 
@@ -237,7 +237,7 @@ document.getElementById('submit-payment')?.addEventListener('click', async () =>
   setPayError('');
   const fileErr = validateReceiptFile(selectedReceiptFile);
   if (!selectedPm) {
-    setPayError('Pick a payment method first, babe');
+    setPayError('Select a payment method first.');
     return;
   }
   if (fileErr) {

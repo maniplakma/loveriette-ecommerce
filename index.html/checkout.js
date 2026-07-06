@@ -350,6 +350,15 @@ async function loadCheckoutItems() {
 
     }
 
+    try {
+      const cart = await api('/cart');
+      const vid = selectedVariantId || (variantId ? Number(variantId) : null);
+      const cartItem = (cart.items || []).find((i) =>
+        i.productId === Number(productId) && (i.variantId || null) === (vid || null)
+      );
+      if (cartItem?.quantity) setCheckoutQuantity(cartItem.quantity);
+    } catch { /* ignore */ }
+
     if (qtyWrap) qtyWrap.hidden = false;
 
     syncCheckoutQtyUI();

@@ -34,12 +34,18 @@ function loadEnvFile() {
 
 loadEnvFile();
 
-const email = (process.env.ADMIN_EMAIL || '').trim().toLowerCase();
-const password = process.env.ADMIN_PASSWORD || '';
-const name = process.env.ADMIN_NAME || 'Site Admin';
+function argValue(flag) {
+  const i = process.argv.indexOf(flag);
+  return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : '';
+}
+
+const email = (argValue('--email') || process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+const password = argValue('--password') || process.env.ADMIN_PASSWORD || '';
+const name = argValue('--name') || process.env.ADMIN_NAME || 'Site Admin';
 
 if (!email || !password) {
-  console.error('Set ADMIN_EMAIL and ADMIN_PASSWORD in .env first.');
+  console.error('Set ADMIN_EMAIL and ADMIN_PASSWORD in .env, or run:');
+  console.error('  npm run reset-admin -- --email you@email.com --password YourPassword');
   process.exit(1);
 }
 
