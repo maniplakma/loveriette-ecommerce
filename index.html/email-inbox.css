@@ -1,3 +1,9 @@
+/* Hide legacy Open link bar if old cached JS still runs */
+#email-links,
+.buyer-inbox-links {
+  display: none !important;
+}
+
 /* Email fetcher — themed single-message inbox */
 .buyer-inbox-shell {
   position: relative;

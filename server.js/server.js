@@ -5706,6 +5706,11 @@ app.use(express.static(appConfig.frontendDir, {
       return;
     }
     if (/\.(js|css|woff2?|png|jpe?g|webp|svg|ico|gif)$/i.test(base)) {
+      // Buyer/admin scripts — always fresh (avoid stale inbox UI after deploy)
+      if (/^(dashboard|admin|email-inbox|api-cache|theme|nav-shell|toast)/i.test(base) || base.includes('dashboard') || base.includes('admin')) {
+        res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+        return;
+      }
       res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
     }
   }
