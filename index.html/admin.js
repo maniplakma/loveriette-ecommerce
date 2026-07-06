@@ -1,6 +1,10 @@
 async function api(url, options = {}) {
+  const body = options.body != null
+    ? (typeof options.body === 'string' ? options.body : JSON.stringify(options.body))
+    : undefined;
   const res = await fetch(url, {
     ...options,
+    body,
     headers: { 'Content-Type': 'application/json', ...options.headers },
     credentials: 'include'
   });
@@ -27,11 +31,10 @@ const STATUS_LABEL = {
 const loginSection = document.getElementById('admin-login');
 const shell = document.getElementById('admin-shell');
 
+const icon = (name, cls) => window.adminIconHtml?.(name, cls) || '';
+
 function initAdminNavIcons() {
-  document.querySelectorAll('[data-icon]').forEach((el) => {
-    const svg = window.adminNavIcon?.(el.dataset.icon);
-    if (svg) el.innerHTML = svg;
-  });
+  window.hydrateAdminIcons?.(document);
 }
 
 initAdminNavIcons();
@@ -88,6 +91,16 @@ function initDashboard() {
   if (dashboardReady) { loadOverview(); return; }
   dashboardReady = true;
 
+  const gmailStatus = new URLSearchParams(location.search).get('gmail');
+  if (gmailStatus === 'connected') showToast('Gmail connected — email fetcher is ready', 'approved');
+  else if (gmailStatus === 'error') {
+    const msg = new URLSearchParams(location.search).get('msg');
+    showToast(msg ? decodeURIComponent(msg) : 'Gmail connection failed', 'error');
+  }
+  if (gmailStatus) {
+    history.replaceState({}, '', location.pathname);
+  }
+
   document.querySelectorAll('.admin-nav-btn').forEach((btn) => {
     btn.addEventListener('click', () => switchTab(btn.dataset.tab));
   });
@@ -100,12 +113,27 @@ function initDashboard() {
   // All Orders
   on('orders-tabs', 'click', (e) => {
     const b = e.target.closest('.admin-subtab'); if (!b) return;
-    document.querySelectorAll('#orders-tabs .admin-subtab').forEach((x) => x.classList.remove('active'));
-    b.classList.add('active');
-    loadAllOrders();
+    if (b.classList.contains('active')) return;
+    switchOrdersTab(b.dataset.otab);
   });
-  on('orders-apply', 'click', loadAllOrders);
-  on('orders-search', 'keydown', (e) => { if (e.key === 'Enter') loadAllOrders(); });
+
+  document.querySelector('#catalog-table tbody')?.addEventListener('click', (e) => {
+    const editBtn = e.target.closest('[data-edit]');
+    if (editBtn) {
+      openProductModal(catalogProductsCache.find((p) => p.id == editBtn.dataset.edit));
+      return;
+    }
+    const delBtn = e.target.closest('[data-del]');
+    if (delBtn) deleteProduct(delBtn.dataset.del);
+  });
+
+  $('orders-list')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-order]');
+    if (btn) openOrderModal(btn.dataset.order);
+  });
+
+  on('orders-apply', 'click', () => { invalidateOrdersCache(); loadAllOrders(); });
+  on('orders-search', 'keydown', (e) => { if (e.key === 'Enter') { invalidateOrdersCache(); loadAllOrders(); } });
 
   // Transactions
   on('tx-apply', 'click', loadTransactions);
@@ -181,6 +209,7 @@ function initDashboard() {
     const b = e.target.closest('.admin-intg-item'); if (!b) return;
     renderIntegration(b.dataset.intg);
   });
+  bindIntegrationFormHandlers();
   on('social-add', 'click', () => addSocialRow());
   on('social-save', 'click', saveSocial);
 
@@ -220,13 +249,12 @@ const TAB_TITLES = {
   reports: 'Product Reports', account: 'Account Settings', 'store-profile': 'Store Profile',
   theme: 'Site Theme',
   cms: 'Content Management',
-  lending: 'Lending Service',
   'website-making': 'Website Making',
   'platform-analytics': 'Platform Analytics'
 };
 
 const loaded = {};
-function switchTab(tab) {
+function switchTab(tab, force = false) {
   document.querySelectorAll('.admin-nav-btn').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.admin-tab').forEach((s) => { s.hidden = s.id !== `tab-${tab}`; });
   document.getElementById('admin-title').textContent = TAB_TITLES[tab] || 'Dashboard';
@@ -234,7 +262,7 @@ function switchTab(tab) {
 
   const loaders = {
     overview: loadOverview,
-    'all-orders': loadAllOrders,
+    'all-orders': () => loadAllOrders({ preferCache: !!loaded['all-orders'] && !force }),
     transactions: loadTransactions,
     catalog: loadCatalog,
     inventory: loadInventory,
@@ -249,12 +277,18 @@ function switchTab(tab) {
     'store-profile': loadStoreProfile,
     theme: loadTheme,
     cms: () => window.loadPlatformCms?.(),
-    lending: () => window.loadPlatformLending?.(),
     'website-making': () => window.loadPlatformWebsite?.(),
     plugging: () => window.loadPlatformPlugging?.(),
     'platform-analytics': () => window.loadPlatformAnalytics?.()
   };
-  if (loaders[tab]) loaders[tab]();
+
+  if (!loaders[tab]) return;
+  if (loaded[tab] && !force) {
+    if (tab === 'all-orders') loaders[tab]();
+    return;
+  }
+  loaded[tab] = true;
+  loaders[tab]();
 }
 
 async function refreshNotifBadge() {
@@ -263,6 +297,24 @@ async function refreshNotifBadge() {
     const badge = $('notif-badge');
     if (badge) { badge.textContent = unread; badge.hidden = unread === 0; }
   } catch (_) { /* ignore */ }
+}
+
+function fcard(label, value, opts = {}) {
+  const { tone = '', highlight = false, iconName = '' } = opts;
+  return `
+    <div class="admin-fcard ${highlight ? 'highlight' : ''} ${tone ? `admin-fcard--${tone}` : ''}">
+      ${iconName ? `<span class="admin-fcard-icon">${icon(iconName)}</span>` : ''}
+      <div class="admin-fcard-label">${label}</div>
+      <div class="admin-fcard-value ${tone}">${value}</div>
+    </div>`;
+}
+
+function statCard(label, value, tone = '') {
+  return `
+    <div class="admin-stat ${tone ? `admin-stat--${tone}` : ''}">
+      <div class="admin-stat-label">${label}</div>
+      <div class="admin-stat-value ${tone}">${value}</div>
+    </div>`;
 }
 
 /* ---------------- Overview ---------------- */
@@ -274,34 +326,47 @@ async function loadOverview() {
   document.getElementById('admin-users-count').textContent = o.totalUsers.toLocaleString();
   pill.hidden = false;
 
-  document.getElementById('admin-finance').innerHTML = `
-    <div class="admin-fcard"><div class="admin-fcard-label">Net Sales</div><div class="admin-fcard-value green">${peso(o.netSales)}</div></div>
-    <div class="admin-fcard"><div class="admin-fcard-label">Est. Cost</div><div class="admin-fcard-value">${peso(o.estCost)}</div></div>
-    <div class="admin-fcard"><div class="admin-fcard-label">Refund Total (${o.refundCount})</div><div class="admin-fcard-value red">${peso(o.refundTotal)}</div></div>
-    <div class="admin-fcard highlight"><div class="admin-fcard-label">Net Profit</div><div class="admin-fcard-value">${peso(o.netProfit)}</div></div>
-  `;
+  document.getElementById('admin-finance').innerHTML = [
+    fcard('Net Sales', peso(o.netSales), { tone: 'green', iconName: 'sales' }),
+    fcard('Est. Cost', peso(o.estCost), { tone: '', iconName: 'cost' }),
+    fcard(`Refund Total (${o.refundCount})`, peso(o.refundTotal), { tone: 'red', iconName: 'refund' }),
+    fcard('Net Profit', peso(o.netProfit), { highlight: true, iconName: 'profit' })
+  ].join('');
 
-  document.getElementById('admin-stats').innerHTML = `
-    <div class="admin-stat"><div class="admin-stat-label">Paid Orders</div><div class="admin-stat-value">${o.totalOrders}</div></div>
-    <div class="admin-stat"><div class="admin-stat-label">Pending</div><div class="admin-stat-value orange">${o.pending}</div></div>
-    <div class="admin-stat"><div class="admin-stat-label">Rejected</div><div class="admin-stat-value red">${o.rejected}</div></div>
-    <div class="admin-stat"><div class="admin-stat-label">Total Reports</div><div class="admin-stat-value">${o.totalReports}</div></div>
-    <div class="admin-stat"><div class="admin-stat-label">Good / Fixed</div><div class="admin-stat-value green">${o.resolvedReports}</div></div>
-  `;
+  document.getElementById('admin-stats').innerHTML = [
+    statCard('Paid Orders', o.totalOrders),
+    statCard('Pending', o.pending, 'orange'),
+    statCard('Rejected', o.rejected, 'red'),
+    statCard('Total Reports', o.totalReports),
+    statCard('Good / Fixed', o.resolvedReports, 'green')
+  ].join('');
 
   renderChart(o.salesTrend);
   renderTopSellers(o.topSellers);
 
+  if (typeof loadAdminModules === 'function') loadAdminModules();
+
+  let platformStatsHtml = '';
   try {
     const p = await api('/admin/platform/stats');
-    const el = document.getElementById('admin-stats');
-    if (el && p) {
-      el.innerHTML += `
-        <div class="admin-stat"><div class="admin-stat-label">Lending Apps</div><div class="admin-stat-value">${p.lendingApplications}</div></div>
-        <div class="admin-stat"><div class="admin-stat-label">Web Inquiries</div><div class="admin-stat-value">${p.websiteInquiries}</div></div>
-        <div class="admin-stat"><div class="admin-stat-label">Visitors (7d)</div><div class="admin-stat-value">${p.visitorsWeek}</div></div>`;
+    if (p) {
+      platformStatsHtml = [
+        statCard('Pending Shop', o.pending, 'orange'),
+        statCard('New Web Inquiries', p.newWebsiteInquiries || 0, 'orange'),
+        statCard('Pending Plug Orders', p.pendingPluggingOrders || 0, 'orange'),
+        statCard('Visitors (7d)', p.visitorsWeek)
+      ].join('');
+      const webBadge = document.getElementById('website-badge');
+      if (webBadge && p?.newWebsiteInquiries > 0) {
+        webBadge.textContent = p.newWebsiteInquiries;
+        webBadge.hidden = false;
+      }
     }
   } catch (_) { /* platform stats optional */ }
+
+  if (platformStatsHtml) {
+    document.getElementById('admin-stats').innerHTML += platformStatsHtml;
+  }
 
   const badge = document.getElementById('orders-badge');
   if (badge) {
@@ -376,9 +441,9 @@ function renderTopSellers(sellers) {
   const max = Math.max(...sellers.map((s) => s.revenue), 1);
   wrap.innerHTML = sellers.map((s, i) => `
     <div class="admin-seller">
-      <span class="admin-seller-rank">${i + 1}.</span>
-      <div>
-        <div class="admin-seller-name">${s.name}</div>
+      <span class="admin-seller-rank">${i + 1}</span>
+      <div class="admin-seller-main">
+        <div class="admin-seller-name">${esc(s.name)}</div>
         <div class="admin-seller-sold">${s.sold} sold</div>
         <div class="admin-seller-bar"><span style="width:${Math.max((s.revenue / max) * 100, 3)}%"></span></div>
       </div>
@@ -389,15 +454,51 @@ function renderTopSellers(sellers) {
 
 /* ---------------- All Orders ---------------- */
 const ORDER_STATUS_LABEL = { ...STATUS_LABEL, refunded: 'Refunded' };
+const ordersTabCache = { pending: null, approved: null, rejected: null };
+let ordersFetchGen = 0;
+let ordersPrefetchTimer = null;
+const ORDERS_TAB_STATUSES = {
+  pending: new Set(['pending', 'pending_payment']),
+  approved: new Set(['approved']),
+  rejected: new Set(['rejected', 'refunded'])
+};
+
+function filterOrdersForTab(orders, tab) {
+  const allowed = ORDERS_TAB_STATUSES[tab] || ORDERS_TAB_STATUSES.pending;
+  return orders.filter((o) => allowed.has(o.status));
+}
+
+function invalidateOrdersCache() {
+  ordersTabCache.pending = null;
+  ordersTabCache.approved = null;
+  ordersTabCache.rejected = null;
+  delete loaded.overview;
+}
+
 function activeOrdersTab() {
   return document.querySelector('#orders-tabs .admin-subtab.active')?.dataset.otab || 'pending';
+}
+
+function ordersListParams(tab) {
+  const params = new URLSearchParams({ tab });
+  if ($('orders-search')?.value) params.set('search', $('orders-search').value.trim());
+  if ($('orders-from')?.value) params.set('from', $('orders-from').value);
+  if ($('orders-to')?.value) params.set('to', $('orders-to').value);
+  return params;
 }
 
 function switchOrdersTab(tab) {
   document.querySelectorAll('#orders-tabs .admin-subtab').forEach((x) => {
     x.classList.toggle('active', x.dataset.otab === tab);
   });
-  loadAllOrders();
+  const cached = ordersTabCache[tab];
+  if (cached) {
+    renderOrdersList(cached, tab);
+  } else {
+    renderOrdersList([], tab);
+    $('orders-list')?.classList.add('is-loading');
+  }
+  loadAllOrders({ preferCache: !!cached });
 }
 
 function adminProofBadge(hasProof) {
@@ -416,17 +517,18 @@ function adminOrderStatusBadge(order) {
   return orderStatusBadge(order.status);
 }
 
-async function loadAllOrders() {
-  const tab = activeOrdersTab();
-  const params = new URLSearchParams({ tab });
-  if ($('orders-search')?.value) params.set('search', $('orders-search').value.trim());
-  if ($('orders-from')?.value) params.set('from', $('orders-from').value);
-  if ($('orders-to')?.value) params.set('to', $('orders-to').value);
-  const orders = await api(`/admin/all-orders?${params}`);
+function orderProofCell(o) {
+  if (!o.receiptUrl) return adminProofBadge(false);
+  return `<a class="admin-order-proof admin-order-proof--link" href="${esc(o.receiptUrl)}" target="_blank" rel="noopener" title="View payment proof"><span>Proof</span></a>`;
+}
+
+function renderOrdersList(orders, tab) {
   const list = $('orders-list');
-  $('orders-empty').hidden = orders.length > 0;
-  list.innerHTML = orders.map((o) => `
-    <div class="admin-order-card">
+  if (!list) return;
+  const filtered = filterOrdersForTab(orders, tab);
+  $('orders-empty').hidden = filtered.length > 0;
+  list.innerHTML = filtered.map((o) => `
+    <div class="admin-order-card" data-status="${esc(o.status)}">
       <div class="admin-order-id">
         <small>Order</small>
         <strong>#${o.displayId || o.orderId || o.orderNumber}</strong>
@@ -442,16 +544,66 @@ async function loadAllOrders() {
           ? `<p class="admin-order-reject-note"><strong>Rejection note:</strong> ${esc(o.rejectReason)}</p>`
           : tab === 'rejected' ? `<p class="admin-order-reject-note admin-order-reject-note--empty">No rejection note recorded.</p>` : ''}
       </div>
-      ${o.receiptUrl
-        ? `<a class="admin-order-proof" href="${esc(o.receiptUrl)}" target="_blank" rel="noopener" title="View payment proof">
-            <img src="${esc(o.receiptUrl)}" alt="Payment proof">
-          </a>`
-        : adminProofBadge(false)}
+      ${orderProofCell(o)}
       <div class="admin-order-amt"><strong>${peso(o.total)}</strong><small>${o.paymentMethod}</small></div>
       <button class="admin-btn admin-btn-primary admin-btn-sm" data-order="${o.orderNumber}">View</button>
     </div>
   `).join('');
-  list.querySelectorAll('[data-order]').forEach((b) => b.addEventListener('click', () => openOrderModal(b.dataset.order)));
+  list.classList.remove('is-loading');
+}
+
+async function refreshOrdersTab(tab, gen, { background = false } = {}) {
+  const list = $('orders-list');
+  try {
+    const orders = await api(`/admin/all-orders?${ordersListParams(tab)}`);
+    if (gen !== ordersFetchGen) return;
+    ordersTabCache[tab] = orders;
+    if (activeOrdersTab() === tab) renderOrdersList(orders, tab);
+    if (!background) scheduleOrdersPrefetch();
+  } catch (err) {
+    if (gen !== ordersFetchGen) return;
+    if (!background && list) list.classList.remove('is-loading');
+    if (!background) showToast(err.message, 'error');
+  }
+}
+
+async function loadAllOrders(opts = {}) {
+  const tab = activeOrdersTab();
+  const list = $('orders-list');
+  const gen = ++ordersFetchGen;
+  const cached = ordersTabCache[tab];
+
+  if (!opts.preferCache) {
+    if (cached) renderOrdersList(cached, tab);
+    else {
+      renderOrdersList([], tab);
+      list?.classList.add('is-loading');
+    }
+    await refreshOrdersTab(tab, gen);
+    return;
+  }
+
+  if (cached) {
+    refreshOrdersTab(tab, gen, { background: true });
+    return;
+  }
+
+  renderOrdersList([], tab);
+  list?.classList.add('is-loading');
+  await refreshOrdersTab(tab, gen);
+}
+
+function scheduleOrdersPrefetch() {
+  clearTimeout(ordersPrefetchTimer);
+  ordersPrefetchTimer = setTimeout(async () => {
+    const current = activeOrdersTab();
+    for (const tab of ['pending', 'approved', 'rejected']) {
+      if (tab === current || ordersTabCache[tab]) continue;
+      try {
+        ordersTabCache[tab] = await api(`/admin/all-orders?${ordersListParams(tab)}`);
+      } catch (_) { /* ignore background prefetch */ }
+    }
+  }, 400);
 }
 
 function stockBadgeHtml(label, state) {
@@ -495,8 +647,8 @@ async function openOrderModal(orderNumber) {
       <div class="total"><span>Total</span><span>${peso(o.total)}</span></div>
     </div>
     <div class="admin-modal-actions">
-      ${canReject ? `<button type="button" class="admin-btn admin-btn-danger" id="reject-order">✕ Reject</button>` : ''}
-      ${canApprove ? `<button type="button" class="admin-btn admin-btn-success" id="approve-order">✓ Approve</button>` : ''}
+      ${canReject ? `<button type="button" class="admin-btn admin-btn-danger admin-btn-icon" id="reject-order">${icon('x')} Reject</button>` : ''}
+      ${canApprove ? `<button type="button" class="admin-btn admin-btn-success admin-btn-icon" id="approve-order">${icon('check')} Approve</button>` : ''}
       ${o.status === 'approved' ? `<button type="button" class="admin-btn admin-btn-ghost" disabled>Approved</button>` : ''}
     </div>
   `, false);
@@ -505,6 +657,7 @@ async function openOrderModal(orderNumber) {
     try {
       await api(`/admin/orders/${orderNumber}/approve`, { method: 'POST' });
       showToast(`Order #${o.displayId || o.orderId || orderNumber} approved`, 'approved');
+      invalidateOrdersCache();
       closeModal(); switchOrdersTab('approved'); loadOverview();
     } catch (err) { showToast(err.message, 'error'); }
   });
@@ -520,6 +673,7 @@ async function openOrderModal(orderNumber) {
         body: JSON.stringify({ reason: String(reason).trim() })
       });
       showToast(`Order #${o.displayId || o.orderId || orderNumber} rejected`, 'info');
+      invalidateOrdersCache();
       closeModal(); switchOrdersTab('rejected'); loadOverview();
     } catch (err) { showToast(err.message, 'error'); }
   });
@@ -527,6 +681,7 @@ async function openOrderModal(orderNumber) {
 
 /* ---------------- Catalog ---------------- */
 let categoriesCache = [];
+let catalogProductsCache = [];
 
 function switchCatalogTab(tab) {
   $('catalog-products').hidden = tab !== 'products';
@@ -541,11 +696,13 @@ async function fetchCategories(force = false) {
 }
 
 async function loadCatalog() {
-  await fetchCategories();
   const params = new URLSearchParams();
   if ($('catalog-search')?.value) params.set('search', $('catalog-search').value.trim());
   if ($('catalog-category')?.value) params.set('category', $('catalog-category').value);
-  const products = await api(`/admin/catalog?${params}`);
+  const fetches = [api(`/admin/catalog?${params}`)];
+  if (!categoriesCache.length) fetches.push(fetchCategories());
+  const [products] = await Promise.all(fetches);
+  catalogProductsCache = products;
 
   const catSel = $('catalog-category');
   if (catSel) {
@@ -580,10 +737,6 @@ async function loadCatalog() {
       </td>
     </tr>
   `).join('') || `<tr><td colspan="8" style="text-align:center;color:var(--a-muted);padding:2rem">No products yet.</td></tr>`;
-  tbody.querySelectorAll('[data-edit]').forEach((b) =>
-    b.addEventListener('click', () => openProductModal(products.find((p) => p.id == b.dataset.edit))));
-  tbody.querySelectorAll('[data-del]').forEach((b) =>
-    b.addEventListener('click', () => deleteProduct(b.dataset.del)));
 }
 
 function adminProdIconCell(p) {
@@ -613,12 +766,15 @@ function iconPickerHTML(icon = '') {
           <button type="button" class="admin-btn admin-btn-ghost admin-btn-sm" id="icon-clear">Clear</button>
         </div>
       </div>
-      <div class="admin-icon-grid" id="icon-grid">
-        ${presets.map((p) => `
+      <details class="admin-icon-presets">
+        <summary>Preset icons (optional)</summary>
+        <div class="admin-icon-grid" id="icon-grid">
+          ${presets.map((p) => `
           <button type="button" class="admin-icon-choice ${icon === p.id ? 'active' : ''}" data-icon="${p.id}" title="${p.label}">
             <img src="https://api.iconify.design/${encodeURIComponent(p.id)}.svg" alt="${p.label}" loading="lazy">
           </button>`).join('')}
-      </div>
+        </div>
+      </details>
     </div>`;
 }
 
@@ -713,8 +869,12 @@ function variantRowHTML(v = {}) {
 }
 
 async function openProductModal(product = null) {
-  await fetchCategories(true);
   const p = product || {};
+  if (!categoriesCache.length) {
+    await fetchCategories();
+  } else {
+    fetchCategories(true).catch(() => {});
+  }
 
   // A product must be placed under a saved category — block if none exist yet
   if (!categoriesCache.length) {
@@ -985,6 +1145,7 @@ function buildInventoryTreeClient(categories, catalogProducts, stockItems, searc
         id: v.id,
         name: v.name,
         duration: v.duration || '',
+        description: v.description || v.duration || '',
         label: v.id
           ? `${p.name} – ${v.name}${v.duration ? ` (${v.duration})` : ''}`
           : p.name,
@@ -1055,13 +1216,15 @@ function renderInvStockRow(s, sold) {
 function renderInventoryVariant(product, v, sold) {
   const count = v.stockCount || 0;
   const stockClass = count > 0 ? 'in' : 'out';
-  const planLabel = v.label && v.label !== product.name
-    ? v.label.replace(product.name, '').replace(/^[\s–—-]+/, '').trim() || v.name
-    : (v.name || 'Default');
+  const planLabel = v.name || 'Default';
+  const descText = String(v.description || v.duration || '').trim();
   return `
     <div class="admin-inv-variant">
       <button type="button" class="admin-inv-variant-head" data-inv-variant-toggle>
-        <span class="admin-inv-variant-plan">${esc(planLabel)}</span>
+        <div class="admin-inv-variant-head-text">
+          <span class="admin-inv-variant-plan">${esc(planLabel)}</span>
+          ${descText ? `<span class="admin-inv-variant-desc">${esc(descText)}</span>` : ''}
+        </div>
         <span class="admin-inv-stock-pill ${stockClass}">${count}</span>
         ${invChevronSvg()}
       </button>
@@ -1113,7 +1276,7 @@ function renderInventoryTree(tree, sold) {
     return `
     <section class="admin-inv-category is-open">
       <button type="button" class="admin-inv-cat-head" data-inv-cat-toggle>
-        <span class="admin-inv-cat-icon">📦</span>
+        <span class="admin-inv-cat-icon">${icon('package')}</span>
         <strong class="admin-inv-cat-name">${esc(cat.name)}</strong>
         <span class="admin-inv-count-pill">${cat.totalCount} Item${cat.totalCount === 1 ? '' : 's'}</span>
         ${invChevronSvg()}
@@ -1438,7 +1601,7 @@ async function loadSupportTickets() {
     empty.hidden = true;
     list.innerHTML = tickets.map((t) => `
       <article class="admin-ticket-card ${t.status === 'open' ? 'is-open' : 'is-closed'}">
-        <div class="admin-ticket-icon" aria-hidden="true">🎫</div>
+        <div class="admin-ticket-icon" aria-hidden="true">${icon('ticket')}</div>
         <div class="admin-ticket-main">
           <div class="admin-ticket-head">
             <strong>${esc(t.subject)}</strong>
@@ -1687,7 +1850,7 @@ function renderConversation(wrap, title, messages, onSend) {
 }
 
 /* ---------------- Notifications ---------------- */
-const NOTIF_ICON = { chat: '💬', order: '🧾', message: '✉️', ticket: '🎫', payout: '💰', report: '🚩', system: 'ℹ️' };
+const NOTIF_ICON = { chat: 'chat', order: 'receipt', message: 'updates', ticket: 'ticket', payout: 'dollar', report: 'flag', system: 'info' };
 async function loadNotifications() {
   const { notifications } = await api('/admin/notifications');
   $('notif-list').innerHTML = notifications.map((n) => {
@@ -1695,9 +1858,10 @@ async function loadNotifications() {
     const viewBtn = ticketId
       ? `<button type="button" class="admin-btn admin-btn-ghost admin-btn-sm" data-notif-ticket="${ticketId}">View ticket</button>`
       : '';
+    const iconName = NOTIF_ICON[n.type] || 'info';
     return `
     <div class="admin-notif ${n.is_read ? '' : 'unread'}">
-      <span class="admin-notif-icon">${NOTIF_ICON[n.type] || 'ℹ️'}</span>
+      <span class="admin-notif-icon">${icon(iconName)}</span>
       <div class="admin-notif-body">
         <strong>${esc(n.title)}</strong>
         <p>${esc(n.body)}</p>
@@ -1792,12 +1956,21 @@ function renderCredentialGroupCard(group) {
     </div>`;
 }
 
+function formatProfilesForInput(profiles) {
+  return (profiles || [])
+    .map((p) => (typeof p === 'string' ? p : (p?.detail || p?.name || '')))
+    .filter(Boolean)
+    .join(', ');
+}
+
 function renderReportResolveForm(data) {
   const { report, stockItem, emailAccess, credentialGroups } = data;
-  const profiles = (stockItem?.profiles || []).join(', ');
-  const accessProfiles = (emailAccess?.profileData || []).map((p) => typeof p === 'string' ? p : p.detail).join(', ');
-  const hasStock = !!stockItem;
   const groups = credentialGroups?.length ? credentialGroups : [];
+  const primaryGroup = groups[0] || null;
+  const credSource = stockItem || primaryGroup || {};
+  const profiles = formatProfilesForInput(stockItem?.profiles || primaryGroup?.profiles);
+  const accessProfiles = formatProfilesForInput(emailAccess?.profileData || primaryGroup?.profiles);
+  const hasStock = !!(stockItem || primaryGroup);
 
   $('report-resolve-subtitle').textContent = groups.length
     ? `${groups.length} credential(s) · Order #${report.order_number || '—'}`
@@ -1833,16 +2006,16 @@ function renderReportResolveForm(data) {
       <div>
         <div class="admin-report-section-label">Master credentials (primary)</div>
         <div class="admin-report-credentials">
-          <div class="admin-field"><label>Email</label><input id="rr-email" type="text" value="${esc(stockItem.email)}"></div>
-          <div class="admin-field"><label>Password</label><input id="rr-password" type="text" value="${esc(stockItem.password)}"></div>
+          <div class="admin-field"><label>Email</label><input id="rr-email" type="text" value="${esc(credSource.email || '')}"></div>
+          <div class="admin-field"><label>Password</label><input id="rr-password" type="text" value="${esc(credSource.password || '')}"></div>
           <div class="admin-field"><label>Profile data</label><input id="rr-profiles" type="text" value="${esc(profiles)}" placeholder="Profile 1, Profile 2"></div>
         </div>
       </div>
       <div>
         <div class="admin-report-section-label">Email access credentials</div>
         <div class="admin-report-credentials">
-          <div class="admin-field"><label>Email</label><input id="rr-access-email" type="text" value="${esc(emailAccess?.email || stockItem.email)}"></div>
-          <div class="admin-field"><label>Password</label><input id="rr-access-password" type="text" value="${esc(emailAccess?.password || stockItem.password)}"></div>
+          <div class="admin-field"><label>Email</label><input id="rr-access-email" type="text" value="${esc(emailAccess?.email || credSource.email || '')}"></div>
+          <div class="admin-field"><label>Password</label><input id="rr-access-password" type="text" value="${esc(emailAccess?.password || credSource.password || '')}"></div>
           <div class="admin-field"><label>Profile data</label><input id="rr-access-profiles" type="text" value="${esc(accessProfiles)}" placeholder="Profile 1"></div>
         </div>
       </div>
@@ -2050,6 +2223,7 @@ async function resetWebsite() {
   try {
     await api('/admin/reset-website', { method: 'POST', body: JSON.stringify({ confirm: 'RESET' }) });
     showToast('Website reset — reloading…', 'approved');
+    invalidateOrdersCache();
     setTimeout(() => location.reload(), 800);
   } catch (err) {
     showToast(err.message, 'error');
@@ -2060,11 +2234,8 @@ async function resetWebsite() {
 /* ---------------- Integrations ---------------- */
 let integrationsData = null;
 const INTG_META = {
-  imap: { icon: '📥', title: 'IMAP User Fetcher', sub: 'Fetch OTPs for buyer email access — active when configured and tested.' },
-  smtp: { icon: '✉️', title: 'SMTP Server', sub: 'Credentials stored for future transactional email. Not sent from the app yet.' },
-  tawk: { icon: '💬', title: 'Tawk.to Chat', sub: 'Widget IDs stored for future embed. Buyer chat uses Chat Seller in the dashboard.' },
-  telegram: { icon: '🤖', title: 'Telegram Bot', sub: 'Bot token stored for future alerts. Vouch seller uses Store Profile Telegram.' },
-  'chat-seller': { icon: '🎧', title: 'Chat Seller Auto Reply', sub: 'Welcome message and instant reply in buyer Chat Seller — active when enabled.' }
+  gmail: { icon: 'gmail', title: 'Gmail OAuth', sub: 'Connect seller Gmail once. Buyers get Email Access in their dashboard after order approval — OTPs and login emails auto-fetch from this inbox.' },
+  'chat-seller': { icon: 'headset', title: 'Chat Seller Auto Reply', sub: 'Welcome message and instant reply in buyer Chat Seller — active when enabled.' }
 };
 function fieldTextarea(label, name, value = '', rows = 3, placeholder = '') {
   const safe = String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
@@ -2077,7 +2248,60 @@ async function loadIntegrations() {
   } catch {
     integrationsData['chat-seller'] = integrationsData['chat-seller'] || {};
   }
-  renderIntegration(document.querySelector('#intg-list .admin-intg-item.active')?.dataset.intg || 'imap');
+  renderIntegration(document.querySelector('#intg-list .admin-intg-item.active')?.dataset.intg || 'gmail');
+}
+
+function buildIntegrationPayload(form) {
+  const fd = new FormData(form);
+  const payload = Object.fromEntries(fd);
+  payload.enabled = form.querySelector('[name="enabled"]')?.checked ?? false;
+  if (form.querySelector('[name="unreadOnly"]')) payload.unreadOnly = form.querySelector('[name="unreadOnly"]').checked;
+  if (form.querySelector('[name="inboxOnly"]')) payload.inboxOnly = form.querySelector('[name="inboxOnly"]').checked;
+  delete payload.testEmail;
+  return payload;
+}
+
+let integrationHandlersBound = false;
+function bindIntegrationFormHandlers() {
+  if (integrationHandlersBound) return;
+  integrationHandlersBound = true;
+  const wrap = $('intg-form');
+  if (!wrap) return;
+
+  wrap.addEventListener('submit', async (e) => {
+    const form = e.target.closest('form[id^="intg-"]');
+    if (!form) return;
+    e.preventDefault();
+    const name = form.id.replace(/^intg-/, '').replace(/-form$/, '');
+    const meta = INTG_META[name];
+    const payload = buildIntegrationPayload(form);
+    const saveUrl = name === 'chat-seller' ? '/admin/chat-seller-bot' : `/admin/integrations/${name}`;
+    try {
+      await api(saveUrl, { method: 'PUT', body: JSON.stringify(payload) });
+      showToast(name === 'gmail' ? 'Gmail filters saved — remembered next time' : `${meta.title} saved`, 'approved');
+      await loadIntegrations();
+    } catch (err) { showToast(err.message, 'error'); }
+  });
+
+  wrap.addEventListener('click', async (e) => {
+    const testBtn = e.target.closest('#intg-test');
+    if (testBtn) {
+      const form = testBtn.closest('form[id^="intg-"]');
+      if (!form) return;
+      const fd = new FormData(form);
+      testBtn.disabled = true;
+      testBtn.textContent = 'Testing...';
+      try {
+        const r = await api('/admin/integrations/test-gmail', { method: 'POST', body: JSON.stringify({
+          testEmail: fd.get('testEmail') || ''
+        }) });
+        showToast(r.message, r.ok ? 'approved' : 'error');
+      } catch (err) { showToast(err.message, 'error'); }
+      testBtn.disabled = false;
+      testBtn.textContent = 'Test Fetcher';
+      return;
+    }
+  });
 }
 function field(label, name, value = '', type = 'text', placeholder = '') {
   return `<div class="admin-field"><label>${label}</label><input name="${name}" type="${type}" value="${value ?? ''}" placeholder="${placeholder}"></div>`;
@@ -2087,46 +2311,69 @@ function renderIntegration(name) {
   const d = (integrationsData && integrationsData[name]) || {};
   const meta = INTG_META[name];
   let body = '';
-  if (name === 'imap') {
+  if (name === 'gmail') {
+    const redirectUri = d.redirectUri || '';
+    const domainOk = d.domainConnected !== false;
+    const oauthReady = d.oauthConfigured && domainOk;
+    const gmailConnected = !!d.gmailConnected;
+    const domainNotice = domainOk
+      ? ''
+      : `<p class="admin-card-meta admin-gmail-domain-warn">${icon('warning', 'admin-ui-icon admin-ui-icon--warn')} Connect your <strong>custom domain</strong> first — set <code>PUBLIC_URL=https://loveriette.shop</code> in server <code>.env</code>, restart PM2, then connect Gmail OAuth.</p>`;
     body = `
-      <div class="admin-pw-grid">
-        ${field('Host', 'host', d.host || 'imap.gmail.com')}
-        ${field('Port', 'port', d.port || '993')}
-        <div class="admin-field"><label>Enc</label><select name="enc">${['SSL', 'TLS', 'NONE'].map((x) => `<option ${d.enc === x ? 'selected' : ''}>${x}</option>`).join('')}</select></div>
+      <div class="admin-gmail-shell">
+      <section class="admin-gmail-section admin-gmail-oauth-guide">
+      <h4 class="admin-gmail-section-title">${icon('info')} Gmail OAuth setup (step-by-step)</h4>
+      <ol class="admin-oauth-steps">
+        <li><strong>Custom domain ready</strong> — <code>PUBLIC_URL=https://loveriette.shop</code> in VPS <code>.env</code>, then <code>pm2 restart ecommerce</code>.</li>
+        <li>Open <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Google Cloud Console → Credentials</a>. Create project if needed.</li>
+        <li><strong>OAuth consent screen</strong> → External → add app name, support email, save.</li>
+        <li><strong>Create OAuth client ID</strong> → Web application.</li>
+        <li>Paste this <strong>Authorized redirect URI</strong>:<br><code class="admin-oauth-uri-inline">${esc(redirectUri || 'https://loveriette.shop/auth/google/callback')}</code></li>
+        <li>Copy <strong>Client ID</strong> and <strong>Client Secret</strong> into VPS <code>.env</code>:<br><code>GOOGLE_CLIENT_ID=...</code><br><code>GOOGLE_CLIENT_SECRET=...</code></li>
+        <li>Run <code>pm2 restart ecommerce</code> on VPS.</li>
+        <li>Come back here → click <strong>Connect Gmail</strong> → sign in with your seller inbox.</li>
+        <li>Save message filters below (Netflix OTP senders, etc.) → toggle integration ON.</li>
+      </ol>
+      </section>
+      <section class="admin-gmail-section">
+      <h4 class="admin-gmail-section-title">${icon('gmail')} Connect inbox</h4>
+      ${domainNotice}
+      <p class="admin-gmail-lead admin-card-meta">
+        ${!d.oauthConfigured
+          ? `${icon('warning', 'admin-ui-icon admin-ui-icon--warn')} Add <code>GOOGLE_CLIENT_ID</code> and <code>GOOGLE_CLIENT_SECRET</code> to server <code>.env</code>, then restart PM2.`
+          : domainOk
+            ? 'Click <strong>Connect Gmail</strong> and sign in with the inbox that receives OTP / login emails for your products. After you approve shop orders, buyers can fetch emails from their dashboard → Email Access.'
+            : 'Gmail OAuth stays disabled until <code>PUBLIC_URL</code> points to your live custom domain (HTTPS).'}
+      </p>
+      ${oauthReady ? `
+        <div class="admin-field admin-gmail-field">
+          <label>Google OAuth redirect URI (paste in Google Cloud Console)</label>
+          <input type="text" readonly class="admin-gmail-uri" value="${esc(redirectUri)}" onclick="this.select()">
+        </div>` : ''}
+      <div class="admin-modal-actions admin-gmail-actions">
+        <a href="/auth/google" class="admin-btn admin-btn-primary admin-btn-lg" ${oauthReady ? '' : 'aria-disabled="true" style="pointer-events:none;opacity:.5"'}>${icon('gmail')} Connect Gmail</a>
+        <button type="button" class="admin-btn admin-btn-ghost admin-btn-lg" id="intg-test">Test Fetcher</button>
       </div>
-      <div class="admin-pw-grid">
-        ${field('Email username', 'username', d.username || '', 'text', 'you@gmail.com')}
-        ${field('App password', 'password', d.password || '', 'password', '••••••••')}
-      </div>
-      ${field('Target folder', 'folder', d.folder || 'INBOX')}
-      <label class="admin-toggle" style="margin:.6rem 0"><input type="checkbox" name="validateSsl" ${d.validateSsl ? 'checked' : ''}> <span>Validate SSL Certificate (disable if SNI fails)</span></label>
+      <p class="admin-card-meta">${gmailConnected
+        ? 'Gmail is connected. Accounts auto-remove after 30 days — no inbox list stored in admin.'
+        : 'No Gmail connected yet — connect above to enable buyer Email Access.'}</p>
+      ${field('Test account email (optional)', 'testEmail', '', 'email', 'buyer-account@email.com')}
+      </section>
+      <section class="admin-gmail-section admin-gmail-section--filters">
+      <h4 class="admin-gmail-section-title">${icon('filter')} Message filters</h4>
+      <p class="admin-card-meta">Buyers only see <strong>1 latest matching email</strong> per fetch — not the whole inbox. Filters apply before delivery.</p>
+      <label class="admin-toggle admin-gmail-toggle"><input type="checkbox" name="unreadOnly" ${d.unreadOnly !== false ? 'checked' : ''}> <span>Unread only (recommended)</span></label>
+      <label class="admin-toggle admin-gmail-toggle"><input type="checkbox" name="inboxOnly" ${d.inboxOnly !== false ? 'checked' : ''}> <span>Inbox only (exclude spam/promotions)</span></label>
+      ${fieldTextarea('Allowed senders / domains (one per line, optional)', 'allowedSenders', d.allowedSenders || '', 4, 'netflix.com\naccount.netflix.com\nnoreply@canva.com')}
+      ${fieldTextarea('Blocked senders / domains (one per line, optional)', 'blockedSenders', d.blockedSenders || '', 3, 'newsletter@spam.com')}
+      ${field('Subject must contain (comma-separated, optional)', 'subjectKeywords', d.subjectKeywords || '', 'text', 'code, OTP, verify, reset')}
+      ${field('Extra Gmail search query (optional)', 'extraQuery', d.extraQuery || '', 'text', 'category:primary')}
+      <p class="admin-card-meta">Saved filters apply automatically — you only set them once.</p>
       <div class="admin-modal-actions">
-        <button type="button" class="admin-btn admin-btn-ghost" id="intg-test">Test Fetcher</button>
-        <button type="submit" class="admin-btn admin-btn-primary">Save Integrations</button>
+        <button type="submit" class="admin-btn admin-btn-primary admin-btn-lg">Save filters</button>
+      </div>
+      </section>
       </div>`;
-  } else if (name === 'smtp') {
-    body = `
-      <div class="admin-pw-grid">
-        ${field('Host', 'host', d.host || 'smtp.gmail.com')}
-        ${field('Port', 'port', d.port || '587')}
-        <div class="admin-field"><label>Enc</label><select name="enc">${['TLS', 'SSL', 'NONE'].map((x) => `<option ${d.enc === x ? 'selected' : ''}>${x}</option>`).join('')}</select></div>
-      </div>
-      <div class="admin-pw-grid">
-        ${field('Username', 'username', d.username || '')}
-        ${field('Password', 'password', d.password || '', 'password', '••••••••')}
-      </div>
-      ${field('From name', 'fromName', d.fromName || 'Loveriette')}
-      <div class="admin-modal-actions"><button type="submit" class="admin-btn admin-btn-primary">Save Integrations</button></div>`;
-  } else if (name === 'tawk') {
-    body = `
-      ${field('Property ID', 'propertyId', d.propertyId || '')}
-      ${field('Widget ID', 'widgetId', d.widgetId || '')}
-      <div class="admin-modal-actions"><button type="submit" class="admin-btn admin-btn-primary">Save Integrations</button></div>`;
-  } else if (name === 'telegram') {
-    body = `
-      ${field('Bot token', 'botToken', d.botToken || '', 'password', '123456:ABC...')}
-      ${field('Chat ID', 'chatId', d.chatId || '')}
-      <div class="admin-modal-actions"><button type="submit" class="admin-btn admin-btn-primary">Save Integrations</button></div>`;
   } else if (name === 'chat-seller') {
     body = `
       ${fieldTextarea('Welcome message (shown when chat is empty)', 'welcome', d.welcome || '', 3, 'Hi! Thanks for messaging…')}
@@ -2136,43 +2383,13 @@ function renderIntegration(name) {
   }
 
   $('intg-form').innerHTML = `
-    <form id="intg-${name}-form">
+    <form id="intg-${name}-form" class="admin-intg-form-panel ${name === 'gmail' ? 'admin-intg-form-panel--gmail' : ''}">
       <div class="admin-intg-head">
-        <div><h3>${meta.icon} ${meta.title}</h3><p class="admin-card-meta">${meta.sub}</p></div>
+        <div><h3>${icon(meta.icon, 'admin-ui-icon admin-ui-icon--lg')} ${meta.title}</h3><p class="admin-card-meta">${meta.sub}</p></div>
         <label class="admin-switch"><input type="checkbox" name="enabled" ${d.enabled ? 'checked' : ''}><span></span></label>
       </div>
       ${body}
     </form>`;
-
-  const form = document.getElementById(`intg-${name}-form`);
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const fd = new FormData(form);
-    const payload = Object.fromEntries(fd);
-    payload.enabled = form.querySelector('[name="enabled"]').checked;
-    if (form.querySelector('[name="validateSsl"]')) payload.validateSsl = form.querySelector('[name="validateSsl"]').checked;
-    const saveUrl = name === 'chat-seller' ? '/admin/chat-seller-bot' : `/admin/integrations/${name}`;
-    try {
-      const res = await api(saveUrl, { method: 'PUT', body: JSON.stringify(payload) });
-      integrationsData[name] = name === 'chat-seller' ? { ...payload, ...res } : payload;
-      showToast(`${meta.title} saved`, 'approved');
-    } catch (err) { showToast(err.message, 'error'); }
-  });
-
-  on('intg-test', 'click', async () => {
-    const fd = new FormData(form);
-    const btn = $('intg-test');
-    btn.disabled = true; btn.textContent = 'Testing...';
-    try {
-      const r = await api('/admin/integrations/test-imap', { method: 'POST', body: JSON.stringify({
-        host: fd.get('host'), port: fd.get('port'), enc: fd.get('enc'),
-        username: fd.get('username'), password: fd.get('password'),
-        validateSsl: form.querySelector('[name="validateSsl"]').checked
-      }) });
-      showToast(r.message, r.ok ? 'approved' : 'error');
-    } catch (err) { showToast(err.message, 'error'); }
-    btn.disabled = false; btn.textContent = 'Test Fetcher';
-  });
 }
 
 /* ---------------- Social Links ---------------- */

@@ -1,5 +1,5 @@
 const STATUS_LABEL = {
-  approved: 'Approved — enjoy ♡',
+  approved: 'Approved — enjoy ',
   pending: 'Pending review',
   pending_payment: 'Awaiting payment',
   rejected: 'Declined',
@@ -27,8 +27,12 @@ let walletFilterTimer = null;
 let chatInitialized = false;
 
 async function api(url, options = {}) {
+  const body = options.body != null
+    ? (typeof options.body === 'string' ? options.body : JSON.stringify(options.body))
+    : undefined;
   const res = await fetch(url, {
     ...options,
+    body,
     headers: { 'Content-Type': 'application/json', ...options.headers },
     credentials: 'include'
   });
@@ -236,7 +240,7 @@ let reportSelections = [];
 let buyerReportsData = [];
 let buyerReportsLoaded = false;
 let currentPurchaseContext = null;
-let servicesData = { plugging: [], loans: [], webtech: [] };
+let servicesData = { plugging: [], webtech: [] };
 let servicesLoaded = false;
 let servicesLoadPromise = null;
 
@@ -247,15 +251,11 @@ const PLUGGING_STATUS = {
   rejected: 'Rejected'
 };
 
-const LOAN_STATUS = {
-  pending: 'Under review',
-  approved: 'Approved',
-  rejected: 'Rejected'
-};
-
 const WEBTECH_STATUS = {
   new: 'New inquiry',
-  reviewed: 'In progress',
+  open: 'Open',
+  in_progress: 'In progress',
+  reviewed: 'Reviewed',
   contacted: 'Contacted',
   closed: 'Closed'
 };
@@ -317,25 +317,6 @@ function renderPluggingServices(items) {
   }).join('');
 }
 
-function renderLoanServices(items) {
-  const list = document.getElementById('loan-service-list');
-  const empty = document.getElementById('loan-service-empty');
-  if (!list) return;
-  if (!items.length) {
-    list.innerHTML = '';
-    if (empty) empty.hidden = false;
-    return;
-  }
-  if (empty) empty.hidden = true;
-  list.innerHTML = items.map((a) => renderServiceCard({
-    icon: '💳',
-    title: a.planName || 'Loan Application',
-    meta: `${a.applicationId} · ${formatDate(a.createdAt)}`,
-    statusHtml: serviceStatusBadge(a.status, LOAN_STATUS),
-    actions: `<a href="/lending/application/${encodeURIComponent(a.applicationId)}" class="btn-view">View Application</a>`
-  })).join('');
-}
-
 function renderWebtechServices(items) {
   const list = document.getElementById('webtech-service-list');
   const empty = document.getElementById('webtech-service-empty');
@@ -347,20 +328,22 @@ function renderWebtechServices(items) {
   }
   if (empty) empty.hidden = true;
   list.innerHTML = items.map((q) => {
-    const msg = q.message ? `<p class="buyer-service-message">${escapeHtml(q.message)}</p>` : '';
+    const unread = q.unreadByClient ? '<span class="buyer-service-unread">New reply</span>' : '';
+    const chatBtn = q.chatUrl || q.inquiryRef
+      ? `<a href="${escapeHtml(q.chatUrl || `/website-making/inquiry/${q.inquiryRef}`)}" class="btn-view">Open Chat</a>`
+      : '';
     return renderServiceCard({
       icon: '🖥',
       title: q.packageName || 'Website Inquiry',
-      meta: `${formatDate(q.createdAt)}${q.name ? ` · ${q.name}` : ''}`,
+      meta: `${formatDate(q.createdAt)}${q.name ? ` · ${q.name}` : ''} ${unread}`,
       statusHtml: serviceStatusBadge(q.status, WEBTECH_STATUS),
-      actions: msg
+      actions: chatBtn
     });
   }).join('');
 }
 
 function renderAllServices() {
   renderPluggingServices(servicesData.plugging || []);
-  renderLoanServices(servicesData.loans || []);
   renderWebtechServices(servicesData.webtech || []);
 }
 
@@ -451,7 +434,6 @@ async function fetchOrderCredentials(orderNumber) {
     && data.buyerPhase !== 'waiting_for_stock'
     && !(data.accounts?.length)
   ) {
-    await new Promise((r) => setTimeout(r, 400));
     data = await api(`/account/orders/${encodeURIComponent(orderNumber)}/credentials`);
   }
   return data;
@@ -1445,14 +1427,64 @@ function renderEmailAccountSelect() {
   if (noAccountsEl) noAccountsEl.hidden = purchaseAccounts.length > 0;
 }
 
+function resolveEmailLinkHref(rawHref) {
+  let url = String(rawHref || '').trim();
+  if (!url || url === '#') return '';
+  try {
+    const u = new URL(url, window.location.origin);
+    const host = u.hostname.toLowerCase();
+    if ((host === 'www.google.com' || host === 'google.com') && u.pathname === '/url') {
+      return u.searchParams.get('q') || u.searchParams.get('url') || url;
+    }
+    if (host.includes('safelinks.protection.outlook.com')) {
+      return u.searchParams.get('url') || url;
+    }
+    return u.href;
+  } catch (_) {
+    return url;
+  }
+}
+
+function openEmailLink(rawHref) {
+  const href = resolveEmailLinkHref(rawHref);
+  if (!href || !/^https?:\/\//i.test(href)) return false;
+  window.open(href, '_blank', 'noopener,noreferrer');
+  return true;
+}
+
+function enhanceEmailBodyLinks(bodyEl) {
+  if (!bodyEl) return;
+  bodyEl.querySelectorAll('a[href]').forEach((link) => {
+    link.classList.add('buyer-inbox-email-link');
+    link.setAttribute('target', '_blank');
+    link.setAttribute('rel', 'noopener noreferrer');
+    const resolved = resolveEmailLinkHref(link.getAttribute('href') || '');
+    if (resolved && /^https?:\/\//i.test(resolved)) link.setAttribute('href', resolved);
+  });
+}
+
+function resetEmailInboxView(message) {
+  const emptyEl = document.getElementById('email-fetch-empty');
+  const loadedEl = document.getElementById('email-fetch-loaded');
+  const bodyEl = document.getElementById('email-body');
+  if (loadedEl) loadedEl.hidden = true;
+  if (bodyEl) {
+    bodyEl.innerHTML = '';
+    bodyEl.classList.remove('buyer-inbox-body--html');
+  }
+  if (emptyEl) {
+    emptyEl.hidden = false;
+    emptyEl.querySelector('strong').textContent = 'No email loaded';
+    emptyEl.querySelector('p').textContent = message || 'Select an account, trigger the OTP on the service, then fetch the latest message here.';
+  }
+}
+
 function showEmailFetchResult(data) {
   const emptyEl = document.getElementById('email-fetch-empty');
   const loadedEl = document.getElementById('email-fetch-loaded');
+  const bodyEl = document.getElementById('email-body');
   if (!data?.found) {
-    emptyEl.hidden = false;
-    loadedEl.hidden = true;
-    emptyEl.querySelector('strong').textContent = 'No email loaded';
-    emptyEl.querySelector('p').textContent = data?.message || 'Select an account first.';
+    resetEmailInboxView(data?.message || 'Select an account first.');
     return;
   }
   emptyEl.hidden = true;
@@ -1460,7 +1492,16 @@ function showEmailFetchResult(data) {
   document.getElementById('email-from').textContent = data.from || '—';
   document.getElementById('email-subject').textContent = data.subject || '—';
   document.getElementById('email-date').textContent = data.date || '—';
-  document.getElementById('email-body').textContent = data.body || '';
+  if (bodyEl) {
+    if (data.bodyHtml) {
+      bodyEl.innerHTML = data.bodyHtml;
+      bodyEl.classList.add('buyer-inbox-body--html');
+      enhanceEmailBodyLinks(bodyEl);
+    } else {
+      bodyEl.textContent = data.body || '';
+      bodyEl.classList.remove('buyer-inbox-body--html');
+    }
+  }
 }
 
 async function fetchEmailForAccount() {
@@ -1485,7 +1526,7 @@ async function fetchEmailForAccount() {
     showToast(err.message, 'error');
   } finally {
     btn.disabled = false;
-    btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Fetch`;
+    btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Fetch latest`;
   }
 }
 
@@ -1705,7 +1746,7 @@ function switchPanel(panelId) {
   if (panelId === 'reports') {
     loadBuyerReports();
   }
-  if (panelId === 'plugging' || panelId === 'loan' || panelId === 'webtech') {
+  if (panelId === 'plugging' || panelId === 'webtech') {
     ensureServicesLoaded();
   }
   if (panelId === 'settings' && typeof loadSettings === 'function') {
@@ -1810,6 +1851,15 @@ function bindNav() {
   });
 
   document.getElementById('email-fetch-btn')?.addEventListener('click', fetchEmailForAccount);
+  document.getElementById('email-account-select')?.addEventListener('change', () => {
+    resetEmailInboxView();
+  });
+  document.getElementById('email-body')?.addEventListener('click', (e) => {
+    const link = e.target.closest('a[href]');
+    if (!link || !document.getElementById('email-body')?.contains(link)) return;
+    const href = link.getAttribute('href') || '';
+    if (openEmailLink(href)) e.preventDefault();
+  });
 
   document.getElementById('purchase-modal-close')?.addEventListener('click', closePurchaseDetail);
   document.getElementById('purchase-detail-modal')?.addEventListener('click', (e) => {
@@ -1940,33 +1990,13 @@ function revealDashboardShell() {
 function finishWelcomeLoader() {
   welcomeLoaderDone = true;
   clearInterval(welcomeLoaderTimer);
-
-  const screen = document.getElementById('dash-account-load-screen');
-
-  const tickToComplete = () => {
-    if (welcomeLoaderProgress < 100) {
-      updateWelcomeLoaderProgress(Math.min(100, welcomeLoaderProgress + 5));
-      welcomeLoaderFinishTimer = setTimeout(tickToComplete, 40);
-      return;
-    }
-    if (screen) screen.classList.add('is-fading');
-    welcomeLoaderFinishTimer = setTimeout(() => {
-      revealDashboardShell();
-    }, 350);
-  };
-  tickToComplete();
-}
-
-function hideWelcomeLoaderOnError() {
-  welcomeLoaderDone = true;
-  clearInterval(welcomeLoaderTimer);
   clearTimeout(welcomeLoaderFinishTimer);
   revealDashboardShell();
 }
 
 async function loadDashboard() {
   const errorEl = document.getElementById('dashboard-error');
-  showWelcomeLoader();
+  revealDashboardShell();
 
   try {
     let data;
@@ -2002,7 +2032,7 @@ async function loadDashboard() {
       window.location.href = 'login.html';
       return;
     }
-    hideWelcomeLoaderOnError();
+    revealDashboardShell();
     errorEl.textContent = err.message || 'Could not load account';
     errorEl.hidden = false;
   }

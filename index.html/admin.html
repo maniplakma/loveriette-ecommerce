@@ -3,19 +3,26 @@
 <head>
   <base href="/">
   <meta charset="UTF-8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="theme-color" content="#080404">
   <title>Admin — loveriette</title>
+  <link rel="stylesheet" href="theme-critical.css?v=20260705cleanup">
+  <script src="theme-boot.js?v=20260705cleanup"></script>
   <style>
     /* Critical: .admin-account-pane { display:flex } overrides [hidden] without this */
     .admin-account-pane[hidden] { display: none !important; }
+    body.admin-page #site-page-corners,
+    body.admin-page .site-page-corners { display: none !important; }
   </style>
   <link rel="stylesheet" href="style.css?v=20260615brand-gloss">
-  <link rel="stylesheet" href="theme.css">
-  <link rel="stylesheet" href="admin.css?v=20260615store-updates">
+  <link rel="stylesheet" href="theme.css?v=20260703audit">
+  <link rel="stylesheet" href="admin.css?v=20260707deploy">
   <link rel="stylesheet" href="mobile.css?v=20260615typography">
-  <script src="theme.js"></script>
-  <script src="theme-colors.js?v=20260614palette"></script>
+  <link rel="stylesheet" href="performance-mobile.css?v=20260705cleanup">
+  <script src="theme.js?v=20260705cleanup" defer></script>
+  <script src="theme-colors.js?v=20260705cleanup" defer></script>
 </head>
 <body class="admin-page light-mode">
   <!-- Login gate -->
@@ -91,10 +98,9 @@
 
         <span class="admin-nav-group">Platform</span>
         <button class="admin-nav-btn" data-tab="cms"><span class="admin-nav-icon" data-icon="catalog"></span> Content (CMS)</button>
-        <button class="admin-nav-btn" data-tab="lending"><span class="admin-nav-icon" data-icon="transactions"></span> Lending</button>
-        <button class="admin-nav-btn" data-tab="website-making"><span class="admin-nav-icon" data-icon="store"></span> Website Making</button>
+        <button class="admin-nav-btn" data-tab="website-making"><span class="admin-nav-icon" data-icon="store"></span> Website Making <span class="admin-nav-badge" id="website-badge" hidden></span></button>
         <button class="admin-nav-btn" data-tab="plugging"><span class="admin-nav-icon" data-icon="message"></span> Plugging</button>
-        <button class="admin-nav-btn" data-tab="platform-analytics"><span class="admin-nav-icon" data-icon="overview"></span> Platform Analytics</button>
+        <button class="admin-nav-btn" data-tab="platform-analytics"><span class="admin-nav-icon" data-icon="chart-bar"></span> Platform Analytics</button>
       </nav>
       </div>
       <div class="admin-sidebar-footer">
@@ -118,10 +124,18 @@
       <section class="admin-tab" id="tab-overview">
         <div class="admin-finance" id="admin-finance"></div>
         <div class="admin-stats" id="admin-stats"></div>
+        <div class="admin-panel" style="margin-top:1rem" id="admin-modules-panel">
+          <div class="admin-panel-head">
+            <h2><span class="admin-panel-icon" data-icon="plug"></span> Service Availability</h2>
+            <span class="admin-panel-tag">Turn modules on or off for customers</span>
+          </div>
+          <div class="admin-modules-grid" id="admin-modules-grid"></div>
+          <button type="button" class="admin-btn admin-btn-primary admin-btn-sm" id="admin-modules-save" style="margin-top:.75rem">Save Availability</button>
+        </div>
         <div class="admin-overview-grid">
           <div class="admin-panel">
             <div class="admin-panel-head">
-              <h2><span class="admin-panel-icon">📈</span> Sales Trend</h2>
+              <h2><span class="admin-panel-icon" data-icon="trending"></span> Sales Trend</h2>
               <span class="admin-panel-tag">Last 30 Days</span>
             </div>
             <div class="admin-chart" id="admin-chart"></div>
@@ -136,9 +150,9 @@
       <!-- All Orders -->
       <section class="admin-tab" id="tab-all-orders" hidden>
         <div class="admin-subtabs" id="orders-tabs">
-          <button class="admin-subtab active" data-otab="pending">⏳ Pending</button>
-          <button class="admin-subtab" data-otab="approved">✓ Approved</button>
-          <button class="admin-subtab" data-otab="rejected">✕ Rejected</button>
+          <button class="admin-subtab active" data-otab="pending"><span class="admin-ui-icon" data-icon="clock"></span> Pending</button>
+          <button class="admin-subtab" data-otab="approved"><span class="admin-ui-icon" data-icon="check"></span> Approved</button>
+          <button class="admin-subtab" data-otab="rejected"><span class="admin-ui-icon" data-icon="x"></span> Rejected</button>
         </div>
         <div class="admin-filterbar">
           <input class="admin-search" id="orders-search" placeholder="Search ID, Email, Product...">
@@ -176,8 +190,8 @@
       <!-- Catalog -->
       <section class="admin-tab" id="tab-catalog" hidden>
         <div class="admin-subtabs" id="catalog-tabs">
-          <button class="admin-subtab active" data-ctab="products">🛍️ Products</button>
-          <button class="admin-subtab" data-ctab="categories">🗂️ Categories</button>
+          <button class="admin-subtab active" data-ctab="products"><span class="admin-ui-icon" data-icon="bag"></span> Products</button>
+          <button class="admin-subtab" data-ctab="categories"><span class="admin-ui-icon" data-icon="folder"></span> Categories</button>
         </div>
 
         <!-- Products sub-tab -->
@@ -216,8 +230,8 @@
       <!-- Inventory -->
       <section class="admin-tab" id="tab-inventory" hidden>
         <div class="admin-subtabs" id="inv-tabs">
-          <button class="admin-subtab active" data-itab="stocks">📦 Stocks</button>
-          <button class="admin-subtab" data-itab="sold">✓ Sold History</button>
+          <button class="admin-subtab active" data-itab="stocks"><span class="admin-ui-icon" data-icon="package"></span> Stocks</button>
+          <button class="admin-subtab" data-itab="sold"><span class="admin-ui-icon" data-icon="check"></span> Sold History</button>
         </div>
         <div class="admin-tab-head">
           <input class="admin-search" id="inv-search" placeholder="Search email, service, profile...">
@@ -299,7 +313,7 @@
             <div id="dm-threads"></div>
           </div>
           <div class="admin-chat-window" id="dm-window">
-            <div class="admin-chat-placeholder">💬<p>Select a conversation</p></div>
+            <div class="admin-chat-placeholder"><span class="admin-ui-icon admin-ui-icon--xl" data-icon="message"></span><p>Select a conversation</p></div>
           </div>
         </div>
       </section>
@@ -307,8 +321,8 @@
       <!-- Support Tickets -->
       <section class="admin-tab" id="tab-support-tickets" hidden>
         <div class="admin-subtabs" id="tickets-tabs">
-          <button class="admin-subtab active" data-ttab="open">📩 Open</button>
-          <button class="admin-subtab" data-ttab="closed">✓ Closed</button>
+          <button class="admin-subtab active" data-ttab="open"><span class="admin-ui-icon" data-icon="inbox"></span> Open</button>
+          <button class="admin-subtab" data-ttab="closed"><span class="admin-ui-icon" data-icon="check"></span> Closed</button>
         </div>
         <div class="admin-tab-head">
           <div>
@@ -336,8 +350,8 @@
       <!-- Product Reports -->
       <section class="admin-tab" id="tab-reports" hidden>
         <div class="admin-subtabs" id="reports-tabs">
-          <button class="admin-subtab active" data-rtab="active">⚠ Active</button>
-          <button class="admin-subtab" data-rtab="history">🕑 History</button>
+          <button class="admin-subtab active" data-rtab="active"><span class="admin-ui-icon" data-icon="alert"></span> Active</button>
+          <button class="admin-subtab" data-rtab="history"><span class="admin-ui-icon" data-icon="history"></span> History</button>
         </div>
         <div class="admin-filterbar"><input class="admin-search" id="reports-search" placeholder="Search email, service, buyer, or detail"></div>
         <div class="admin-table-wrap">
@@ -373,7 +387,7 @@
             </form>
           </div>
           <div class="admin-panel admin-reset-panel" style="max-width:640px;margin-top:1rem">
-            <div class="admin-panel-head"><h2>⚠️ Reset Website</h2></div>
+            <div class="admin-panel-head"><h2><span class="admin-panel-icon" data-icon="warning"></span> Reset Website</h2></div>
             <p class="admin-card-meta">Delete all buyer accounts, orders, reports, refunds, chat history, and inventory stock. Keeps the default admin account, product catalog, and store settings.</p>
             <p class="admin-card-meta admin-reset-warning">This cannot be undone. Type <strong>RESET</strong> below to confirm.</p>
             <div class="admin-field" style="margin-top:.75rem">
@@ -403,11 +417,8 @@
         <div id="account-integrations" class="admin-account-pane" hidden>
           <div class="admin-intg-layout">
             <div class="admin-intg-list" id="intg-list">
-              <button class="admin-intg-item active" data-intg="imap">📥 IMAP Fetcher</button>
-              <button class="admin-intg-item" data-intg="smtp">✉️ SMTP Server</button>
-              <button class="admin-intg-item" data-intg="tawk">💬 Tawk.to Chat</button>
-              <button class="admin-intg-item" data-intg="telegram">🤖 Telegram Bot</button>
-              <button class="admin-intg-item" data-intg="chat-seller">🎧 Chat Seller Bot</button>
+              <button class="admin-intg-item active" data-intg="gmail"><span class="admin-ui-icon" data-icon="gmail"></span> Gmail OAuth</button>
+              <button class="admin-intg-item" data-intg="chat-seller"><span class="admin-ui-icon" data-icon="headset"></span> Chat Seller Bot</button>
             </div>
             <div class="admin-intg-form" id="intg-form"></div>
           </div>
@@ -604,20 +615,10 @@
           </form>
         </div>
         <div class="admin-panel" style="margin-top:1rem">
-          <div class="admin-panel-head"><h2>Homepage Statistics</h2>
-            <button class="admin-btn admin-btn-primary admin-btn-sm" id="cms-stat-add">+ Add Stat</button>
-          </div>
-          <div id="cms-stats-list"></div>
-        </div>
-        <div class="admin-panel" style="margin-top:1rem">
           <div class="admin-panel-head"><h2>FAQ Sections</h2>
             <button class="admin-btn admin-btn-primary admin-btn-sm" id="cms-faq-add">+ Add FAQ</button>
           </div>
           <div id="cms-faqs-list"></div>
-        </div>
-        <div class="admin-panel" style="margin-top:1rem">
-          <div class="admin-panel-head"><h2>Homepage Sections</h2></div>
-          <div id="cms-sections-list"></div>
         </div>
         <div class="admin-panel" style="margin-top:1rem">
           <div class="admin-panel-head"><h2>Footer Content</h2></div>
@@ -626,31 +627,6 @@
             <div class="admin-field"><label>Copyright</label><input name="footer_copyright" id="footer-copyright-input"></div>
             <button type="submit" class="admin-btn admin-btn-primary">Save Footer</button>
           </form>
-        </div>
-      </section>
-
-      <!-- Lending Admin -->
-      <section class="admin-tab" id="tab-lending" hidden>
-        <div class="admin-panel">
-          <div class="admin-panel-head"><h2>Lending Settings</h2></div>
-          <form id="lending-settings-form" class="admin-modal-body" style="padding:0">
-            <label class="admin-toggle"><input type="checkbox" name="lending_enabled" id="lending-enabled"> <span>Enable lending service</span></label>
-            <div class="admin-field"><label>Hero Title</label><input name="lending_hero_title"></div>
-            <div class="admin-field"><label>Hero Subtitle</label><textarea name="lending_hero_subtitle" rows="2"></textarea></div>
-            <div class="admin-field"><label>Contact Email</label><input name="lending_contact_email" type="email"></div>
-            <div class="admin-field"><label>Contact Phone</label><input name="lending_contact_phone"></div>
-            <button type="submit" class="admin-btn admin-btn-primary">Save Settings</button>
-          </form>
-        </div>
-        <div class="admin-panel" style="margin-top:1rem">
-          <div class="admin-panel-head"><h2>Loan Plans</h2>
-            <button class="admin-btn admin-btn-primary admin-btn-sm" id="lending-plan-add">+ Add Plan</button>
-          </div>
-          <div class="admin-order-list" id="lending-plans-list"></div>
-        </div>
-        <div class="admin-panel" style="margin-top:1rem">
-          <div class="admin-panel-head"><h2>Applications</h2></div>
-          <div class="admin-order-list" id="lending-apps-list"></div>
         </div>
       </section>
 
@@ -682,10 +658,28 @@
             <p class="admin-card-meta" style="margin-bottom:.75rem">Get from <a href="https://my.telegram.org" target="_blank">my.telegram.org</a> — required for phone login & forwarding.</p>
             <div class="admin-field"><label>Telegram API ID</label><input name="telegram_api_id" placeholder="30220075"></div>
             <div class="admin-field"><label>Telegram API Hash</label><input name="telegram_api_hash" placeholder="your-api-hash"></div>
-            <label class="admin-toggle"><input type="checkbox" name="proxy_enabled" id="plugging-proxy-enabled"> <span>Enable outbound proxy (SOCKS5)</span></label>
-            <div class="admin-field"><label>Proxy URL</label><input name="proxy_url" placeholder="socks5://user:pass@host:1080"></div>
             <button type="submit" class="admin-btn admin-btn-primary">Save Settings</button>
           </form>
+        </div>
+        <div class="admin-panel" style="margin-top:1rem">
+          <div class="admin-panel-head"><h2>Proxy Pool</h2></div>
+          <p class="admin-card-meta" style="margin-bottom:0.75rem">Add SOCKS5 proxies here only. Each proxy is auto-assigned to Telegram accounts with stealth timing to reduce detection. Customers do not need to configure anything.</p>
+          <form id="plugging-proxy-settings" class="admin-modal-body" style="padding:0;margin-bottom:1rem">
+            <label class="admin-toggle"><input type="checkbox" name="proxy_enabled" id="plugging-proxy-enabled"> <span>Enable proxies for all Telegram accounts</span></label>
+          </form>
+          <form id="plugging-proxy-add-form" class="admin-modal-body" style="padding:0;display:grid;gap:0.65rem;margin-bottom:1rem">
+            <div class="admin-field"><label>Label</label><input name="proxy_label" placeholder="PH Reseller 1"></div>
+            <div class="admin-field"><label>Proxy URL</label><input name="proxy_url" placeholder="socks5://user:pass@1.2.3.4:1080" required></div>
+            <button type="submit" class="admin-btn admin-btn-primary admin-btn-sm">+ Add Proxy</button>
+          </form>
+          <div id="plugging-proxies-list" class="admin-order-list"></div>
+        </div>
+        <div class="admin-panel admin-plug-master-panel" style="margin-top:1rem">
+          <div class="admin-panel-head"><h2>Master Workspace Key</h2></div>
+          <p class="admin-card-meta">Owner key — opens <a href="/plugging/workspace" target="_blank">/plugging/workspace</a> without approving a customer order. Set <code>PLUG_MASTER_KEY</code> in <code>.env</code>.</p>
+          <div id="plugging-master-key-box" class="admin-plug-master-box">
+            <p class="admin-card-meta">Loading…</p>
+          </div>
         </div>
         <div class="admin-panel" style="margin-top:1rem">
           <div class="admin-panel-head"><h2>Subscription Orders</h2></div>
@@ -705,11 +699,24 @@
 
       <!-- Platform Analytics -->
       <section class="admin-tab" id="tab-platform-analytics" hidden>
-        <div class="admin-finance" id="platform-analytics-finance"></div>
-        <div class="admin-stats" id="platform-analytics-stats"></div>
-        <div class="admin-panel" style="margin-top:1rem">
-          <div class="admin-panel-head"><h2>Top Pages (30 days)</h2></div>
-          <div id="platform-top-pages"></div>
+        <div class="admin-analytics-head">
+          <h2 class="admin-analytics-title"><span class="admin-panel-icon" data-icon="chart-bar"></span> Platform Analytics</h2>
+          <p class="admin-card-meta">Traffic, inquiries, and platform revenue at a glance.</p>
+        </div>
+        <div class="admin-finance admin-finance--analytics" id="platform-analytics-finance"></div>
+        <div class="admin-stats admin-stats--analytics" id="platform-analytics-stats"></div>
+        <div class="admin-overview-grid">
+          <div class="admin-panel">
+            <div class="admin-panel-head">
+              <h2><span class="admin-panel-icon" data-icon="visitors"></span> Traffic</h2>
+              <span class="admin-panel-tag">Today vs 7 days</span>
+            </div>
+            <div class="admin-chart" id="platform-traffic-chart"></div>
+          </div>
+          <div class="admin-panel">
+            <div class="admin-panel-head"><h2><span class="admin-panel-icon" data-icon="trending"></span> Top Pages (30 days)</h2></div>
+            <div class="admin-top-pages" id="platform-top-pages"></div>
+          </div>
         </div>
       </section>
     </main>
@@ -720,7 +727,7 @@
     <div class="admin-modal-card">
       <div class="admin-modal-head">
         <h2 id="admin-modal-title">Edit</h2>
-        <button class="admin-modal-close" id="admin-modal-close" aria-label="Close">✕</button>
+        <button class="admin-modal-close" id="admin-modal-close" aria-label="Close"><span class="admin-ui-icon" data-icon="close"></span></button>
       </div>
       <form id="admin-modal-form" class="admin-modal-body"></form>
     </div>
@@ -734,10 +741,45 @@
           <h2 id="report-resolve-title">Resolve Issue</h2>
           <p class="admin-report-resolve-sub" id="report-resolve-subtitle"></p>
         </div>
-        <button class="admin-modal-close" id="report-resolve-close" aria-label="Close">✕</button>
+        <button class="admin-modal-close" id="report-resolve-close" aria-label="Close"><span class="admin-ui-icon" data-icon="close"></span></button>
       </div>
       <div class="admin-modal-body admin-report-resolve-body" id="report-resolve-body">
         <p class="dashboard-loading">Loading report…</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Website Inquiry Chat -->
+  <div class="admin-modal inquiry-chat-admin-modal" id="inquiry-chat-modal" hidden>
+    <div class="admin-modal-card inquiry-chat-admin-card">
+      <div class="admin-modal-head">
+        <div>
+          <h2 id="inquiry-chat-title">Inquiry</h2>
+          <p class="admin-report-resolve-sub" id="inquiry-chat-sub"></p>
+        </div>
+        <button class="admin-modal-close" id="inquiry-chat-close" type="button" aria-label="Close"><span class="admin-ui-icon" data-icon="close"></span></button>
+      </div>
+      <div class="admin-modal-body inquiry-chat-admin-body">
+        <div class="inquiry-chat-messages" id="inquiry-chat-body"></div>
+        <div id="inquiry-admin-compose" hidden>
+          <textarea id="inquiry-admin-message" rows="3" placeholder="Reply to client…" class="admin-input"></textarea>
+          <div style="display:flex;gap:0.5rem;margin-top:0.5rem;flex-wrap:wrap">
+            <button type="button" class="admin-btn admin-btn-primary admin-btn-sm" id="inquiry-admin-send">Send Reply</button>
+            <select id="inquiry-admin-status" class="admin-select-sm">
+              <option value="new">new</option>
+              <option value="open">open</option>
+              <option value="in_progress">in_progress</option>
+              <option value="contacted">contacted</option>
+              <option value="reviewed">reviewed</option>
+              <option value="closed">closed</option>
+            </select>
+            <button type="button" class="admin-btn admin-btn-ghost admin-btn-sm" id="inquiry-admin-save">Save Status</button>
+          </div>
+          <div class="admin-field" style="margin-top:0.75rem">
+            <label>Internal notes</label>
+            <textarea id="inquiry-admin-notes" rows="2" class="admin-input" placeholder="Notes visible only to admin"></textarea>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -746,11 +788,11 @@
   <script src="toast.js"></script>
   <script src="social-icons.js"></script>
   <script src="product-icons.js"></script>
-  <script src="admin-nav-icons.js"></script>
-  <script src="branding.js"></script>
+  <script src="admin-nav-icons.js?v=20260707ui"></script>
+  <script src="branding.js?v=20260703audit" defer></script>
   <script src="badges.js?v=20260614tabs"></script>
-  <script src="admin.js?v=20260626platform"></script>
-  <script src="admin-platform.js?v=20260626"></script>
+  <script src="admin.js?v=20260707perf"></script>
+  <script src="admin-platform.js?v=20260707deploy"></script>
   <script src="mobile.js?v=20260614mobile"></script>
 </body>
 </html>
