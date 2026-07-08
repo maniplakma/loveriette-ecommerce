@@ -275,6 +275,14 @@ body.plug-body {
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
+  position: relative;
+  z-index: 2;
+}
+
+.plug-config-actions button,
+.plug-actions button {
+  cursor: pointer;
+  pointer-events: auto;
 }
 
 .plug-form-grid-2 {

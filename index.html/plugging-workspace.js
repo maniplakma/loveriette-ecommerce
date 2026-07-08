@@ -141,10 +141,21 @@ function showWorkspace() {
 
 function readConfigForm() {
   return {
-    sourceLink: document.getElementById('cfg-source')?.value?.trim() || '',
+    sourceLink: normalizePostLinkClient(document.getElementById('cfg-source')?.value?.trim() || ''),
     delayMinutes: Number(document.getElementById('cfg-delay')?.value) || 0,
     targetsText: document.getElementById('cfg-targets')?.value || ''
   };
+}
+
+function normalizePostLinkClient(link) {
+  const raw = String(link || '').trim();
+  if (!raw) return '';
+  const atSlash = raw.match(/^@([A-Za-z0-9_]+)\/(\d+)$/);
+  if (atSlash) return `https://t.me/${atSlash[1]}/${atSlash[2]}`;
+  const bareSlash = raw.match(/^([A-Za-z0-9_]+)\/(\d+)$/);
+  if (bareSlash) return `https://t.me/${bareSlash[1]}/${bareSlash[2]}`;
+  if (/^t\.me\//i.test(raw)) return `https://${raw}`;
+  return raw;
 }
 
 function setConfigSaveMessage(text, isError = false) {
@@ -162,19 +173,132 @@ function setConfigSaveMessage(text, isError = false) {
   }
 }
 
-function validateConfigForStart(config) {
-  const post = String(config.sourceLink || '').trim();
-  if (!post) throw new Error('Post link is required');
-  const hasPostId = /(?:https?:\/\/)?t\.me\/c\/\d+\/\d+/i.test(post)
-    || /(?:https?:\/\/)?t\.me\/(?!c\/|\+|joinchat\/)[A-Za-z0-9_]+\/\d+/i.test(post)
-    || /^@[A-Za-z0-9_]+\/\d+$/.test(post)
-    || /^[A-Za-z0-9_]+\/\d+$/.test(post);
-  if (!hasPostId) {
-    throw new Error('Post link must include a post number, e.g. https://t.me/channel/123');
+async function refreshWorkspace({ soft = false } = {}) {
+  workspace = await api('/api/plugging/workspace');
+  renderAccountList();
+  if (!selectedId) {
+    renderEmptyDetail();
+    return;
   }
-  if (!String(config.targetsText || '').trim()) {
-    throw new Error('Add at least one target group');
+  if (soft) {
+    updateAccountStats(selectedId);
+    return;
   }
+  renderAccountDetail(selectedId);
+}
+
+async function startForwarder(accountId) {
+  const config = readConfigForm();
+  setConfigSaveMessage('');
+  await api(`/api/plugging/workspace/accounts/${accountId}`, {
+    method: 'PUT',
+    body: JSON.stringify(config)
+  });
+  await api(`/api/plugging/workspace/accounts/${accountId}/start`, {
+    method: 'POST',
+    body: JSON.stringify({})
+  });
+  workspace = await api('/api/plugging/workspace');
+  renderAccountList();
+  updateAccountStats(accountId);
+  startActivityPoll(accountId);
+  setConfigSaveMessage('Forwarder started.');
+}
+
+async function handleAccountDetailAction(event) {
+  const btn = event.target.closest('button[data-action]');
+  if (!btn || btn.disabled || !selectedId) return;
+
+  const action = btn.dataset.action;
+  const id = selectedId;
+
+  if (action === 'delete') {
+    if (!confirm('Delete this account?')) return;
+    stopActivityPoll();
+    await api(`/api/plugging/workspace/accounts/${id}`, { method: 'DELETE' });
+    selectedId = null;
+    await refreshWorkspace();
+    return;
+  }
+
+  if (action === 'save-config') {
+    try {
+      await saveAccountConfig(id);
+    } catch (_) { /* message shown */ }
+    return;
+  }
+
+  if (action === 'start') {
+    const label = btn.textContent;
+    try {
+      btn.disabled = true;
+      btn.textContent = 'Starting…';
+      await startForwarder(id);
+    } catch (e) {
+      setConfigSaveMessage(e.message, true);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = label;
+    }
+    return;
+  }
+
+  if (action === 'stop') {
+    btn.disabled = true;
+    try {
+      await api(`/api/plugging/workspace/accounts/${id}/stop`, { method: 'POST' });
+      workspace = await api('/api/plugging/workspace');
+      renderAccountList();
+      updateAccountStats(id);
+      await loadActivity(id, true);
+      setConfigSaveMessage('Forwarder stopped.');
+    } catch (e) {
+      setConfigSaveMessage(e.message, true);
+    } finally {
+      btn.disabled = false;
+    }
+    return;
+  }
+
+  if (action === 'clear-activity') {
+    await api(`/api/plugging/workspace/accounts/${id}/activity`, { method: 'DELETE' });
+    activityLastId = 0;
+    const feed = document.getElementById('plug-activity-feed');
+    if (feed) feed.innerHTML = '';
+    const empty = document.getElementById('plug-activity-empty');
+    if (empty) empty.hidden = false;
+    return;
+  }
+
+  if (action === 'verify-otp') {
+    const msg = document.getElementById('otp-msg');
+    if (msg) msg.hidden = true;
+    try {
+      await api(`/api/plugging/workspace/accounts/${id}/verify-code`, {
+        method: 'POST',
+        body: JSON.stringify({ code: document.getElementById('otp-code')?.value || '' })
+      });
+      pendingOtpAccountId = null;
+      await refreshWorkspace();
+    } catch (e) {
+      if (msg) {
+        msg.hidden = false;
+        msg.className = 'plug-form-msg plug-form-error';
+        msg.textContent = e.message;
+      }
+    }
+  }
+}
+
+function bindAccountDetailActions() {
+  const root = document.getElementById('account-detail');
+  if (!root || root.dataset.actionsBound === '1') return;
+  root.dataset.actionsBound = '1';
+  root.addEventListener('click', (event) => {
+    handleAccountDetailAction(event).catch((err) => {
+      setConfigSaveMessage(err.message || 'Action failed', true);
+    });
+  });
 }
 
 async function saveAccountConfig(id, { silent = false } = {}) {
@@ -289,8 +413,6 @@ function renderAccountDetail(id) {
         <span class="plug-status-badge ${a.runnerStatus === 'running' ? 'running' : ''}">${esc(a.runnerStatus)}</span>
       </div>
       <div class="plug-actions">
-        ${authed ? `<button type="button" class="btn-primary-platform plug-btn-compact" data-action="start">Start</button>
-        <button type="button" class="btn-outline-platform plug-btn-compact" data-action="stop">Stop</button>` : ''}
         <button type="button" class="plug-btn plug-btn-danger plug-btn-compact" data-action="delete">Delete</button>
       </div>
     </div>
@@ -305,7 +427,7 @@ function renderAccountDetail(id) {
           <label for="otp-code">Code from Telegram</label>
           <input id="otp-code" class="plug-field-input plug-field-mono" placeholder="12345" inputmode="numeric">
         </div>
-        <button type="button" class="btn-primary-platform plug-btn-compact" id="verify-otp">Verify</button>
+        <button type="button" class="btn-primary-platform plug-btn-compact" id="verify-otp" data-action="verify-otp">Verify</button>
       </div>
       <p id="otp-msg" class="plug-form-msg" hidden></p>
     </div>` : ''}
@@ -325,7 +447,9 @@ function renderAccountDetail(id) {
       <label>Target groups</label>
       <textarea id="cfg-targets" class="plug-field-textarea" placeholder="@group1&#10;@group2">${esc(a.targetsText)}</textarea>
       <div class="plug-config-actions">
-        <button type="button" class="btn-primary-platform plug-btn-compact" data-action="save-config">Save Settings</button>
+        <button type="button" class="btn-primary-platform plug-btn-compact" data-action="start">Start</button>
+        <button type="button" class="btn-outline-platform plug-btn-compact" data-action="stop">Stop</button>
+        <button type="button" class="btn-outline-platform plug-btn-compact" data-action="save-config">Save Settings</button>
       </div>
       <p id="cfg-save-msg" class="plug-form-msg" hidden></p>
       ${a.lastError ? `<p class="plug-last-error">Last error: ${esc(a.lastError)}</p>` : ''}
@@ -351,86 +475,7 @@ function renderAccountDetail(id) {
     <div class="plug-panel"><p class="plug-panel-desc" style="margin:0">Waiting for Telegram verification…</p></div>` : '')}
   `;
 
-  el.querySelector('[data-action="delete"]')?.addEventListener('click', async () => {
-    if (!confirm('Delete this account?')) return;
-    stopActivityPoll();
-    await api(`/api/plugging/workspace/accounts/${id}`, { method: 'DELETE' });
-    selectedId = null;
-    await refreshWorkspace();
-  });
-
-  el.querySelector('[data-action="save-config"]')?.addEventListener('click', async () => {
-    try {
-      await saveAccountConfig(id);
-    } catch (_) { /* message shown */ }
-  });
-
-  el.querySelector('[data-action="start"]')?.addEventListener('click', async () => {
-    const btn = el.querySelector('[data-action="start"]');
-    try {
-      setConfigSaveMessage('');
-      const config = readConfigForm();
-      validateConfigForStart(config);
-      if (btn) {
-        btn.disabled = true;
-        btn.textContent = 'Starting…';
-      }
-      await api(`/api/plugging/workspace/accounts/${id}/start`, {
-        method: 'POST',
-        body: JSON.stringify(config)
-      });
-      await refreshWorkspace();
-      startActivityPoll(id);
-    } catch (e) {
-      setConfigSaveMessage(e.message, true);
-    } finally {
-      if (btn) {
-        btn.disabled = false;
-        btn.textContent = 'Start';
-      }
-    }
-  });
-
-  el.querySelector('[data-action="stop"]')?.addEventListener('click', async () => {
-    await api(`/api/plugging/workspace/accounts/${id}/stop`, { method: 'POST' });
-    await refreshWorkspace();
-    loadActivity(id, true);
-  });
-
-  el.querySelector('[data-action="clear-activity"]')?.addEventListener('click', async () => {
-    await api(`/api/plugging/workspace/accounts/${id}/activity`, { method: 'DELETE' });
-    activityLastId = 0;
-    const feed = document.getElementById('plug-activity-feed');
-    if (feed) feed.innerHTML = '';
-    const empty = document.getElementById('plug-activity-empty');
-    if (empty) empty.hidden = false;
-  });
-
-  document.getElementById('verify-otp')?.addEventListener('click', async () => {
-    const msg = document.getElementById('otp-msg');
-    msg.hidden = true;
-    try {
-      await api(`/api/plugging/workspace/accounts/${id}/verify-code`, {
-        method: 'POST',
-        body: JSON.stringify({ code: document.getElementById('otp-code').value })
-      });
-      pendingOtpAccountId = null;
-      await refreshWorkspace();
-    } catch (e) {
-      msg.hidden = false;
-      msg.className = 'plug-form-msg plug-form-error';
-      msg.textContent = e.message;
-    }
-  });
-
   if (authed) startActivityPoll(id);
-}
-
-async function refreshWorkspace() {
-  workspace = await api('/api/plugging/workspace');
-  renderAccountList();
-  if (selectedId) renderAccountDetail(selectedId);
-  else renderEmptyDetail();
 }
 
 document.getElementById('unlock-btn').addEventListener('click', async () => {
@@ -456,4 +501,5 @@ document.getElementById('logout-btn').addEventListener('click', async () => {
   location.reload();
 });
 
+bindAccountDetailActions();
 tryLoadWorkspace();

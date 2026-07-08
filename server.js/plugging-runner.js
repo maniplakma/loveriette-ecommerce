@@ -254,7 +254,7 @@ function startRunner(db, accountId, getSettings) {
       try {
         account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ?').get(accountId);
         await withAuthorizedClient(settings, account.session_string, async (client) => {
-          logPlugActivity(db, accountId, 'info', 'Telegram connected — loading saved post link');
+          logPlugActivity(db, accountId, 'info', 'Telegram connected — forwarding saved post link');
 
           let firstCycle = true;
 
