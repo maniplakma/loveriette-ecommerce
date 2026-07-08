@@ -26,6 +26,14 @@ const {
 const { sendHtmlPage } = require('./send-html-page');
 const { domainStatus, gmailOAuthAllowed, isCustomDomainConnected } = require('./domain-setup');
 const {
+  sendWelcomeEmail,
+  sendPasswordChangedEmail,
+  trySendOrderDeliveredEmail,
+  queueBuyerEmail,
+  parseBuyerEmailSettings,
+  sendBuyerEmail
+} = require('./mailer');
+const {
   buildOrderActivityMessage,
   buildOrderActivityMeta,
   mapActivityFeedRow
@@ -644,6 +652,7 @@ function claimOneStockForOrder(orderId) {
       const postSummary = orderFulfillmentSummary(orderId);
       if (postSummary.remaining <= 0) {
         db.prepare('UPDATE orders SET tingi_hold_until = NULL WHERE id = ?').run(orderId);
+        queueBuyerEmail(() => trySendOrderDeliveredEmail(db, getSetting, orderId));
       }
       return {
         ok: true,
@@ -951,6 +960,7 @@ function fulfillOrderRemaining(orderId) {
   const remaining = orderFulfillmentSummary(orderId).remaining;
   if (remaining <= 0) {
     db.prepare('UPDATE orders SET tingi_hold_until = NULL WHERE id = ?').run(orderId);
+    queueBuyerEmail(() => trySendOrderDeliveredEmail(db, getSetting, orderId));
   }
   return { assigned };
 }
@@ -975,6 +985,10 @@ function processExpiredTingiHolds() {
         'Tingi Drop delivered',
         `${result.assigned} remaining account(s) from order #${orderDisplayId(full)} were auto-delivered after the ${readTingiSettings().holdDays}-day hold. Check My Purchases for credentials.`
       );
+    }
+    const postSummary = orderFulfillmentSummary(order.id);
+    if (postSummary.remaining <= 0) {
+      queueBuyerEmail(() => trySendOrderDeliveredEmail(db, getSetting, order.id));
     }
   }
 }
@@ -2208,6 +2222,12 @@ app.post('/auth/register', authRateLimit, (req, res) => {
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId);
   startUserSession(req, user);
 
+  queueBuyerEmail(() => sendWelcomeEmail(db, getSetting, {
+    userId: user.id,
+    email: user.email,
+    name: user.name
+  }));
+
   res.status(201).json({
     user: { id: user.id, email: user.email, name: user.name, isAdmin: !!user.is_admin },
     cart: getCartPayload(req)
@@ -3075,6 +3095,13 @@ app.post('/account/settings/password', requireAuth, (req, res) => {
     .run(bcrypt.hashSync(newPassword, 10), req.session.userId);
   const updated = db.prepare('SELECT session_version FROM users WHERE id = ?').get(req.session.userId);
   req.session.sessionVersion = updated.session_version;
+
+  queueBuyerEmail(() => sendPasswordChangedEmail(db, getSetting, {
+    userId: user.id,
+    email: user.email,
+    name: user.name
+  }));
+
   res.json({ ok: true, message: 'Password updated. Other devices have been logged out.' });
 });
 
@@ -5473,7 +5500,18 @@ app.put('/admin/chat-seller-bot', requireAdmin, (req, res) => {
 /* ============================================================
    INTEGRATIONS — SMTP, Tawk.to, Telegram Bot, IMAP Fetcher
    ============================================================ */
-const INTEGRATION_KEYS = ['gmail', 'chat-seller'];
+const INTEGRATION_KEYS = ['gmail', 'chat-seller', 'buyer-emails'];
+
+function mergeBuyerEmailSettings(existing = {}, incoming = {}) {
+  return {
+    ...existing,
+    ...incoming,
+    enabled: incoming.enabled !== false && incoming.enabled !== 'false',
+    welcome: incoming.welcome !== false && incoming.welcome !== 'false',
+    password: incoming.password !== false && incoming.password !== 'false',
+    orderDelivered: incoming.orderDelivered !== false && incoming.orderDelivered !== 'false'
+  };
+}
 function getIntegration(name) {
   try { return JSON.parse(getSetting('integration_' + name, '{}')); } catch (_) { return {}; }
 }
@@ -5624,7 +5662,12 @@ app.get('/admin/integrations', requireAdmin, (req, res) => {
       redirectUri: getRedirectUri(),
       gmailConnected: !!activeGmail
     },
-    'chat-seller': { ...getChatSellerBotSettings(), ...getIntegration('chat_seller') }
+    'chat-seller': { ...getChatSellerBotSettings(), ...getIntegration('chat_seller') },
+    'buyer-emails': {
+      ...parseBuyerEmailSettings(getSetting),
+      gmailConnected: !!activeGmail,
+      connectedEmail: activeGmail?.connected_email || ''
+    }
   });
 });
 
@@ -5632,17 +5675,26 @@ app.put('/admin/integrations/:name', requireAdmin, (req, res) => {
   if (!INTEGRATION_KEYS.includes(req.params.name)) {
     return res.status(400).json({ error: 'Unknown integration' });
   }
-  const key = req.params.name === 'chat-seller' ? 'chat_seller' : req.params.name;
+  const key = req.params.name === 'chat-seller'
+    ? 'chat_seller'
+    : (req.params.name === 'buyer-emails' ? 'buyer_emails' : req.params.name);
   const existing = getIntegration(key);
   const incoming = { ...(req.body || {}) };
   delete incoming.testEmail;
   delete incoming.connections;
   delete incoming.oauthConfigured;
   delete incoming.redirectUri;
+  delete incoming.gmailConnected;
+  delete incoming.connectedEmail;
 
-  const merged = req.params.name === 'gmail'
-    ? mergeGmailIntegration(existing, incoming)
-    : { ...existing, ...incoming };
+  let merged;
+  if (req.params.name === 'gmail') {
+    merged = mergeGmailIntegration(existing, incoming);
+  } else if (req.params.name === 'buyer-emails') {
+    merged = mergeBuyerEmailSettings(existing, incoming);
+  } else {
+    merged = { ...existing, ...incoming };
+  }
 
   if (req.params.name === 'gmail' && merged.enabled && !gmailOAuthAllowed()) {
     return res.status(400).json({
@@ -5650,8 +5702,34 @@ app.put('/admin/integrations/:name', requireAdmin, (req, res) => {
     });
   }
 
+  if (req.params.name === 'buyer-emails' && merged.enabled && !getActiveGmailConnection(db)) {
+    return res.status(400).json({
+      error: 'Connect Gmail first (riettemadzehn@gmail.com) before enabling buyer emails.'
+    });
+  }
+
   setSetting('integration_' + key, JSON.stringify(merged));
   res.json({ ok: true, ...merged });
+});
+
+app.post('/admin/integrations/test-buyer-email', requireAdmin, async (req, res) => {
+  const toEmail = String(req.body?.testEmail || '').trim();
+  if (!toEmail) return res.status(400).json({ ok: false, message: 'Test email address is required' });
+  try {
+    const { buildWelcomeEmail } = require('./mailer-templates');
+    const siteUrl = String(getSetting('site_public_url', '') || appConfig.publicUrl || 'https://loveriette.shop').replace(/\/$/, '');
+    const storeName = String(getSetting('store_brand_name', '') || getSetting('store_display_name', '') || 'loveriette').trim();
+    const payload = buildWelcomeEmail({ name: 'Test Buyer', storeName, siteUrl });
+    await sendBuyerEmail(db, {
+      toEmail,
+      subject: `[Test] ${payload.subject}`,
+      html: payload.html,
+      text: payload.text
+    });
+    res.json({ ok: true, message: `Test buyer email sent to ${toEmail}` });
+  } catch (err) {
+    res.status(400).json({ ok: false, message: err.message || 'Test email failed' });
+  }
 });
 
 app.post('/admin/integrations/test-gmail', requireAdmin, async (req, res) => {

@@ -5,7 +5,10 @@ const appConfig = require('./config');
 const { encrypt, decrypt } = require('./token-crypto');
 const { expiresAtIso } = require('./gmail-schema');
 
-const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
+const GMAIL_SCOPE = [
+  'https://www.googleapis.com/auth/gmail.readonly',
+  'https://www.googleapis.com/auth/gmail.send'
+].join(' ');
 
 function oauthConfigured() {
   return !!(appConfig.googleClientId && appConfig.googleClientSecret);

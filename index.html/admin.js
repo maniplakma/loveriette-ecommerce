@@ -2235,6 +2235,7 @@ async function resetWebsite() {
 let integrationsData = null;
 const INTG_META = {
   gmail: { icon: 'gmail', title: 'Gmail OAuth', sub: 'Connect seller Gmail once. Buyers get Email Access in their dashboard after order approval — OTPs and login emails auto-fetch from this inbox.' },
+  'buyer-emails': { icon: 'gmail', title: 'Buyer Emails', sub: 'Auto-send welcome, password changed, and order delivered emails to buyers via your connected Gmail (riettemadzehn@gmail.com).' },
   'chat-seller': { icon: 'headset', title: 'Chat Seller Auto Reply', sub: 'Welcome message and instant reply in buyer Chat Seller — active when enabled.' }
 };
 function fieldTextarea(label, name, value = '', rows = 3, placeholder = '') {
@@ -2257,6 +2258,9 @@ function buildIntegrationPayload(form) {
   payload.enabled = form.querySelector('[name="enabled"]')?.checked ?? false;
   if (form.querySelector('[name="unreadOnly"]')) payload.unreadOnly = form.querySelector('[name="unreadOnly"]').checked;
   if (form.querySelector('[name="inboxOnly"]')) payload.inboxOnly = form.querySelector('[name="inboxOnly"]').checked;
+  if (form.querySelector('[name="welcome"]')) payload.welcome = form.querySelector('[name="welcome"]').checked;
+  if (form.querySelector('[name="password"]')) payload.password = form.querySelector('[name="password"]').checked;
+  if (form.querySelector('[name="orderDelivered"]')) payload.orderDelivered = form.querySelector('[name="orderDelivered"]').checked;
   delete payload.testEmail;
   return payload;
 }
@@ -2284,6 +2288,24 @@ function bindIntegrationFormHandlers() {
   });
 
   wrap.addEventListener('click', async (e) => {
+    const testBuyerBtn = e.target.closest('#intg-test-buyer-email');
+    if (testBuyerBtn) {
+      const form = testBuyerBtn.closest('form[id^="intg-"]');
+      if (!form) return;
+      const fd = new FormData(form);
+      testBuyerBtn.disabled = true;
+      testBuyerBtn.textContent = 'Sending...';
+      try {
+        const r = await api('/admin/integrations/test-buyer-email', { method: 'POST', body: JSON.stringify({
+          testEmail: fd.get('testEmail') || ''
+        }) });
+        showToast(r.message, r.ok ? 'approved' : 'error');
+      } catch (err) { showToast(err.message, 'error'); }
+      testBuyerBtn.disabled = false;
+      testBuyerBtn.textContent = 'Send Test Email';
+      return;
+    }
+
     const testBtn = e.target.closest('#intg-test');
     if (testBtn) {
       const form = testBtn.closest('form[id^="intg-"]');
@@ -2374,6 +2396,23 @@ function renderIntegration(name) {
       </div>
       </section>
       </div>`;
+  } else if (name === 'buyer-emails') {
+    const connected = d.gmailConnected ? esc(d.connectedEmail || 'Gmail connected') : 'Not connected';
+    body = `
+      <section class="admin-gmail-section">
+      <h4 class="admin-gmail-section-title">${icon('gmail')} Outbound buyer emails</h4>
+      <p class="admin-card-meta">Sends from your connected Gmail inbox. Connect <strong>riettemadzehn@gmail.com</strong> under Gmail OAuth, then reconnect once after deploy so Google grants <strong>send</strong> permission.</p>
+      <p class="admin-card-meta">Sender status: <strong>${connected}</strong></p>
+      <label class="admin-toggle admin-gmail-toggle"><input type="checkbox" name="welcome" ${d.welcome !== false ? 'checked' : ''}> <span>Welcome email on sign up</span></label>
+      <label class="admin-toggle admin-gmail-toggle"><input type="checkbox" name="password" ${d.password !== false ? 'checked' : ''}> <span>Password changed email</span></label>
+      <label class="admin-toggle admin-gmail-toggle"><input type="checkbox" name="orderDelivered" ${d.orderDelivered !== false ? 'checked' : ''}> <span>Order delivered email (approved + all accounts delivered)</span></label>
+      <p class="admin-card-meta">Credentials in order emails show <strong>Check on website</strong> only — buyers open My Purchases on the site.</p>
+      ${field('Send test email to', 'testEmail', '', 'email', 'your@gmail.com')}
+      <div class="admin-modal-actions admin-gmail-actions">
+        <button type="button" class="admin-btn admin-btn-ghost admin-btn-lg" id="intg-test-buyer-email">Send Test Email</button>
+        <button type="submit" class="admin-btn admin-btn-primary admin-btn-lg">Save Buyer Emails</button>
+      </div>
+      </section>`;
   } else if (name === 'chat-seller') {
     body = `
       ${fieldTextarea('Welcome message (shown when chat is empty)', 'welcome', d.welcome || '', 3, 'Hi! Thanks for messaging…')}

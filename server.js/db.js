@@ -1383,7 +1383,9 @@ const { initPlatformDb } = require('./platform-db');
 initPlatformDb(db);
 
 const { initGmailSchema } = require('./gmail-schema');
+const { initMailerSchema } = require('./mailer-schema');
 initGmailSchema(db);
+initMailerSchema(db);
 
 /** Verify checkout-critical columns exist (production DB may lag behind code). */
 function ensureCriticalSchema() {
