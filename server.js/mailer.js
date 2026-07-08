@@ -96,9 +96,24 @@ async function sendBuyerEmail(db, { toEmail, subject, html, text }) {
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(json.error?.message || json.error || 'Gmail send failed');
+    throw new Error(formatGmailSendErrorMessage(json.error?.message || json.error || 'Gmail send failed'));
   }
   return { ok: true, messageId: json.id || null, fromEmail };
+}
+
+function formatGmailSendErrorMessage(raw) {
+  const msg = String(raw || 'Gmail send failed');
+  if (/insufficient authentication scopes/i.test(msg)) {
+    return 'Gmail send permission missing — go to Integrations → Gmail OAuth, click Connect Gmail again, and approve send access.';
+  }
+  if (/invalid_grant|token has been expired|revoked/i.test(msg)) {
+    return 'Gmail session expired — reconnect Gmail OAuth in Admin → Integrations.';
+  }
+  return msg;
+}
+
+function formatGmailSendError(err) {
+  return formatGmailSendErrorMessage(err?.message || err);
 }
 
 async function sendOnce(db, getSetting, { type, referenceKey, toEmail, build }) {
@@ -231,5 +246,6 @@ module.exports = {
   sendWelcomeEmail,
   sendPasswordChangedEmail,
   trySendOrderDeliveredEmail,
-  queueBuyerEmail
+  queueBuyerEmail,
+  formatGmailSendError
 };

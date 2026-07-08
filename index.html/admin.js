@@ -9,7 +9,7 @@ async function api(url, options = {}) {
     credentials: 'include'
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || 'Request failed');
+  if (!res.ok) throw new Error(data.error || data.message || 'Request failed');
   return data;
 }
 
@@ -463,14 +463,16 @@ const ordersTabCache = { pending: null, approved: null, rejected: null };
 let ordersFetchGen = 0;
 let ordersPrefetchTimer = null;
 const ORDERS_TAB_STATUSES = {
-  pending: new Set(['pending', 'pending_payment']),
+  pending: new Set(['pending']),
   approved: new Set(['approved']),
   rejected: new Set(['rejected', 'refunded'])
 };
 
 function filterOrdersForTab(orders, tab) {
   const allowed = ORDERS_TAB_STATUSES[tab] || ORDERS_TAB_STATUSES.pending;
-  return orders.filter((o) => allowed.has(o.status));
+  let filtered = orders.filter((o) => allowed.has(o.status));
+  if (tab === 'pending') filtered = filtered.filter((o) => o.receiptUrl);
+  return filtered;
 }
 
 function invalidateOrdersCache() {
@@ -2258,7 +2260,7 @@ async function resetWebsite() {
 let integrationsData = null;
 const INTG_META = {
   gmail: { icon: 'gmail', title: 'Gmail OAuth', sub: 'Connect seller Gmail once. Buyers get Email Access in their dashboard after order approval — OTPs and login emails auto-fetch from this inbox.' },
-  'buyer-emails': { icon: 'gmail', title: 'Buyer Emails', sub: 'Auto-send welcome, password changed, and order delivered emails to buyers via your connected Gmail (riettemadzehn@gmail.com).' },
+  'buyer-emails': { icon: 'gmail', title: 'Buyer Emails', sub: 'Auto-send welcome, password changed, and order delivered emails to buyers via your connected Gmail inbox.' },
   'chat-seller': { icon: 'headset', title: 'Chat Seller Auto Reply', sub: 'Welcome message and instant reply in buyer Chat Seller — active when enabled.' }
 };
 function fieldTextarea(label, name, value = '', rows = 3, placeholder = '') {
@@ -2420,12 +2422,15 @@ function renderIntegration(name) {
       </section>
       </div>`;
   } else if (name === 'buyer-emails') {
-    const connected = d.gmailConnected ? esc(d.connectedEmail || 'Gmail connected') : 'Not connected';
+    const connected = d.gmailConnected
+      ? esc(d.connectedEmail || 'Gmail connected')
+      : 'Not connected — connect under Gmail OAuth first';
     body = `
       <section class="admin-gmail-section">
       <h4 class="admin-gmail-section-title">${icon('gmail')} Outbound buyer emails</h4>
-      <p class="admin-card-meta">Sends from your connected Gmail inbox. Connect <strong>riettemadzehn@gmail.com</strong> under Gmail OAuth, then reconnect once after deploy so Google grants <strong>send</strong> permission.</p>
+      <p class="admin-card-meta">Sends from your connected Gmail inbox. Connect your seller Gmail under <strong>Gmail OAuth</strong>, then reconnect once after deploy so Google grants <strong>send</strong> permission.</p>
       <p class="admin-card-meta">Sender status: <strong>${connected}</strong></p>
+      ${!d.gmailConnected ? '<p class="admin-card-meta admin-gmail-domain-warn">Save toggles below anytime. Turn the main switch ON only after Gmail is connected.</p>' : ''}
       <label class="admin-toggle admin-gmail-toggle"><input type="checkbox" name="welcome" ${d.welcome !== false ? 'checked' : ''}> <span>Welcome email on sign up</span></label>
       <label class="admin-toggle admin-gmail-toggle"><input type="checkbox" name="password" ${d.password !== false ? 'checked' : ''}> <span>Password changed email</span></label>
       <label class="admin-toggle admin-gmail-toggle"><input type="checkbox" name="orderDelivered" ${d.orderDelivered !== false ? 'checked' : ''}> <span>Order delivered email (approved + all accounts delivered)</span></label>
