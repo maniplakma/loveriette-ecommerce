@@ -7,7 +7,7 @@ const crypto = require('crypto');
 const appConfig = require('./config');
 const { sendHtmlPage } = require('./send-html-page');
 const { sendLoginCode, verifyLoginCode } = require('./plugging-telegram');
-const { startRunner, stopRunner, isRunning } = require('./plugging-runner');
+const { startRunner, stopRunner, isRunning, runTestForward } = require('./plugging-runner');
 const { pickProxyForNewAccount, listPluggingProxies, autoEnableProxySetting, ensureAccountProxy } = require('./plugging-proxy');
 const { logPlugActivity, getAccountActivity, clearAccountActivity } = require('./plugging-activity');
 const {
@@ -444,6 +444,26 @@ function mountPluggingService(app, db, deps) {
       .run('stopped', req.params.id);
     logPlugActivity(db, account.id, 'stopped', 'Forwarder stopped manually');
     res.json({ ok: true, runnerStatus: 'stopped' });
+  });
+
+  app.post('/api/plugging/workspace/accounts/:id/test-forward', requirePlugWorkspace, async (req, res) => {
+    const account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ? AND order_id = ?')
+      .get(req.params.id, req.plugOrder.id);
+    if (!account) return res.status(404).json({ error: 'Account not found' });
+    if (account.auth_status !== 'authenticated') {
+      return res.status(400).json({ error: 'Complete Telegram login first' });
+    }
+    try {
+      const body = req.body || {};
+      if (body.sourceLink != null || body.targetsText != null || body.displayName != null || body.delayMinutes != null) {
+        persistAccountConfig(account, body, req.plugOrder.maxDestinations);
+      }
+      ensureAccountProxy(db, account.id, getPluggingSettings());
+      const result = await runTestForward(db, account.id, getPluggingSettings, 3);
+      res.json(result);
+    } catch (err) {
+      res.status(400).json({ error: err.message || 'Test forward failed' });
+    }
   });
 
   app.get('/api/plugging/workspace/accounts/:id/activity', requirePlugWorkspace, (req, res) => {

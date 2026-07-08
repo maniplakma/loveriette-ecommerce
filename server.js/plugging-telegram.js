@@ -56,7 +56,7 @@ async function createClient(settings, sessionString = '', accountProxyUrl = '') 
 
   const client = new TelegramClient(new StringSession(sessionString || ''), apiId, apiHash, {
     connectionRetries: 5,
-    useWSS: false,
+    useWSS: true,
     proxy
   });
   await client.connect();

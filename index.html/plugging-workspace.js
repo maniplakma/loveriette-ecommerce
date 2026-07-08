@@ -271,7 +271,8 @@ function renderAccountDetail(id) {
       </div>
       <div class="plug-actions">
         ${authed ? `<button type="button" class="btn-primary-platform plug-btn-compact" data-action="start">▶ Start</button>
-        <button type="button" class="btn-outline-platform plug-btn-compact" data-action="stop">Stop</button>` : ''}
+        <button type="button" class="btn-outline-platform plug-btn-compact" data-action="stop">Stop</button>
+        <button type="button" class="btn-outline-platform plug-btn-compact" data-action="test-forward">Test Forward</button>` : ''}
         <button type="button" class="plug-btn plug-btn-danger plug-btn-compact" data-action="delete">Delete</button>
       </div>
     </div>
@@ -368,6 +369,33 @@ function renderAccountDetail(id) {
     await api(`/api/plugging/workspace/accounts/${id}/stop`, { method: 'POST' });
     await refreshWorkspace();
     loadActivity(id, true);
+  });
+
+  el.querySelector('[data-action="test-forward"]')?.addEventListener('click', async () => {
+    const btn = el.querySelector('[data-action="test-forward"]');
+    try {
+      setConfigSaveMessage('');
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Testing…';
+      }
+      const config = readConfigForm();
+      await api(`/api/plugging/workspace/accounts/${id}/test-forward`, {
+        method: 'POST',
+        body: JSON.stringify(config)
+      });
+      setConfigSaveMessage('Test forward sent — check Live Activity below.');
+      await refreshWorkspace();
+      startActivityPoll(id);
+    } catch (e) {
+      setConfigSaveMessage(e.message, true);
+      loadActivity(id, true);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Test Forward';
+      }
+    }
   });
 
   el.querySelector('[data-action="clear-activity"]')?.addEventListener('click', async () => {

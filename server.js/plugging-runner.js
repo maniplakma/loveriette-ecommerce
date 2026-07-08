@@ -5,6 +5,12 @@ const { withAuthorizedClient } = require('./plugging-telegram');
 const { logPlugActivity } = require('./plugging-activity');
 const { ensureAccountProxy } = require('./plugging-proxy');
 const { cycleDelayMs, groupSendDelayMs, formatDelayLabel } = require('./plugging-stealth');
+const {
+  shouldProcessMessage,
+  joinSourceChannel,
+  inspectSource,
+  forwardPostWithRetries
+} = require('./plugging-forward');
 
 const runners = new Map();
 const MAX_SEEN_MESSAGES = 400;
@@ -13,7 +19,6 @@ const POLL_INTERVAL_DEFAULT_MS = 8000;
 const POLL_INTERVAL_PRIORITY_MS = 5000;
 const RETRY_DELAY_MS = 15000;
 const TARGET_RESOLVE_MAX_ATTEMPTS = 3;
-const FORWARD_MAX_ATTEMPTS = 3;
 
 function entityLabel(entity) {
   if (!entity) return '';
@@ -63,12 +68,6 @@ async function resolveEntityFromLink(client, link) {
   }
 
   return client.getEntity(raw.startsWith('@') ? raw : `@${raw}`);
-}
-
-function shouldProcessMessage(msg) {
-  if (!msg) return false;
-  if (msg.out && !msg.post) return false;
-  return true;
 }
 
 function createTargetTracker() {
@@ -159,24 +158,6 @@ function pruneTargetTracker(tracker, refs) {
   }
 }
 
-async function forwardWithRetries(client, target, source, msg, targetName, db, accountId, msgId) {
-  let lastErr = null;
-  for (let attempt = 1; attempt <= FORWARD_MAX_ATTEMPTS; attempt++) {
-    try {
-      await client.forwardMessages(target, { messages: [msg.id], fromPeer: source });
-      return { ok: true };
-    } catch (err) {
-      lastErr = err;
-      const errMsg = String(err.message || err).slice(0, 500);
-      if (attempt < FORWARD_MAX_ATTEMPTS) {
-        logPlugActivity(db, accountId, 'error', `Retry ${attempt}/${FORWARD_MAX_ATTEMPTS} → ${targetName}: ${errMsg}`, targetName);
-        await sleep(groupSendDelayMs());
-      }
-    }
-  }
-  return { ok: false, error: lastErr };
-}
-
 function startRunner(db, accountId, getSettings) {
   stopRunner(accountId);
   let account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ?').get(accountId);
@@ -208,7 +189,8 @@ function startRunner(db, accountId, getSettings) {
     messageQueue: [],
     queueRunning: false,
     targetTracker: createTargetTracker(),
-    targetsReady: false
+    targetsReady: false,
+    pollCount: 0
   };
   runners.set(accountId, state);
 
@@ -269,12 +251,31 @@ function startRunner(db, accountId, getSettings) {
                 ? `${formatDelayLabel(cycleDelay)} between cycles`
                 : 'no wait between cycles';
 
-              try {
-                const recent = await client.getMessages(source, { limit: 1 });
-                if (recent?.length && (force || !state.lastPollId)) {
-                  state.lastPollId = recent[0].id;
+              const joined = await joinSourceChannel(client, source);
+              if (joined) {
+                logPlugActivity(db, accountId, 'info', `Subscribed to ${entityLabel(source)}`);
+              }
+
+              const inspection = await inspectSource(client, source);
+              if (!inspection.ok) {
+                logPlugActivity(
+                  db, accountId, 'error',
+                  `Cannot read source ${entityLabel(source)}: ${inspection.error} — check link and account access`
+                );
+              } else if (!inspection.canRead) {
+                logPlugActivity(
+                  db, accountId, 'info',
+                  `Source ${entityLabel(source)} joined — no posts visible yet. Post a new message after Start to trigger forward.`
+                );
+              } else {
+                logPlugActivity(
+                  db, accountId, 'info',
+                  `Source OK — latest post #${inspection.latestId} visible (${inspection.recentCount} recent)`
+                );
+                if (force || !state.lastPollId) {
+                  state.lastPollId = inspection.latestId || 0;
                 }
-              } catch (_) { /* ignore */ }
+              }
 
               logPlugActivity(
                 db, accountId, 'info',
@@ -342,7 +343,10 @@ function startRunner(db, accountId, getSettings) {
 
                 const { ref, entity: target } = targetEntries[i];
                 const targetName = entityLabel(target) || ref;
-                const result = await forwardWithRetries(client, target, source, msg, targetName, db, accountId, msg.id);
+                const result = await forwardPostWithRetries(
+                  client, source, target, msg, targetName,
+                  (retryMsg) => logPlugActivity(db, accountId, 'error', retryMsg, targetName)
+                );
                 if (result.ok) {
                   okCount += 1;
                   db.prepare('UPDATE plugging_accounts SET success_count = success_count + 1, updated_at = datetime(\'now\') WHERE id = ?')
@@ -350,7 +354,7 @@ function startRunner(db, accountId, getSettings) {
                   logPlugActivity(db, accountId, 'success', `Sent post #${msg.id} → ${targetName}`, targetName);
                 } else {
                   failCount += 1;
-                  const errMsg = String(result.error?.message || result.error || 'Forward failed').slice(0, 500);
+                  const errMsg = String(result.error || 'Forward failed').slice(0, 500);
                   db.prepare('UPDATE plugging_accounts SET failed_count = failed_count + 1, last_error = ?, updated_at = datetime(\'now\') WHERE id = ?')
                     .run(errMsg, accountId);
                   logPlugActivity(db, accountId, 'error', `Failed → ${targetName}: ${errMsg}`, targetName);
@@ -407,16 +411,22 @@ function startRunner(db, accountId, getSettings) {
           };
 
           const sourceOk = await syncSource(true);
-          if (sourceOk) {
+          try {
+            await syncTargets(true);
+          } catch (targetErr) {
+            logPlugActivity(db, accountId, 'error', `Target sync: ${String(targetErr.message || targetErr).slice(0, 500)}`);
+          }
+
+          if (sourceOk && source) {
             const { NewMessage } = require('telegram/events');
-            newMessageFilter = new NewMessage({ chats: [source] });
+            let chatFilter = source;
+            try {
+              chatFilter = await client.getPeerId(source);
+            } catch (_) { /* use entity */ }
+            newMessageFilter = new NewMessage({ chats: [chatFilter] });
             client.addEventHandler(handler, newMessageFilter);
             state.handler = handler;
           }
-
-          syncTargets(true).catch((err) => {
-            logPlugActivity(db, accountId, 'error', `Target sync: ${String(err.message || err).slice(0, 500)}`);
-          });
 
           async function pollSource() {
             if (!state.running || !source || state.pollBusy) return;
@@ -424,10 +434,19 @@ function startRunner(db, accountId, getSettings) {
             try {
               const messages = await client.getMessages(source, { limit: 15 });
               const sorted = [...(messages || [])].sort((a, b) => a.id - b.id);
+              let foundNew = false;
               for (const msg of sorted) {
                 if (msg.id <= state.lastPollId) continue;
+                foundNew = true;
                 state.lastPollId = Math.max(state.lastPollId, msg.id);
                 enqueueMessage(msg);
+              }
+              state.pollCount += 1;
+              if (!foundNew && state.pollCount % 6 === 0) {
+                logPlugActivity(
+                  db, accountId, 'info',
+                  `Watching — latest post #${state.lastPollId || 'none'}, waiting for new posts in ${entityLabel(source)}`
+                );
               }
             } catch (pollErr) {
               logPlugActivity(db, accountId, 'error', `Poll error: ${String(pollErr.message || pollErr).slice(0, 500)}`);
@@ -493,4 +512,85 @@ function isRunning(accountId) {
   return !!(state && state.running);
 }
 
-module.exports = { startRunner, stopRunner, isRunning, parseTargets, resolveEntityFromLink };
+async function runTestForward(db, accountId, getSettings, maxTargets = 3) {
+  let account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ?').get(accountId);
+  if (!account || !account.session_string) {
+    throw new Error('Account is not logged in to Telegram yet');
+  }
+  const settings = getSettings();
+  ensureAccountProxy(db, accountId, settings);
+  account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ?').get(accountId);
+
+  const sourceLink = String(account.source_link || '').trim();
+  const targetRefs = parseTargets(account.targets_text);
+  if (!sourceLink) throw new Error('Source chat / channel link is missing');
+  if (!targetRefs.length) throw new Error('Add at least one target group');
+
+  const results = [];
+
+  await withAuthorizedClient(settings, account.session_string, async (client) => {
+    const source = await resolveEntityFromLink(client, sourceLink);
+    await joinSourceChannel(client, source);
+
+    const inspection = await inspectSource(client, source);
+    if (!inspection.ok) {
+      throw new Error(`Cannot read source: ${inspection.error}`);
+    }
+    if (!inspection.latestId) {
+      throw new Error('No posts found in source channel — publish a message first');
+    }
+
+    const messages = await client.getMessages(source, { limit: 1 });
+    const msg = messages?.[0];
+    if (!msg || !shouldProcessMessage(msg)) {
+      throw new Error('Latest source post cannot be forwarded (empty or system message)');
+    }
+
+    logPlugActivity(
+      db, accountId, 'info',
+      `Test forward — using latest post #${msg.id} from ${entityLabel(source)}`
+    );
+
+    const tracker = createTargetTracker();
+    const entries = await buildTargetEntries(client, targetRefs, tracker, db, accountId);
+    if (!entries.length) throw new Error('No valid target groups — fix invalid links like @swbns');
+
+    const testTargets = entries.slice(0, Math.max(1, Math.min(maxTargets, entries.length)));
+    let okCount = 0;
+
+    for (let i = 0; i < testTargets.length; i++) {
+      if (i > 0) await sleep(groupSendDelayMs());
+      const { ref, entity: target } = testTargets[i];
+      const targetName = entityLabel(target) || ref;
+      const result = await forwardPostWithRetries(
+        client, source, target, msg, targetName,
+        (retryMsg) => logPlugActivity(db, accountId, 'error', retryMsg, targetName)
+      );
+      if (result.ok) {
+        okCount += 1;
+        db.prepare('UPDATE plugging_accounts SET success_count = success_count + 1, updated_at = datetime(\'now\') WHERE id = ?')
+          .run(accountId);
+        logPlugActivity(
+          db, accountId, 'success',
+          `Test sent post #${msg.id} → ${targetName} (${result.mode || 'forward'})`,
+          targetName
+        );
+        results.push({ target: targetName, ok: true, mode: result.mode || 'forward' });
+      } else {
+        const errMsg = String(result.error || 'Forward failed').slice(0, 500);
+        db.prepare('UPDATE plugging_accounts SET failed_count = failed_count + 1, last_error = ?, updated_at = datetime(\'now\') WHERE id = ?')
+          .run(errMsg, accountId);
+        logPlugActivity(db, accountId, 'error', `Test failed → ${targetName}: ${errMsg}`, targetName);
+        results.push({ target: targetName, ok: false, error: errMsg });
+      }
+    }
+
+    if (okCount === 0) {
+      throw new Error(`Test forward failed on all ${testTargets.length} target(s) — see Live Activity for details`);
+    }
+  }, account.proxy_url);
+
+  return { ok: true, results };
+}
+
+module.exports = { startRunner, stopRunner, isRunning, parseTargets, resolveEntityFromLink, runTestForward };
