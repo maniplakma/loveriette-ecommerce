@@ -303,6 +303,8 @@ function initPlatformDb(db) {
   }
 
   try { db.exec(`ALTER TABLE plugging_accounts ADD COLUMN proxy_url TEXT NOT NULL DEFAULT ''`); } catch (_) { /* exists */ }
+  try { db.exec(`ALTER TABLE plugging_orders ADD COLUMN expires_at TEXT`); } catch (_) { /* exists */ }
+  try { db.exec(`ALTER TABLE plugging_plans ADD COLUMN priority INTEGER NOT NULL DEFAULT 0`); } catch (_) { /* exists */ }
 
   try {
     db.exec(`
@@ -516,106 +518,75 @@ function migratePluggingProducts(db, slugify) {
 function ensurePluggingExamples(db) {
   const examples = [
     {
-      name: 'Standard Plugging',
-      slug: 'standard',
-      description: '1 Telegram account → up to 3 destinations. Ideal for small resellers testing auto forward.',
-      icon: 'mdi:send',
+      name: 'VIP Plugging',
+      slug: 'vip',
+      description: 'Connect up to 10 Telegram accounts. Each account can forward to up to 50 groups/channels.',
+      icon: 'mdi:crown',
       category: 'Plugging',
-      features: ['1 Telegram account', 'Up to 3 target groups/channels', 'Self-service workspace', 'Runs on your own account'],
+      features: ['10 Telegram accounts', '50 groups per account', 'Self-service workspace', 'Cycle delay control'],
       sortOrder: 0,
       variants: [
         {
           name: '7 Days',
-          slug: 'standard-7d',
+          slug: 'vip-7d',
           duration: '7 Days',
-          description: 'Try plugging for one week — perfect to test your setup.',
-          price: 199,
-          priceLabel: '₱199',
-          maxSources: 1,
-          maxDestinations: 3,
-          features: ['1 source chat', '3 destinations', '7-day access'],
+          description: 'VIP access for one week.',
+          price: 499,
+          priceLabel: '₱499',
+          maxSources: 10,
+          maxDestinations: 50,
+          priority: 0,
+          features: ['10 accounts', '50 groups each', '7-day access'],
           sortOrder: 0
         },
         {
           name: '30 Days',
-          slug: 'standard-30d',
+          slug: 'vip-30d',
           duration: '30 Days',
-          description: 'Full month of auto forwarding for everyday reselling.',
-          price: 599,
-          priceLabel: '₱599',
-          maxSources: 1,
-          maxDestinations: 3,
-          features: ['1 source chat', '3 destinations', '30-day access'],
+          description: 'VIP access for one month.',
+          price: 1499,
+          priceLabel: '₱1,499',
+          maxSources: 10,
+          maxDestinations: 50,
+          priority: 0,
+          features: ['10 accounts', '50 groups each', '30-day access'],
           sortOrder: 1
         }
       ]
     },
     {
-      name: 'Pro Plugging',
-      slug: 'pro',
-      description: '3 Telegram accounts → up to 10 destinations. For active sellers managing multiple sources.',
-      icon: 'mdi:flash',
+      name: 'VIP+ Plugging',
+      slug: 'vip-plus',
+      description: 'Unlimited Telegram accounts and unlimited groups per account. Priority forwarding like master access with expiry.',
+      icon: 'mdi:rocket-launch',
       category: 'Plugging',
-      features: ['3 Telegram accounts', 'Up to 10 destinations', 'Keyword filters', 'Priority support'],
+      features: ['Unlimited accounts', 'Unlimited groups', 'Priority forwarding', 'Expiry based on plan duration'],
       sortOrder: 1,
       variants: [
         {
           name: '7 Days',
-          slug: 'pro-7d',
+          slug: 'vip-plus-7d',
           duration: '7 Days',
-          description: 'Pro access for one week — multiple accounts ready.',
-          price: 499,
-          priceLabel: '₱499',
-          maxSources: 3,
-          maxDestinations: 10,
-          features: ['3 source chats', '10 destinations', '7-day access'],
-          sortOrder: 0
-        },
-        {
-          name: '30 Days',
-          slug: 'pro-30d',
-          duration: '30 Days',
-          description: 'Pro access for one month — scale your forwarding.',
-          price: 1299,
-          priceLabel: '₱1,299',
-          maxSources: 3,
-          maxDestinations: 10,
-          features: ['3 source chats', '10 destinations', '30-day access'],
-          sortOrder: 1
-        }
-      ]
-    },
-    {
-      name: 'Business Plugging',
-      slug: 'business',
-      description: 'Unlimited accounts & destinations for teams and high-volume relay operations.',
-      icon: 'mdi:rocket-launch',
-      category: 'Plugging',
-      features: ['Unlimited accounts', 'Unlimited destinations', 'Custom delay settings', 'Dedicated support'],
-      sortOrder: 2,
-      variants: [
-        {
-          name: '7 Days',
-          slug: 'business-7d',
-          duration: '7 Days',
-          description: 'Business trial — full power for one week.',
+          description: 'VIP+ trial — full unlimited access for one week.',
           price: 999,
           priceLabel: '₱999',
-          maxSources: 99,
-          maxDestinations: 99,
-          features: ['Unlimited sources', 'Unlimited destinations', '7-day access'],
+          maxSources: 999,
+          maxDestinations: 999,
+          priority: 1,
+          features: ['Unlimited accounts', 'Unlimited groups', 'Priority', '7-day access'],
           sortOrder: 0
         },
         {
           name: '30 Days',
-          slug: 'business-30d',
+          slug: 'vip-plus-30d',
           duration: '30 Days',
-          description: 'Business monthly — for teams running multiple relays.',
-          price: 2499,
-          priceLabel: '₱2,499',
-          maxSources: 99,
-          maxDestinations: 99,
-          features: ['Unlimited sources', 'Unlimited destinations', '30-day access'],
+          description: 'VIP+ monthly — unlimited relay with priority.',
+          price: 2999,
+          priceLabel: '₱2,999',
+          maxSources: 999,
+          maxDestinations: 999,
+          priority: 1,
+          features: ['Unlimited accounts', 'Unlimited groups', 'Priority', '30-day access'],
           sortOrder: 1
         }
       ]
@@ -634,12 +605,13 @@ function ensurePluggingExamples(db) {
   const getPlan = db.prepare('SELECT id FROM plugging_plans WHERE slug = ?');
   const insPlan = db.prepare(`
     INSERT INTO plugging_plans (product_id, name, slug, description, price, price_label, duration,
-      max_sources, max_destinations, features, sort_order, is_enabled)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+      max_sources, max_destinations, features, sort_order, is_enabled, priority)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
   `);
   const updPlan = db.prepare(`
     UPDATE plugging_plans SET product_id = ?, name = ?, description = ?, price = ?, price_label = ?,
-      duration = ?, max_sources = ?, max_destinations = ?, features = ?, sort_order = ?, is_enabled = 1
+      duration = ?, max_sources = ?, max_destinations = ?, features = ?, sort_order = ?, is_enabled = 1,
+      priority = ?
     WHERE slug = ?
   `);
 
@@ -665,12 +637,12 @@ function ensurePluggingExamples(db) {
       if (planRow) {
         updPlan.run(
           productId, v.name, v.description, v.price, v.priceLabel, v.duration,
-          v.maxSources, v.maxDestinations, featJson, v.sortOrder, v.slug
+          v.maxSources, v.maxDestinations, featJson, v.sortOrder, v.priority || 0, v.slug
         );
       } else {
         insPlan.run(
           productId, v.name, v.slug, v.description, v.price, v.priceLabel, v.duration,
-          v.maxSources, v.maxDestinations, featJson, v.sortOrder
+          v.maxSources, v.maxDestinations, featJson, v.sortOrder, v.priority || 0
         );
       }
     }

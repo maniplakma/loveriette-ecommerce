@@ -339,7 +339,7 @@
     document.getElementById('plugging-orders-list').innerHTML = (orders || []).map((o) => `
       <div class="admin-card" style="margin-bottom:0.75rem">
         <strong>${esc(o.order_ref)}</strong> — ${esc(o.customer_name)} · ${esc(o.status)}<br>
-        <small class="admin-card-meta">${esc(o.plan_name)} · ${peso(o.total)}</small>
+        <small class="admin-card-meta">${esc(o.plan_name)} · ${peso(o.total)}${o.expires_at ? ` · expires ${esc(String(o.expires_at).slice(0, 10))}` : ''}</small>
         ${o.access_key ? `<br><code style="font-size:0.85rem">Key: ${esc(o.access_key)}</code>` : ''}
         ${o.receipt_path ? `<br><a href="${esc(o.receipt_path)}" target="_blank">View receipt</a>` : ''}
         <div style="margin-top:0.5rem;display:flex;gap:0.5rem;flex-wrap:wrap">
@@ -373,7 +373,7 @@
         ${(prod.variants || []).map((v) => `
           <div class="admin-card" style="margin:0.35rem 0 0.35rem 1rem;padding:0.65rem 0.85rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem">
             <div>
-              <strong>${esc(v.name)}</strong>${v.duration ? ` · ${esc(v.duration)}` : ''} — ${peso(v.price)} · ${v.max_sources ?? v.maxSources}→${v.max_destinations ?? v.maxDestinations}
+              <strong>${esc(v.name)}</strong>${v.duration ? ` · ${esc(v.duration)}` : ''} — ${peso(v.price)} · ${v.max_sources ?? v.maxSources}→${v.max_destinations ?? v.maxDestinations}${v.priority ? ' · Priority' : ''}
               ${v.is_enabled === 0 ? ' · <em>disabled</em>' : ''}
             </div>
             <button class="admin-btn admin-btn-danger admin-btn-sm" data-del-plug-plan="${v.id}">Delete</button>
@@ -433,8 +433,9 @@
       const name = prompt('Variant name:', duration) || duration;
       const price = prompt('Price (₱):', '599');
       if (price == null) return;
-      const maxSources = prompt('Max Telegram accounts:', '1') || '1';
-      const maxDestinations = prompt('Max destinations:', '3') || '3';
+      const maxSources = prompt('Max Telegram accounts (VIP=10, VIP+=999 unlimited):', '10') || '10';
+      const maxDestinations = prompt('Max groups per account (VIP=50, VIP+=999 unlimited):', '50') || '50';
+      const priority = confirm('Priority plan (VIP+)? OK = yes, Cancel = no');
       await api('/admin/plugging/plans', {
         method: 'POST',
         body: {
@@ -444,7 +445,8 @@
           price: Number(price) || 0,
           priceLabel: `₱${Number(price || 0).toLocaleString()}`,
           maxSources: Number(maxSources) || 1,
-          maxDestinations: Number(maxDestinations) || 3
+          maxDestinations: Number(maxDestinations) || 3,
+          priority
         }
       });
       loadPlatformPlugging();

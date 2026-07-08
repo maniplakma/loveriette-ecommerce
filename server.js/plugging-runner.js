@@ -1,21 +1,16 @@
 /**
  * In-process forwarding runners for plugging accounts.
- * Keeps running on bad links / per-target errors — logs to live activity instead of stopping.
  */
 const { withAuthorizedClient } = require('./plugging-telegram');
 const { logPlugActivity } = require('./plugging-activity');
 const { ensureAccountProxy } = require('./plugging-proxy');
-const {
-  computeStealthDelayMs,
-  initialHumanPauseMs,
-  staggerBetweenTargetsMs,
-  formatWaitMinutes
-} = require('./plugging-stealth');
+const { cycleDelayMs, groupSendDelayMs, formatDelayLabel } = require('./plugging-stealth');
 
 const runners = new Map();
 const MAX_SEEN_MESSAGES = 400;
 const CONFIG_REFRESH_MS = 60000;
-const POLL_INTERVAL_MS = 10000;
+const POLL_INTERVAL_DEFAULT_MS = 10000;
+const POLL_INTERVAL_PRIORITY_MS = 5000;
 const RETRY_DELAY_MS = 15000;
 
 function entityLabel(entity) {
@@ -64,10 +59,6 @@ async function resolveEntityFromLink(client, link) {
   return client.getEntity(raw.startsWith('@') ? raw : `@${raw}`);
 }
 
-async function resolveSourceEntity(client, sourceLink) {
-  return resolveEntityFromLink(client, sourceLink);
-}
-
 async function resolveTargetEntries(client, targets, db, accountId, invalidLogged) {
   const entries = [];
   for (const ref of targets) {
@@ -88,7 +79,6 @@ async function resolveTargetEntries(client, targets, db, accountId, invalidLogge
 
 function shouldProcessMessage(msg) {
   if (!msg) return false;
-  // Keep channel posts; skip only user's own outgoing chat messages.
   if (msg.out && !msg.post) return false;
   return true;
 }
@@ -103,18 +93,27 @@ function startRunner(db, accountId, getSettings) {
   ensureAccountProxy(db, accountId, settings);
   account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ?').get(accountId);
 
-  const order = db.prepare('SELECT * FROM plugging_orders WHERE id = ? AND status = ?').get(account.order_id, 'approved');
+  const order = db.prepare(`
+    SELECT po.*, pp.priority AS plan_priority
+    FROM plugging_orders po
+    LEFT JOIN plugging_plans pp ON pp.id = po.plan_id
+    WHERE po.id = ? AND po.status = 'approved'
+  `).get(account.order_id);
   if (!order) throw new Error('Plugging subscription is not active');
+
+  const pollIntervalMs = Number(order.plan_priority) > 0 ? POLL_INTERVAL_PRIORITY_MS : POLL_INTERVAL_DEFAULT_MS;
 
   const state = {
     running: true,
     handler: null,
     seenIds: new Set(),
-    processingIds: new Set(),
     pollBusy: false,
     lastPollId: 0,
+    lastCycleEndedAt: 0,
     invalidTargetsLogged: new Set(),
-    lastRoutingKey: ''
+    lastRoutingKey: '',
+    messageQueue: [],
+    queueRunning: false
   };
   runners.set(accountId, state);
 
@@ -141,25 +140,22 @@ function startRunner(db, accountId, getSettings) {
             const routingKey = `${sourceLink}::${targetRefs.join('|')}`;
             const routingChanged = force || routingKey !== state.lastRoutingKey;
 
-            if (!sourceLink) {
-              if (routingChanged) {
-                state.lastRoutingKey = routingKey;
-                logPlugActivity(db, accountId, 'error', 'Source chat / channel link is missing — add it in settings');
-              }
-              source = null;
-              targetEntries = [];
-              sourcePeerId = null;
-              return;
-            }
-
             if (!routingChanged) return;
 
             state.lastRoutingKey = routingKey;
             state.invalidTargetsLogged.clear();
 
+            if (!sourceLink) {
+              source = null;
+              targetEntries = [];
+              sourcePeerId = null;
+              logPlugActivity(db, accountId, 'error', 'Source chat / channel link is missing — add it in settings');
+              return;
+            }
+
             let nextSource = null;
             try {
-              nextSource = await resolveSourceEntity(client, sourceLink);
+              nextSource = await resolveEntityFromLink(client, sourceLink);
               sourcePeerId = await client.getPeerId(nextSource);
             } catch (err) {
               const errMsg = String(err.message || err).slice(0, 500);
@@ -175,47 +171,42 @@ function startRunner(db, accountId, getSettings) {
             source = nextSource;
             targetEntries = await resolveTargetEntries(client, targetRefs, db, accountId, state.invalidTargetsLogged);
 
-            const delayMin = Number(account.delay_minutes) || 0;
-            const delayNote = delayMin > 0 ? `${delayMin} min delay before each forward` : 'minimal delay mode';
+            const cycleDelay = cycleDelayMs(account.delay_minutes);
+            const cycleNote = cycleDelay > 0
+              ? `${formatDelayLabel(cycleDelay)} between cycles`
+              : 'no wait between cycles';
 
             if (targetEntries.length) {
-              const proxyNote = account.proxy_url ? ' · proxy active' : '';
-              let latestId = 'none';
               try {
                 const recent = await client.getMessages(source, { limit: 1 });
-                if (recent?.length) {
-                  state.lastPollId = recent[0].id;
-                  latestId = String(recent[0].id);
-                }
+                if (recent?.length) state.lastPollId = recent[0].id;
               } catch (_) { /* ignore */ }
 
               logPlugActivity(
                 db, accountId, 'info',
-                `Live on Telegram — watching ${entityLabel(source)} → ${targetEntries.length} group(s) · ${delayNote}${proxyNote}`
+                `Live — ${entityLabel(source)} → ${targetEntries.length} group(s) · 3 sec per group · ${cycleNote}`
               );
-              logPlugActivity(
-                db, accountId, 'info',
-                `Only NEW posts after start are forwarded (latest post id ${latestId}). Post a test message in the source channel.`
-              );
+              logPlugActivity(db, accountId, 'info', 'Forwarding starts immediately on new posts. Only posts after Start are sent.');
             } else {
               logPlugActivity(db, accountId, 'error', 'No valid target groups — fix links in settings (forwarder stays running)');
             }
           }
 
-          function enqueueMessage(msg) {
-            if (!shouldProcessMessage(msg)) return;
-            if (state.seenIds.has(msg.id) || state.processingIds.has(msg.id)) return;
-            state.processingIds.add(msg.id);
-            processMessage(msg)
-              .catch((err) => {
-                logPlugActivity(db, accountId, 'error', `Process error: ${String(err.message || err).slice(0, 500)}`);
-              })
-              .finally(() => {
-                state.processingIds.delete(msg.id);
-              });
+          async function waitForCycleDelay() {
+            const waitMs = cycleDelayMs(account.delay_minutes);
+            if (!waitMs || !state.lastCycleEndedAt) return;
+            const elapsed = Date.now() - state.lastCycleEndedAt;
+            const remaining = waitMs - elapsed;
+            if (remaining > 0) {
+              logPlugActivity(
+                db, accountId, 'info',
+                `Cycle delay — waiting ${formatDelayLabel(remaining)} before next forward cycle`
+              );
+              await sleep(remaining);
+            }
           }
 
-          async function processMessage(msg) {
+          async function processMessageCycle(msg) {
             if (!state.running || !msg || !source || !targetEntries.length) return;
             if (!shouldProcessMessage(msg)) return;
             if (state.seenIds.has(msg.id)) return;
@@ -225,34 +216,19 @@ function startRunner(db, accountId, getSettings) {
               [...state.seenIds].slice(0, 100).forEach((id) => state.seenIds.delete(id));
             }
 
+            account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ?').get(accountId);
+            await waitForCycleDelay();
+            if (!state.running) return;
+
             let okCount = 0;
             let failCount = 0;
 
             try {
               db.prepare('UPDATE plugging_accounts SET cycles_count = cycles_count + 1, updated_at = datetime(\'now\') WHERE id = ?').run(accountId);
-              logPlugActivity(db, accountId, 'cycle', `New post detected (id ${msg.id})`);
-
-              const stealthWait = computeStealthDelayMs(account.delay_minutes);
-              const humanPause = initialHumanPauseMs();
-              logPlugActivity(
-                db, accountId, 'info',
-                `Waiting ${formatWaitMinutes(humanPause + stealthWait)} before forwarding (stealth timing)`
-              );
-              await sleep(humanPause);
-              if (!state.running) return;
-              await sleep(stealthWait);
-              if (!state.running) return;
-
-              account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ?').get(accountId);
-              if (state.lastRoutingKey) {
-                const currentKey = `${String(account.source_link || '').trim()}::${parseTargets(account.targets_text).join('|')}`;
-                if (currentKey !== state.lastRoutingKey) {
-                  await refreshRouting(true);
-                }
-              }
+              logPlugActivity(db, accountId, 'cycle', `Cycle started — post #${msg.id}`);
 
               for (let i = 0; i < targetEntries.length; i++) {
-                if (i > 0) await sleep(staggerBetweenTargetsMs());
+                if (i > 0) await sleep(groupSendDelayMs());
                 if (!state.running) return;
 
                 const { ref, entity: target } = targetEntries[i];
@@ -262,7 +238,7 @@ function startRunner(db, accountId, getSettings) {
                   okCount += 1;
                   db.prepare('UPDATE plugging_accounts SET success_count = success_count + 1, updated_at = datetime(\'now\') WHERE id = ?')
                     .run(accountId);
-                  logPlugActivity(db, accountId, 'success', `Forwarded post #${msg.id} to ${targetName}`, targetName);
+                  logPlugActivity(db, accountId, 'success', `Sent post #${msg.id} → ${targetName}`, targetName);
                 } catch (fwdErr) {
                   failCount += 1;
                   const errMsg = String(fwdErr.message || fwdErr).slice(0, 500);
@@ -278,14 +254,40 @@ function startRunner(db, accountId, getSettings) {
                 .run(errMsg, accountId);
               logPlugActivity(db, accountId, 'error', `Cycle error: ${errMsg}`);
             } finally {
+              state.lastCycleEndedAt = Date.now();
               if (okCount > 0 && failCount === 0) {
-                logPlugActivity(db, accountId, 'complete', `Completed post #${msg.id} → ${okCount} group(s)`);
+                logPlugActivity(db, accountId, 'complete', `Cycle complete — post #${msg.id} sent to ${okCount} group(s)`);
               } else if (okCount > 0) {
-                logPlugActivity(db, accountId, 'complete', `Completed post #${msg.id} with errors (${okCount} ok, ${failCount} failed)`);
+                logPlugActivity(db, accountId, 'complete', `Cycle complete — post #${msg.id} (${okCount} sent, ${failCount} failed)`);
               } else if (failCount > 0) {
-                logPlugActivity(db, accountId, 'complete', `Completed post #${msg.id} — all targets failed (${failCount})`);
+                logPlugActivity(db, accountId, 'complete', `Cycle complete — post #${msg.id} failed on all groups (${failCount})`);
+              } else {
+                logPlugActivity(db, accountId, 'complete', `Cycle complete — post #${msg.id}`);
               }
             }
+          }
+
+          async function drainMessageQueue() {
+            if (state.queueRunning) return;
+            state.queueRunning = true;
+            try {
+              while (state.running && state.messageQueue.length) {
+                const msg = state.messageQueue.shift();
+                await processMessageCycle(msg);
+              }
+            } finally {
+              state.queueRunning = false;
+            }
+          }
+
+          function enqueueMessage(msg) {
+            if (!shouldProcessMessage(msg)) return;
+            if (state.seenIds.has(msg.id)) return;
+            if (state.messageQueue.some((m) => m.id === msg.id)) return;
+            state.messageQueue.push(msg);
+            drainMessageQueue().catch((err) => {
+              logPlugActivity(db, accountId, 'error', `Queue error: ${String(err.message || err).slice(0, 500)}`);
+            });
           }
 
           const handler = async (event) => {
@@ -315,15 +317,14 @@ function startRunner(db, accountId, getSettings) {
                 enqueueMessage(msg);
               }
             } catch (pollErr) {
-              const errMsg = String(pollErr.message || pollErr).slice(0, 500);
-              logPlugActivity(db, accountId, 'error', `Poll error: ${errMsg}`);
+              logPlugActivity(db, accountId, 'error', `Poll error: ${String(pollErr.message || pollErr).slice(0, 500)}`);
             } finally {
               state.pollBusy = false;
             }
           }
 
           await pollSource();
-          pollTimer = setInterval(pollSource, POLL_INTERVAL_MS);
+          pollTimer = setInterval(pollSource, pollIntervalMs);
 
           configTimer = setInterval(async () => {
             if (!state.running) return;
@@ -368,9 +369,7 @@ function startRunner(db, accountId, getSettings) {
 
 function stopRunner(accountId) {
   const state = runners.get(accountId);
-  if (state) {
-    state.running = false;
-  }
+  if (state) state.running = false;
 }
 
 function isRunning(accountId) {

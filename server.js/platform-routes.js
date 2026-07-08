@@ -124,7 +124,7 @@ function mountPlatformRoutes(app, db, deps) {
     const variantWhere = enabledOnly ? 'AND is_enabled = 1' : '';
     const allPlans = db.prepare(`
       SELECT id, product_id, name, slug, description, price, price_label AS priceLabel, duration,
-             max_sources AS maxSources, max_destinations AS maxDestinations, features, sort_order, is_enabled
+             max_sources AS maxSources, max_destinations AS maxDestinations, priority, features, sort_order, is_enabled
       FROM plugging_plans WHERE product_id IN (${placeholders}) ${variantWhere}
       ORDER BY product_id ASC, sort_order ASC, id ASC
     `).all(...productIds);
@@ -899,11 +899,11 @@ function mountPlatformRoutes(app, db, deps) {
     if (db.prepare('SELECT 1 FROM plugging_plans WHERE slug = ?').get(slug)) slug = `${slug}-${Date.now()}`;
     const r = db.prepare(`
       INSERT INTO plugging_plans (product_id, name, slug, description, price, price_label, duration,
-        max_sources, max_destinations, features, sort_order, is_enabled)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        max_sources, max_destinations, features, sort_order, is_enabled, priority)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(b.productId, b.name, slug, b.description || '', b.price || 0, b.priceLabel || '',
       b.duration || '', b.maxSources || 1, b.maxDestinations || 3, JSON.stringify(b.features || []),
-      b.sortOrder || 0, b.isEnabled !== false ? 1 : 0);
+      b.sortOrder || 0, b.isEnabled !== false ? 1 : 0, b.priority ? 1 : 0);
     res.status(201).json({ id: r.lastInsertRowid, slug });
   });
 
@@ -915,10 +915,10 @@ function mountPlatformRoutes(app, db, deps) {
         price_label = COALESCE(?, price_label), duration = COALESCE(?, duration),
         max_sources = COALESCE(?, max_sources), max_destinations = COALESCE(?, max_destinations),
         features = COALESCE(?, features), sort_order = COALESCE(?, sort_order),
-        is_enabled = COALESCE(?, is_enabled) WHERE id = ?
+        is_enabled = COALESCE(?, is_enabled), priority = COALESCE(?, priority) WHERE id = ?
     `).run(b.productId, b.name, b.description, b.price, b.priceLabel, b.duration, b.maxSources, b.maxDestinations,
       b.features != null ? JSON.stringify(b.features) : null, b.sortOrder,
-      b.isEnabled != null ? (b.isEnabled ? 1 : 0) : null, req.params.id);
+      b.isEnabled != null ? (b.isEnabled ? 1 : 0) : null, b.priority != null ? (b.priority ? 1 : 0) : null, req.params.id);
     res.json({ ok: true });
   });
 

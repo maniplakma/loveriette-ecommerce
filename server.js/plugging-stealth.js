@@ -1,40 +1,31 @@
 /**
- * Human-like timing to reduce Telegram spam / bot detection flags.
+ * Plugging forward timing:
+ * - 3 seconds between each target group within a cycle
+ * - configurable delay (minutes) between completed cycles only
  */
 
-function randomMs(min, max) {
-  return min + Math.floor(Math.random() * (max - min + 1));
+const GROUP_SEND_DELAY_MS = 3000;
+
+function cycleDelayMs(delayMinutes) {
+  const min = Number(delayMinutes);
+  if (!min || min <= 0) return 0;
+  return min * 60 * 1000;
 }
 
-/** Base delay with jitter — never instant, never perfectly regular. */
-function computeStealthDelayMs(delayMinutes) {
-  const delayMin = Number(delayMinutes);
-  const baseMin = delayMin > 0 ? delayMin : 3;
-  const baseMs = baseMin * 60 * 1000;
-  // Cap extremely long waits so testing and small delays still work predictably.
-  const cappedMs = Math.min(baseMs, 120 * 60 * 1000);
-  const jitterPct = 0.12 + Math.random() * 0.28;
-  const sign = Math.random() > 0.45 ? 1 : -1;
-  const withJitter = baseMs + sign * baseMs * jitterPct;
-  return Math.max(60000, Math.round(withJitter));
+function groupSendDelayMs() {
+  return GROUP_SEND_DELAY_MS;
 }
 
-function initialHumanPauseMs() {
-  return randomMs(12000, 45000);
-}
-
-function staggerBetweenTargetsMs() {
-  return randomMs(5000, 18000);
-}
-
-function formatWaitMinutes(ms) {
+function formatDelayLabel(ms) {
+  if (!ms || ms <= 0) return '0 sec';
   const m = ms / 60000;
-  return m >= 1 ? `${m.toFixed(1)} min` : `${Math.round(ms / 1000)} sec`;
+  if (m >= 1) return `${m.toFixed(1)} min`;
+  return `${Math.round(ms / 1000)} sec`;
 }
 
 module.exports = {
-  computeStealthDelayMs,
-  initialHumanPauseMs,
-  staggerBetweenTargetsMs,
-  formatWaitMinutes
+  GROUP_SEND_DELAY_MS,
+  cycleDelayMs,
+  groupSendDelayMs,
+  formatDelayLabel
 };

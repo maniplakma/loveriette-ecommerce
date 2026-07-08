@@ -10,6 +10,13 @@ const { sendLoginCode, verifyLoginCode } = require('./plugging-telegram');
 const { startRunner, stopRunner, isRunning } = require('./plugging-runner');
 const { pickProxyForNewAccount, listPluggingProxies, autoEnableProxySetting, ensureAccountProxy } = require('./plugging-proxy');
 const { logPlugActivity, getAccountActivity, clearAccountActivity } = require('./plugging-activity');
+const {
+  normalizePlugOrder,
+  computeExpiresAtFromDuration,
+  isOrderExpired,
+  formatLimitLabel,
+  ORDER_SELECT
+} = require('./plugging-limits');
 
 function mountPluggingService(app, db, deps) {
   const {
@@ -51,12 +58,9 @@ function mountPluggingService(app, db, deps) {
     return `PLG-MASTER-${crypto.randomBytes(4).toString('hex').toUpperCase()}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
   }
 
-  function normalizePlugOrder(order) {
-    if (!order) return order;
-    if (order.order_ref === 'PLG-MASTER') {
-      return { ...order, maxSources: 999, maxDestinations: 999 };
-    }
-    return order;
+  function loadNormalizedOrder(whereSql, param) {
+    const row = db.prepare(`${ORDER_SELECT} ${whereSql}`).get(param);
+    return normalizePlugOrder(row);
   }
 
   function getCookie(req, name) {
@@ -93,21 +97,11 @@ function mountPluggingService(app, db, deps) {
   }
 
   function getOrderByRef(ref) {
-    return db.prepare(`
-      SELECT po.*, pp.name AS plan_name, pp.max_sources AS maxSources, pp.max_destinations AS maxDestinations
-      FROM plugging_orders po
-      LEFT JOIN plugging_plans pp ON pp.id = po.plan_id
-      WHERE po.order_ref = ?
-    `).get(ref);
+    return loadNormalizedOrder('WHERE po.order_ref = ?', ref);
   }
 
   function getApprovedOrderByAccessKey(key) {
-    return db.prepare(`
-      SELECT po.*, pp.name AS plan_name, pp.max_sources AS maxSources, pp.max_destinations AS maxDestinations
-      FROM plugging_orders po
-      LEFT JOIN plugging_plans pp ON pp.id = po.plan_id
-      WHERE po.access_key = ? AND po.status = 'approved'
-    `).get(String(key || '').trim());
+    return loadNormalizedOrder('WHERE po.access_key = ? AND po.status = ?', [String(key || '').trim(), 'approved']);
   }
 
   function ensurePlugMasterOrder(keyOverride) {
@@ -128,16 +122,14 @@ function mountPluggingService(app, db, deps) {
           UPDATE plugging_orders SET access_key = ?, updated_at = datetime('now') WHERE id = ?
         `).run(key, existing.id);
       }
-      return normalizePlugOrder(db.prepare(`
-        SELECT po.*, pp.name AS plan_name, pp.max_sources AS maxSources, pp.max_destinations AS maxDestinations
-        FROM plugging_orders po
-        LEFT JOIN plugging_plans pp ON pp.id = po.plan_id
-        WHERE po.id = ?
-      `).get(existing.id));
+      return loadNormalizedOrder('WHERE po.id = ?', existing.id);
     }
 
     const plan = db.prepare(`
-      SELECT * FROM plugging_plans WHERE is_enabled = 1 ORDER BY max_sources DESC, max_destinations DESC, id ASC LIMIT 1
+      SELECT * FROM plugging_plans
+      WHERE is_enabled = 1
+      ORDER BY priority DESC, max_sources DESC, max_destinations DESC, id ASC
+      LIMIT 1
     `).get() || db.prepare('SELECT * FROM plugging_plans ORDER BY id ASC LIMIT 1').get();
 
     db.prepare(`
@@ -146,12 +138,7 @@ function mountPluggingService(app, db, deps) {
       ) VALUES ('PLG-MASTER', ?, 'Master Workspace', 'master@localhost', 0, 'approved', ?, datetime('now'))
     `).run(plan?.id || null, key);
 
-    return normalizePlugOrder(db.prepare(`
-      SELECT po.*, pp.name AS plan_name, pp.max_sources AS maxSources, pp.max_destinations AS maxDestinations
-      FROM plugging_orders po
-      LEFT JOIN plugging_plans pp ON pp.id = po.plan_id
-      WHERE po.access_key = ? AND po.status = 'approved'
-    `).get(key));
+    return loadNormalizedOrder('WHERE po.access_key = ? AND po.status = ?', [key, 'approved']);
   }
 
   function resolvePlugAccessKey(key) {
@@ -159,9 +146,12 @@ function mountPluggingService(app, db, deps) {
     if (!trimmed) return null;
     const masterKey = getPlugMasterKey();
     if (masterKey && trimmed === masterKey) {
-      return ensurePlugMasterOrder(masterKey);
+      const order = ensurePlugMasterOrder(masterKey);
+      return order && !isOrderExpired(order) ? order : null;
     }
-    return normalizePlugOrder(getApprovedOrderByAccessKey(trimmed));
+    const order = getApprovedOrderByAccessKey(trimmed);
+    if (!order || isOrderExpired(order)) return null;
+    return order;
   }
 
   function isMasterAccessKey(key) {
@@ -172,7 +162,9 @@ function mountPluggingService(app, db, deps) {
   function requirePlugWorkspace(req, res, next) {
     const key = getCookie(req, COOKIE) || req.headers['x-plug-access-key'];
     const order = resolvePlugAccessKey(key);
-    if (!order) return res.status(401).json({ error: 'Invalid or expired access key. Enter your key at /plugging/workspace' });
+    if (!order) {
+      return res.status(401).json({ error: 'Invalid, expired, or inactive access key. Enter your key at /plugging/workspace' });
+    }
     req.plugOrder = order;
     next();
   }
@@ -281,6 +273,7 @@ function mountPluggingService(app, db, deps) {
       customerName: order.customer_name,
       accessKey: order.status === 'approved' ? order.access_key : null,
       workspaceUrl: order.status === 'approved' ? '/plugging/workspace' : null,
+      expiresAt: order.expires_at || order.expiresAt || null,
       createdAt: order.created_at,
       approvedAt: order.approved_at
     });
@@ -319,7 +312,7 @@ function mountPluggingService(app, db, deps) {
   app.post('/api/plugging/workspace/unlock', (req, res) => {
     const key = String(req.body?.accessKey || '').trim();
     const order = resolvePlugAccessKey(key);
-    if (!order) return res.status(401).json({ error: 'Invalid access key or payment not approved yet' });
+    if (!order) return res.status(401).json({ error: 'Invalid access key, payment not approved yet, or subscription expired' });
     const cookieOpts = isMasterAccessKey(key) ? COOKIE_OPTS_LIFETIME : COOKIE_OPTS;
     res.cookie(COOKIE, key, cookieOpts);
     res.json({
@@ -342,6 +335,11 @@ function mountPluggingService(app, db, deps) {
       planName: req.plugOrder.plan_name,
       maxSources: req.plugOrder.maxSources || 1,
       maxDestinations: req.plugOrder.maxDestinations || 3,
+      maxSourcesLabel: formatLimitLabel(req.plugOrder.maxSources),
+      maxDestinationsLabel: formatLimitLabel(req.plugOrder.maxDestinations),
+      priority: !!req.plugOrder.planPriority,
+      expiresAt: req.plugOrder.expiresAt || null,
+      isMaster: !!req.plugOrder.isMaster,
       accounts: accounts.map(mapAccount)
     });
   });
@@ -583,10 +581,14 @@ function mountPluggingService(app, db, deps) {
 
     if (status === 'approved' && order.status !== 'approved') {
       accessKey = genAccessKey();
+      const plan = db.prepare('SELECT * FROM plugging_plans WHERE id = ?').get(order.plan_id);
+      const expiresAt = computeExpiresAtFromDuration(plan?.duration, new Date());
       db.prepare(`
-        UPDATE plugging_orders SET status = 'approved', access_key = ?, approved_at = datetime('now'), updated_at = datetime('now')
+        UPDATE plugging_orders
+        SET status = 'approved', access_key = ?, approved_at = datetime('now'),
+            expires_at = ?, updated_at = datetime('now')
         WHERE id = ?
-      `).run(accessKey, order.id);
+      `).run(accessKey, expiresAt, order.id);
     } else if (status) {
       db.prepare('UPDATE plugging_orders SET status = ?, updated_at = datetime(\'now\') WHERE id = ?').run(status, order.id);
     }
