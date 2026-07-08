@@ -158,7 +158,13 @@ function isRejectedOrderStatus(status) {
 const PAYMENT_PROOF_WINDOW_MINUTES = 30;
 
 function orderHasPaymentProof(orderRow) {
-  return !!(orderRow?.receipt_url && String(orderRow.receipt_url).trim());
+  const url = String(orderRow?.receipt_url || '').trim();
+  if (!url || url === 'null' || url === 'undefined') return false;
+  if (url.startsWith('/uploads/receipts/')) {
+    const filePath = path.join(receiptsDir, path.basename(url));
+    return fs.existsSync(filePath);
+  }
+  return url.length > 4;
 }
 
 function deleteOrderRecord(orderRow) {
@@ -171,23 +177,22 @@ function deleteOrderRecord(orderRow) {
 }
 
 function purgeOrdersWithoutPaymentProof() {
-  const invalidPending = db.prepare(`
-    SELECT id, redeem_code_id, receipt_url, status
+  const candidates = db.prepare(`
+    SELECT id, redeem_code_id, receipt_url, status, created_at
     FROM orders
-    WHERE status = ?
-      AND (receipt_url IS NULL OR TRIM(receipt_url) = '')
-  `).all(ORDER_STATUS.PENDING);
-
-  const abandoned = db.prepare(`
-    SELECT id, redeem_code_id, receipt_url, status
-    FROM orders
-    WHERE status = ?
-      AND (receipt_url IS NULL OR TRIM(receipt_url) = '')
-      AND datetime(created_at, '+${PAYMENT_PROOF_WINDOW_MINUTES} minutes') < datetime('now')
-  `).all(ORDER_STATUS.PENDING_PAYMENT);
+    WHERE status IN (?, ?)
+  `).all(ORDER_STATUS.PENDING, ORDER_STATUS.PENDING_PAYMENT);
 
   let removed = 0;
-  for (const row of [...invalidPending, ...abandoned]) {
+  for (const row of candidates) {
+    if (orderHasPaymentProof(row)) continue;
+    if (row.status === ORDER_STATUS.PENDING_PAYMENT) {
+      const created = row.created_at
+        ? new Date(row.created_at.includes('T') ? row.created_at : `${row.created_at.replace(' ', 'T')}Z`).getTime()
+        : 0;
+      const expired = Date.now() - created > PAYMENT_PROOF_WINDOW_MINUTES * 60 * 1000;
+      if (!expired) continue;
+    }
     deleteOrderRecord(row);
     removed += 1;
   }
@@ -3275,6 +3280,7 @@ app.get('/admin/me', requireAdmin, (req, res) => {
 });
 
 app.get('/admin/stats', requireAdmin, (req, res) => {
+  purgeOrdersWithoutPaymentProof();
   const orderCount = db.prepare('SELECT COUNT(*) AS c FROM orders').get().c;
   const pendingCount = db.prepare(
     "SELECT COUNT(*) AS c FROM orders WHERE status IN ('pending_payment', 'pending')"
@@ -4306,7 +4312,8 @@ app.get('/admin/all-orders', requireAdmin, (req, res) => {
   if (req.query.from) { query += ' AND date(o.created_at) >= date(?)'; params.push(req.query.from); }
   if (req.query.to) { query += ' AND date(o.created_at) <= date(?)'; params.push(req.query.to); }
   query += ' ORDER BY o.id DESC LIMIT 150';
-  const rows = db.prepare(query).all(...params);
+  let rows = db.prepare(query).all(...params);
+  if (tab === 'pending') rows = rows.filter(orderHasPaymentProof);
   res.json(mapOrderCards(rows));
 });
 

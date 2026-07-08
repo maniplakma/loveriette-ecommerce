@@ -172,6 +172,27 @@ async function runApiChecks(adminCookie) {
   } else {
     fail('Reject requires reason', 'missing seed data');
   }
+
+  if (pm && product) {
+    const seq2 = db.prepare('SELECT COALESCE(MAX(order_seq), 0) + 1 AS n FROM orders').get().n;
+    const ghostNumber = String(seq2);
+    db.prepare(`
+      INSERT INTO orders (
+        order_number, order_seq, email, payment_method_id,
+        subtotal, discount, total, status, tingi_drop_enabled, fulfillment_mode
+      ) VALUES (?, ?, ?, ?, ?, 0, ?, 'pending', 0, 'auto')
+    `).run(ghostNumber, seq2, 'ghost-pending@test.local', pm.id, product.price, product.price);
+    const ghostList = await request('GET', '/admin/all-orders?tab=pending', null, adminCookie);
+    const ghostVisible = ghostList.status === 200
+      && Array.isArray(ghostList.json)
+      && ghostList.json.some((o) => o.orderNumber === ghostNumber || String(o.displayId) === ghostNumber);
+    const ghostRow = db.prepare('SELECT id FROM orders WHERE order_number = ?').get(ghostNumber);
+    if (!ghostVisible && !ghostRow) ok('pending without proof purged from admin');
+    else {
+      if (ghostRow) db.prepare('DELETE FROM orders WHERE id = ?').run(ghostRow.id);
+      fail('pending without proof purged', ghostVisible ? 'listed' : 'still in db');
+    }
+  }
 }
 
 async function runOrderFlowCheck(adminCookie) {
