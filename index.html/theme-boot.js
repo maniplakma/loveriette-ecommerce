@@ -73,4 +73,19 @@
   const active = resolve(cached || DEFAULTS);
   apply(active);
   window.__loverietteThemeBootKey = `${active.background}|${active.font}|${active.primary}|${active.secondary}`;
+
+  if (!document.getElementById('site-fonts')) {
+    const link = document.createElement('link');
+    link.id = 'site-fonts';
+    link.rel = 'stylesheet';
+    link.href = 'https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Bodoni+Moda:ital,opsz,wght@0,6..96,400;0,6..96,500;1,6..96,400&family=Inter:wght@400;500;600;700&family=Pinyon+Script&family=Poppins:wght@600;700;800&family=Syne:wght@700;800&display=swap';
+    document.head.appendChild(link);
+    const markReady = () => document.documentElement.classList.add('fonts-ready');
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(markReady).catch(markReady);
+    } else {
+      link.addEventListener('load', markReady);
+      setTimeout(markReady, 1200);
+    }
+  }
 })();

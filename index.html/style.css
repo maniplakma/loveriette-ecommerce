@@ -88,7 +88,7 @@ html {
 }
 
 body {
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   font-size: var(--text-base);
   background-color: var(--bg);
   background-image:
@@ -104,6 +104,10 @@ body {
   padding-bottom: env(safe-area-inset-bottom);
   overflow-x: hidden;
   max-width: 100%;
+}
+
+html.fonts-ready body {
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 }
 
 h1 {
