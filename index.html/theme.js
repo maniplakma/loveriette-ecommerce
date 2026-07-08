@@ -107,7 +107,25 @@ function initTheme() {
   document.documentElement.classList.add('light-mode');
   if (document.body) document.body.classList.add('light-mode');
   updateThemeMeta();
+  applyModuleNav();
 }
+
+async function applyModuleNav() {
+  try {
+    const data = window.ApiCache
+      ? await ApiCache.fetchJson('/api/modules', {}, 60000)
+      : await fetch('/api/modules', { credentials: 'include' }).then((r) => r.json());
+    document.querySelectorAll('.nav-left a, .nav-menu a').forEach((a) => {
+      const href = (a.getAttribute('href') || '').toLowerCase();
+      const li = a.closest('li');
+      if (!li) return;
+      if (!data.shop && (href === '/shop' || href.endsWith('shop.html'))) li.hidden = true;
+      if (!data.plugging && (href === '/plugging' || href.includes('plugging'))) li.hidden = true;
+      if (!data.websiteMaking && href.includes('website-making')) li.hidden = true;
+    });
+  } catch (_) { /* non-fatal */ }
+}
+window.applyModuleNav = applyModuleNav;
 
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', initTheme, { once: true });

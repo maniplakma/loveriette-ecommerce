@@ -4173,6 +4173,7 @@ function mapOrderCards(rows) {
     const items = itemsByOrder.get(o.id) || [];
     const first = items[0];
     const buyerName = o.buyer_name || o.user_name || (o.email ? o.email.split('@')[0] : 'Guest');
+    const stock = orderItemsStockStatus(o.id, o.status);
     return {
       id: o.id,
       orderNumber: o.order_number,
@@ -4189,8 +4190,8 @@ function mapOrderCards(rows) {
       itemName: first ? first.name : '—',
       itemQty: first ? first.quantity : 0,
       itemCount: items.length,
-      stockState: null,
-      stockLabel: null,
+      stockState: stock.state,
+      stockLabel: stock.label,
       total: o.total,
       paymentMethod: o.payment_method_name,
       status: o.status,

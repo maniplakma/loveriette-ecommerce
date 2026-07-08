@@ -8,7 +8,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="theme-color" content="#080404">
   <title>Admin — loveriette</title>
-  <link rel="stylesheet" href="theme-critical.css?v=20260705cleanup">
+  <link rel="stylesheet" href="theme-critical.css?v=20260708prod">
   <script src="theme-boot.js?v=20260705cleanup"></script>
   <style>
     /* Critical: .admin-account-pane { display:flex } overrides [hidden] without this */
@@ -17,10 +17,10 @@
     body.admin-page .site-page-corners { display: none !important; }
   </style>
   <link rel="stylesheet" href="style.css?v=20260615brand-gloss">
-  <link rel="stylesheet" href="theme.css?v=20260703audit">
+  <link rel="stylesheet" href="theme.css?v=20260708prod">
   <link rel="stylesheet" href="admin.css?v=20260707deploy">
-  <link rel="stylesheet" href="mobile.css?v=20260615typography">
-  <link rel="stylesheet" href="performance-mobile.css?v=20260705cleanup">
+  <link rel="stylesheet" href="mobile.css?v=20260708prod">
+  <link rel="stylesheet" href="performance-mobile.css?v=20260708prod">
   <script src="theme.js?v=20260705cleanup" defer></script>
   <script src="theme-colors.js?v=20260705cleanup" defer></script>
 </head>
@@ -638,6 +638,12 @@
             <button class="admin-btn admin-btn-primary admin-btn-sm" id="web-pkg-add">+ Add Package</button>
           </div>
           <div class="admin-order-list" id="web-packages-list"></div>
+        </div>
+        <div class="admin-panel" style="margin-top:1rem">
+          <div class="admin-panel-head"><h2>Portfolio</h2>
+            <button class="admin-btn admin-btn-primary admin-btn-sm" id="web-portfolio-add">+ Add Item</button>
+          </div>
+          <div class="admin-order-list" id="web-portfolio-list"></div>
         </div>
         <div class="admin-panel" style="margin-top:1rem">
           <div class="admin-panel-head"><h2>Inquiries</h2></div>

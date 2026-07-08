@@ -68,7 +68,7 @@ function mountPlatformRoutes(app, db, deps) {
       content.items = fallback.items;
     }
     if (section.key === 'service_categories' && Array.isArray(content.items)) {
-      content.items = stripLendingItems(content.items);
+      content.items = filterServiceCategoryItems(stripLendingItems(content.items));
       if (!content.items.length) content.items = fallback.items;
     }
     return { ...section, content };
@@ -130,6 +130,33 @@ function mountPlatformRoutes(app, db, deps) {
     const out = {};
     rows.forEach((r) => { out[r.key] = r.value; });
     return out;
+  }
+
+  function isShopEnabled() {
+    return getPlatformSettings().shop_enabled !== '0';
+  }
+
+  function isPluggingEnabled() {
+    return getPluggingSettings().plugging_enabled !== '0';
+  }
+
+  function isWebsiteMakingEnabled() {
+    return getPlatformSettings().website_making_enabled !== '0';
+  }
+
+  function filterServiceCategoryItems(items) {
+    if (!Array.isArray(items)) return items;
+    const shopOn = isShopEnabled();
+    const plugOn = isPluggingEnabled();
+    const webOn = isWebsiteMakingEnabled();
+    return items.filter((i) => {
+      if (isLendingServiceItem(i)) return false;
+      const link = String(i?.link || '').toLowerCase();
+      if (!shopOn && (link === '/shop' || link.startsWith('/product'))) return false;
+      if (!plugOn && link.startsWith('/plugging')) return false;
+      if (!webOn && link.includes('website-making')) return false;
+      return true;
+    });
   }
 
   function mapPluggingProducts(db, enabledOnly = true) {
@@ -252,12 +279,13 @@ function mountPlatformRoutes(app, db, deps) {
   // ── Pretty URL page routes ──
   const pageRoutes = [
     ['/', 'index.html'],
-    ['/shop', 'shop.html'],
-    ['/website-making', 'website-making.html'],
-    ['/plugging', 'plugging.html']
+    ['/shop', 'shop.html', () => isShopEnabled()],
+    ['/website-making', 'website-making.html', () => isWebsiteMakingEnabled()],
+    ['/plugging', 'plugging.html', () => isPluggingEnabled()]
   ];
-  pageRoutes.forEach(([route, file]) => {
+  pageRoutes.forEach(([route, file, enabledCheck]) => {
     app.get(route, (req, res) => {
+      if (enabledCheck && !enabledCheck()) return res.redirect(302, '/');
       trackVisit(req);
       sendHtmlPage(res, frontendDir, file);
     });
@@ -270,6 +298,7 @@ function mountPlatformRoutes(app, db, deps) {
   app.get(['/product', '/product/'], (req, res) => res.redirect(302, '/shop'));
 
   app.get('/product/:slug', (req, res) => {
+    if (!isShopEnabled()) return res.redirect(302, '/');
     if (isInvalidPageSlug(req.params.slug)) {
       return res.redirect(302, '/shop');
     }
@@ -278,6 +307,7 @@ function mountPlatformRoutes(app, db, deps) {
   });
 
   app.get('/website-making/inquiry/:ref', (req, res) => {
+    if (!isWebsiteMakingEnabled()) return res.redirect(302, '/');
     const ref = String(req.params.ref || '').trim();
     if (!ref || ref.length > 32) return res.redirect(302, '/website-making');
     trackVisit(req);
@@ -285,6 +315,7 @@ function mountPlatformRoutes(app, db, deps) {
   });
 
   app.get('/website-making/:slug', (req, res) => {
+    if (!isWebsiteMakingEnabled()) return res.redirect(302, '/');
     if (req.params.slug === 'inquiry') return res.redirect(302, '/website-making');
     if (isInvalidPageSlug(req.params.slug)) return res.redirect(302, '/website-making');
     trackVisit(req);
@@ -292,6 +323,7 @@ function mountPlatformRoutes(app, db, deps) {
   });
 
   app.get('/plugging/plan/:slug', (req, res) => {
+    if (!isPluggingEnabled()) return res.redirect(302, '/');
     if (isInvalidPageSlug(req.params.slug)) return res.redirect(302, '/plugging');
     trackVisit(req);
     sendHtmlPage(res, frontendDir, 'plugging-product.html');
@@ -336,6 +368,15 @@ function mountPlatformRoutes(app, db, deps) {
     res.json({ ok: true });
   });
 
+  app.get('/api/modules', (req, res) => {
+    res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=120');
+    res.json({
+      shop: isShopEnabled(),
+      plugging: isPluggingEnabled(),
+      websiteMaking: isWebsiteMakingEnabled()
+    });
+  });
+
   // ── Products by slug ──
   app.get('/api/products/slug/:slug', (req, res) => {
     const product = db.prepare('SELECT * FROM products WHERE slug = ? AND is_enabled != 0').get(req.params.slug);
@@ -354,6 +395,9 @@ function mountPlatformRoutes(app, db, deps) {
   // ── Website making public ──
   app.get('/api/website-making', (req, res) => {
     res.set('Cache-Control', 'public, max-age=30');
+    if (!isWebsiteMakingEnabled()) {
+      return res.json({ enabled: false, packages: [], portfolio: [], faqs: [], shareUrl: '/website-making' });
+    }
     const packages = db.prepare(`
       SELECT id, name, slug, category, description, price, price_label AS priceLabel, features, image_url AS imageUrl,
              meta_title AS metaTitle, meta_description AS metaDescription
@@ -369,11 +413,12 @@ function mountPlatformRoutes(app, db, deps) {
     const faqs = db.prepare(
       'SELECT question, answer FROM cms_faqs WHERE scope = ? AND is_enabled = 1 ORDER BY sort_order ASC'
     ).all('website');
-    res.json({ packages, portfolio, faqs, shareUrl: '/website-making' });
+    res.json({ enabled: true, packages, portfolio, faqs, shareUrl: '/website-making' });
   });
 
   app.get('/api/website-making/packages/:slug', (req, res) => {
     res.set('Cache-Control', 'public, max-age=30');
+    if (!isWebsiteMakingEnabled()) return res.status(404).json({ error: 'Package not found' });
     const pkg = db.prepare('SELECT * FROM website_packages WHERE slug = ? AND is_enabled = 1').get(req.params.slug);
     if (!pkg) return res.status(404).json({ error: 'Package not found' });
     const others = db.prepare(`
@@ -398,6 +443,9 @@ function mountPlatformRoutes(app, db, deps) {
   });
 
   app.post('/api/website-making/inquiry', (req, res) => {
+    if (!isWebsiteMakingEnabled()) {
+      return res.status(403).json({ error: 'Website Making is currently unavailable' });
+    }
     const { packageId, name, email, phone, message } = req.body || {};
     if (!name || !email) return res.status(400).json({ error: 'Name and email are required' });
     const inquiryRef = genInquiryRef();

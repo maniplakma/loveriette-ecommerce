@@ -60,8 +60,9 @@ function mountPluggingService(app, db, deps) {
     return `PLG-MASTER-${crypto.randomBytes(4).toString('hex').toUpperCase()}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
   }
 
-  function loadNormalizedOrder(whereSql, param) {
-    const row = db.prepare(`${ORDER_SELECT} ${whereSql}`).get(param);
+  function loadNormalizedOrder(whereSql, ...params) {
+    const args = params.length === 1 && Array.isArray(params[0]) ? params[0] : params;
+    const row = db.prepare(`${ORDER_SELECT} ${whereSql}`).get(...args);
     return normalizePlugOrder(row);
   }
 

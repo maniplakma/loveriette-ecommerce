@@ -122,6 +122,12 @@
     }
 
     applyPageMeta();
+    if (data.enabled === false) {
+      renderPackages([], { fromApi: true });
+      renderFaqs([]);
+      renderPortfolio([]);
+      return;
+    }
     renderPackages(data.packages, { fromApi: true });
     renderFaqs(data.faqs);
     renderPortfolio(data.portfolio);

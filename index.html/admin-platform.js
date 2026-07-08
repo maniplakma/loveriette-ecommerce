@@ -142,6 +142,16 @@
         <button class="admin-btn admin-btn-danger admin-btn-sm" data-del-pkg="${p.id}">Delete</button>
       </div>`).join('') || '<p class="admin-empty">No packages.</p>';
 
+    document.getElementById('web-portfolio-list').innerHTML = (data.portfolio || []).map((item) => `
+      <div class="admin-card" style="margin-bottom:0.5rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem">
+        <div>
+          <strong>${esc(item.title)}</strong>${item.is_enabled === 0 ? ' <span class="admin-card-meta">(disabled)</span>' : ''}<br>
+          <small class="admin-card-meta">${esc((item.description || '').slice(0, 80))}</small>
+          ${item.link_url ? `<br><small class="admin-card-meta"><a href="${esc(item.link_url)}" target="_blank" rel="noopener">${esc(item.link_url)}</a></small>` : ''}
+        </div>
+        <button class="admin-btn admin-btn-danger admin-btn-sm" data-del-portfolio="${item.id}">Delete</button>
+      </div>`).join('') || '<p class="admin-empty">No portfolio items yet.</p>';
+
     document.getElementById('web-inquiries-list').innerHTML = (data.inquiries || []).map((i) => `
       <div class="admin-card inquiry-admin-row" style="margin-bottom:0.5rem" data-inquiry-id="${i.id}">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.5rem;flex-wrap:wrap">
@@ -173,6 +183,12 @@
       await api(`/admin/website-making/packages/${b.dataset.delPkg}`, { method: 'DELETE' });
       loadPlatformWebsite();
     }));
+
+    document.querySelectorAll('[data-del-portfolio]').forEach((b) => b.addEventListener('click', async () => {
+      if (!confirm('Delete portfolio item?')) return;
+      await api(`/admin/website-making/portfolio/${b.dataset.delPortfolio}`, { method: 'DELETE' });
+      loadPlatformWebsite();
+    }));
   };
 
   function bindWebsiteEvents() {
@@ -185,6 +201,19 @@
       const price = prompt('Price (₱):', '15000');
       if (!name) return;
       await api('/admin/website-making/packages', { method: 'POST', body: { name, price: Number(price) || 0, description: '', features: [] } });
+      loadPlatformWebsite();
+    });
+
+    document.getElementById('web-portfolio-add')?.addEventListener('click', async () => {
+      const title = prompt('Portfolio title:');
+      if (!title) return;
+      const description = prompt('Description:', '') || '';
+      const linkUrl = prompt('Project URL (optional):', '') || '';
+      const imageUrl = prompt('Image URL (optional):', '') || '';
+      await api('/admin/website-making/portfolio', {
+        method: 'POST',
+        body: { title, description, linkUrl, imageUrl, sortOrder: 0 }
+      });
       loadPlatformWebsite();
     });
   }
