@@ -31,7 +31,8 @@ const {
   trySendOrderDeliveredEmail,
   queueBuyerEmail,
   parseBuyerEmailSettings,
-  sendBuyerEmail
+  sendBuyerEmail,
+  formatGmailSendError
 } = require('./mailer');
 const {
   buildOrderActivityMessage,
@@ -152,6 +153,45 @@ function isPendingReviewStatus(status) {
 
 function isRejectedOrderStatus(status) {
   return status === ORDER_STATUS.REJECTED;
+}
+
+const PAYMENT_PROOF_WINDOW_MINUTES = 30;
+
+function orderHasPaymentProof(orderRow) {
+  return !!(orderRow?.receipt_url && String(orderRow.receipt_url).trim());
+}
+
+function deleteOrderRecord(orderRow) {
+  if (!orderRow?.id) return;
+  if (orderRow.redeem_code_id) {
+    db.prepare('UPDATE redeem_codes SET used_count = used_count - 1 WHERE id = ? AND used_count > 0')
+      .run(orderRow.redeem_code_id);
+  }
+  db.prepare('DELETE FROM orders WHERE id = ?').run(orderRow.id);
+}
+
+function purgeOrdersWithoutPaymentProof() {
+  const invalidPending = db.prepare(`
+    SELECT id, redeem_code_id, receipt_url, status
+    FROM orders
+    WHERE status = ?
+      AND (receipt_url IS NULL OR TRIM(receipt_url) = '')
+  `).all(ORDER_STATUS.PENDING);
+
+  const abandoned = db.prepare(`
+    SELECT id, redeem_code_id, receipt_url, status
+    FROM orders
+    WHERE status = ?
+      AND (receipt_url IS NULL OR TRIM(receipt_url) = '')
+      AND datetime(created_at, '+${PAYMENT_PROOF_WINDOW_MINUTES} minutes') < datetime('now')
+  `).all(ORDER_STATUS.PENDING_PAYMENT);
+
+  let removed = 0;
+  for (const row of [...invalidPending, ...abandoned]) {
+    deleteOrderRecord(row);
+    removed += 1;
+  }
+  return removed;
 }
 
 function parseProofUrls(raw) {
@@ -4244,6 +4284,7 @@ const ALL_ORDER_TABS = {
 
 app.get('/admin/all-orders', requireAdmin, (req, res) => {
   const tab = ALL_ORDER_TABS[req.query.tab] ? req.query.tab : 'pending';
+  if (tab === 'pending') purgeOrdersWithoutPaymentProof();
   const statuses = ALL_ORDER_TABS[tab];
   const params = [...statuses];
   let query = `
@@ -4253,6 +4294,9 @@ app.get('/admin/all-orders', requireAdmin, (req, res) => {
     LEFT JOIN users u ON u.id = o.user_id
     WHERE o.status IN (${statuses.map(() => '?').join(',')})
   `;
+  if (tab === 'pending') {
+    query += ` AND o.receipt_url IS NOT NULL AND TRIM(o.receipt_url) != ''`;
+  }
   if (req.query.search) {
     query += ` AND (o.order_number LIKE ? OR LOWER(o.email) LIKE ?
                 OR o.id IN (SELECT order_id FROM order_items WHERE LOWER(product_name) LIKE ?))`;
@@ -5542,13 +5586,26 @@ app.put('/admin/chat-seller-bot', requireAdmin, (req, res) => {
 const INTEGRATION_KEYS = ['gmail', 'chat-seller', 'buyer-emails'];
 
 function mergeBuyerEmailSettings(existing = {}, incoming = {}) {
+  const bool = (val, fallback = true) => {
+    if (val === true || val === 'true' || val === 1 || val === '1') return true;
+    if (val === false || val === 'false' || val === 0 || val === '0') return false;
+    return fallback;
+  };
   return {
     ...existing,
     ...incoming,
-    enabled: incoming.enabled !== false && incoming.enabled !== 'false',
-    welcome: incoming.welcome !== false && incoming.welcome !== 'false',
-    password: incoming.password !== false && incoming.password !== 'false',
-    orderDelivered: incoming.orderDelivered !== false && incoming.orderDelivered !== 'false'
+    enabled: Object.prototype.hasOwnProperty.call(incoming, 'enabled')
+      ? bool(incoming.enabled, false)
+      : bool(existing.enabled, false),
+    welcome: Object.prototype.hasOwnProperty.call(incoming, 'welcome')
+      ? bool(incoming.welcome, true)
+      : bool(existing.welcome, true),
+    password: Object.prototype.hasOwnProperty.call(incoming, 'password')
+      ? bool(incoming.password, true)
+      : bool(existing.password, true),
+    orderDelivered: Object.prototype.hasOwnProperty.call(incoming, 'orderDelivered')
+      ? bool(incoming.orderDelivered, true)
+      : bool(existing.orderDelivered, true)
   };
 }
 function getIntegration(name) {
@@ -5743,7 +5800,7 @@ app.put('/admin/integrations/:name', requireAdmin, (req, res) => {
 
   if (req.params.name === 'buyer-emails' && merged.enabled && !getActiveGmailConnection(db)) {
     return res.status(400).json({
-      error: 'Connect Gmail first (riettemadzehn@gmail.com) before enabling buyer emails.'
+      error: 'Connect Gmail first under Gmail OAuth before enabling buyer emails.'
     });
   }
 
@@ -5753,7 +5810,14 @@ app.put('/admin/integrations/:name', requireAdmin, (req, res) => {
 
 app.post('/admin/integrations/test-buyer-email', requireAdmin, async (req, res) => {
   const toEmail = String(req.body?.testEmail || '').trim();
-  if (!toEmail) return res.status(400).json({ ok: false, message: 'Test email address is required' });
+  if (!toEmail) {
+    return res.status(400).json({ ok: false, error: 'Test email address is required', message: 'Test email address is required' });
+  }
+  const conn = getActiveGmailConnection(db);
+  if (!conn?.access_token_enc) {
+    const msg = 'Gmail is not connected — open Gmail OAuth and connect your seller inbox first.';
+    return res.status(400).json({ ok: false, error: msg, message: msg });
+  }
   try {
     const { buildWelcomeEmail } = require('./mailer-templates');
     const siteUrl = String(getSetting('site_public_url', '') || appConfig.publicUrl || 'https://loveriette.shop').replace(/\/$/, '');
@@ -5767,7 +5831,8 @@ app.post('/admin/integrations/test-buyer-email', requireAdmin, async (req, res) 
     });
     res.json({ ok: true, message: `Test buyer email sent to ${toEmail}` });
   } catch (err) {
-    res.status(400).json({ ok: false, message: err.message || 'Test email failed' });
+    const msg = formatGmailSendError(err);
+    res.status(400).json({ ok: false, error: msg, message: msg });
   }
 });
 
@@ -5849,6 +5914,14 @@ app.listen(port, host, () => {
   }
   processExpiredTingiHolds();
   setInterval(processExpiredTingiHolds, 15 * 60 * 1000);
+  const removedOrders = purgeOrdersWithoutPaymentProof();
+  if (removedOrders > 0) {
+    console.log(`[orders] Purged ${removedOrders} order(s) without payment proof`);
+  }
+  setInterval(() => {
+    const n = purgeOrdersWithoutPaymentProof();
+    if (n > 0) console.log(`[orders] Purged ${n} order(s) without payment proof`);
+  }, 5 * 60 * 1000);
   purgeExpiredGmail(db);
   setInterval(() => purgeExpiredGmail(db), 60 * 60 * 1000);
 });
