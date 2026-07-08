@@ -125,6 +125,52 @@ function showWorkspace() {
   else renderEmptyDetail();
 }
 
+function readConfigForm() {
+  return {
+    sourceLink: document.getElementById('cfg-source')?.value?.trim() || '',
+    displayName: document.getElementById('cfg-display')?.value?.trim() || '',
+    delayMinutes: Number(document.getElementById('cfg-delay')?.value) || 0,
+    targetsText: document.getElementById('cfg-targets')?.value || ''
+  };
+}
+
+function setConfigSaveMessage(text, isError = false) {
+  const msg = document.getElementById('cfg-save-msg');
+  if (!msg) return;
+  msg.hidden = !text;
+  msg.textContent = text || '';
+  msg.className = isError ? 'plug-form-msg plug-form-error' : 'plug-form-msg plug-form-success';
+}
+
+async function saveAccountConfig(id, { silent = false } = {}) {
+  const config = readConfigForm();
+  try {
+    const data = await api(`/api/plugging/workspace/accounts/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(config)
+    });
+    workspace = await api('/api/plugging/workspace');
+    renderAccountList();
+    updateAccountStats(id);
+    const saved = workspace.accounts?.find((x) => x.id === id);
+    if (saved) {
+      const source = document.getElementById('cfg-source');
+      const display = document.getElementById('cfg-display');
+      const delay = document.getElementById('cfg-delay');
+      const targets = document.getElementById('cfg-targets');
+      if (source) source.value = saved.sourceLink || '';
+      if (display) display.value = saved.displayName || '';
+      if (delay) delay.value = saved.delayMinutes ?? 70;
+      if (targets) targets.value = saved.targetsText || '';
+    }
+    if (!silent) setConfigSaveMessage('Settings saved.');
+    return data;
+  } catch (e) {
+    if (!silent) setConfigSaveMessage(e.message, true);
+    throw e;
+  }
+}
+
 function renderEmptyDetail() {
   stopActivityPoll();
   document.getElementById('account-detail').innerHTML = `
@@ -211,8 +257,7 @@ function renderAccountDetail(id) {
       </div>
       <div class="plug-actions">
         ${authed ? `<button type="button" class="btn-primary-platform plug-btn-compact" data-action="start">▶ Start</button>
-        <button type="button" class="btn-outline-platform plug-btn-compact" data-action="stop">Stop</button>
-        <button type="button" class="btn-outline-platform plug-btn-compact" data-action="save">Save</button>` : ''}
+        <button type="button" class="btn-outline-platform plug-btn-compact" data-action="stop">Stop</button>` : ''}
         <button type="button" class="plug-btn plug-btn-danger plug-btn-compact" data-action="delete">Delete</button>
       </div>
     </div>
@@ -239,7 +284,7 @@ function renderAccountDetail(id) {
     </div>
     <div class="plug-panel">
       <h3>Forwarding Setup</h3>
-      <p class="plug-panel-desc">Configure source, targets, and delay — then hit Start.</p>
+      <p class="plug-panel-desc">Configure source, targets, and delay — save first, then start.</p>
       <label>Source chat / channel link</label>
       <input id="cfg-source" class="plug-field-input" value="${esc(a.sourceLink)}" placeholder="https://t.me/sourcechannel">
       <label>Display name (optional prefix)</label>
@@ -248,6 +293,10 @@ function renderAccountDetail(id) {
       <input id="cfg-delay" class="plug-field-input" type="number" min="0" value="${a.delayMinutes}">
       <label>Target groups — one link per line</label>
       <textarea id="cfg-targets" class="plug-field-textarea" placeholder="https://t.me/yourgroup1\nhttps://t.me/yourgroup2">${esc(a.targetsText)}</textarea>
+      <div class="plug-config-actions">
+        <button type="button" class="btn-primary-platform plug-btn-compact" data-action="save-config">Save Settings</button>
+      </div>
+      <p id="cfg-save-msg" class="plug-form-msg" hidden></p>
       ${a.lastError ? `<p class="plug-last-error">Last error: ${esc(a.lastError)}</p>` : ''}
     </div>
     <div class="plug-panel plug-activity-panel">
@@ -279,25 +328,25 @@ function renderAccountDetail(id) {
     await refreshWorkspace();
   });
 
-  el.querySelector('[data-action="save"]')?.addEventListener('click', async () => {
-    await api(`/api/plugging/workspace/accounts/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify({
-        sourceLink: document.getElementById('cfg-source').value,
-        displayName: document.getElementById('cfg-display').value,
-        delayMinutes: Number(document.getElementById('cfg-delay').value) || 0,
-        targetsText: document.getElementById('cfg-targets').value
-      })
-    });
-    await refreshWorkspace();
+  el.querySelector('[data-action="save-config"]')?.addEventListener('click', async () => {
+    try {
+      await saveAccountConfig(id);
+    } catch (_) { /* message shown */ }
   });
 
   el.querySelector('[data-action="start"]')?.addEventListener('click', async () => {
     try {
-      await api(`/api/plugging/workspace/accounts/${id}/start`, { method: 'POST' });
+      setConfigSaveMessage('');
+      const config = readConfigForm();
+      await api(`/api/plugging/workspace/accounts/${id}/start`, {
+        method: 'POST',
+        body: JSON.stringify(config)
+      });
       await refreshWorkspace();
       startActivityPoll(id);
-    } catch (e) { alert(e.message); }
+    } catch (e) {
+      setConfigSaveMessage(e.message, true);
+    }
   });
 
   el.querySelector('[data-action="stop"]')?.addEventListener('click', async () => {

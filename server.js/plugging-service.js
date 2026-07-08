@@ -9,6 +9,7 @@ const { sendHtmlPage } = require('./send-html-page');
 const { sendLoginCode, verifyLoginCode } = require('./plugging-telegram');
 const { startRunner, stopRunner, isRunning } = require('./plugging-runner');
 const { pickProxyForNewAccount, listPluggingProxies, autoEnableProxySetting, ensureAccountProxy } = require('./plugging-proxy');
+const { logPlugActivity, getAccountActivity, clearAccountActivity } = require('./plugging-activity');
 
 function mountPluggingService(app, db, deps) {
   const {
@@ -196,6 +197,41 @@ function mountPluggingService(app, db, deps) {
     };
   }
 
+  function persistAccountConfig(account, body, maxDestinations) {
+    const sourceLink = String(body.sourceLink ?? account.source_link ?? '').trim();
+    const displayName = String(body.displayName ?? account.display_name ?? '').trim();
+    const delayMinutes = body.delayMinutes != null
+      ? Math.max(0, Number(body.delayMinutes) || 0)
+      : Number(account.delay_minutes) || 0;
+    const targetsText = body.targetsText != null ? String(body.targetsText) : String(account.targets_text || '');
+    const label = body.label != null ? String(body.label).trim() : String(account.label || '');
+    const targetLines = targetsText.split(/\r?\n/).filter((line) => line.trim()).length;
+
+    if (!sourceLink) {
+      throw new Error('Source chat / channel link is required');
+    }
+    if (targetLines < 1) {
+      throw new Error('Add at least one target group link');
+    }
+    if (targetLines > (maxDestinations || 3)) {
+      throw new Error(`Your plan allows up to ${maxDestinations || 3} destination groups`);
+    }
+
+    db.prepare(`
+      UPDATE plugging_accounts SET
+        label = ?,
+        source_link = ?,
+        display_name = ?,
+        delay_minutes = ?,
+        targets_text = ?,
+        last_error = '',
+        updated_at = datetime('now')
+      WHERE id = ?
+    `).run(label, sourceLink, displayName, delayMinutes, targetsText, account.id);
+
+    return db.prepare('SELECT * FROM plugging_accounts WHERE id = ?').get(account.id);
+  }
+
   // ── Pages ──
   [
     ['/plugging/subscribe', 'plugging-subscribe.html'],
@@ -368,27 +404,31 @@ function mountPluggingService(app, db, deps) {
       return res.status(400).json({ error: 'Complete Telegram login first' });
     }
 
-    const b = req.body || {};
-    const targets = String(b.targetsText ?? account.targets_text);
-    const targetLines = targets.split(/\r?\n/).filter((l) => l.trim()).length;
-    if (targetLines > (req.plugOrder.maxDestinations || 3)) {
-      return res.status(400).json({ error: `Your plan allows up to ${req.plugOrder.maxDestinations} destination groups` });
+    try {
+      const updated = persistAccountConfig(account, req.body || {}, req.plugOrder.maxDestinations);
+      res.json({ ok: true, account: mapAccount(updated) });
+    } catch (err) {
+      res.status(400).json({ error: err.message || 'Could not save forwarding settings' });
     }
-
-    db.prepare(`
-      UPDATE plugging_accounts SET label = COALESCE(?, label), source_link = COALESCE(?, source_link),
-        display_name = COALESCE(?, display_name), delay_minutes = COALESCE(?, delay_minutes),
-        targets_text = COALESCE(?, targets_text), updated_at = datetime('now') WHERE id = ?
-    `).run(b.label, b.sourceLink, b.displayName, b.delayMinutes, b.targetsText, account.id);
-
-    res.json({ account: mapAccount(db.prepare('SELECT * FROM plugging_accounts WHERE id = ?').get(account.id)) });
   });
 
   app.post('/api/plugging/workspace/accounts/:id/start', requirePlugWorkspace, (req, res) => {
-    const account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ? AND order_id = ?')
+    let account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ? AND order_id = ?')
       .get(req.params.id, req.plugOrder.id);
     if (!account) return res.status(404).json({ error: 'Account not found' });
+    if (account.auth_status !== 'authenticated') {
+      return res.status(400).json({ error: 'Complete Telegram login first' });
+    }
     try {
+      const body = req.body || {};
+      if (body.sourceLink != null || body.targetsText != null || body.displayName != null || body.delayMinutes != null) {
+        account = persistAccountConfig(account, body, req.plugOrder.maxDestinations);
+      } else if (!String(account.source_link || '').trim()) {
+        return res.status(400).json({ error: 'Save a source chat link before starting' });
+      } else if (!String(account.targets_text || '').split(/\r?\n/).filter((l) => l.trim()).length) {
+        return res.status(400).json({ error: 'Save at least one target group before starting' });
+      }
+
       ensureAccountProxy(db, account.id, getPluggingSettings());
       startRunner(db, account.id, getPluggingSettings);
       res.json({ ok: true, runnerStatus: 'running' });
