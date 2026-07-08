@@ -758,6 +758,7 @@ body.plug-body {
 }
 
 .plug-activity-success .plug-activity-badge { background: rgba(63, 185, 80, 0.15); color: #3fb950; }
+.plug-activity-complete .plug-activity-badge { background: rgba(88, 166, 255, 0.15); color: #58a6ff; }
 .plug-activity-error .plug-activity-badge { background: rgba(229, 9, 20, 0.15); color: #e57373; }
 .plug-activity-cycle .plug-activity-badge { background: rgba(88, 166, 255, 0.15); color: #58a6ff; }
 .plug-activity-started .plug-activity-badge,

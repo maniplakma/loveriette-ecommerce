@@ -23,7 +23,15 @@ function formatActivityTime(iso) {
 }
 
 function activityKindLabel(kind) {
-  const map = { success: 'Complete', error: 'Error', cycle: 'Detected', started: 'Started', stopped: 'Stopped', info: 'Info' };
+  const map = {
+    success: 'Sent',
+    complete: 'Complete',
+    error: 'Error',
+    cycle: 'Detected',
+    started: 'Started',
+    stopped: 'Stopped',
+    info: 'Info'
+  };
   return map[kind] || kind;
 }
 

@@ -1,5 +1,6 @@
 /**
  * In-process forwarding runners for plugging accounts.
+ * Keeps running on bad links / per-target errors — logs to live activity instead of stopping.
  */
 const { withAuthorizedClient } = require('./plugging-telegram');
 const { logPlugActivity } = require('./plugging-activity');
@@ -13,6 +14,9 @@ const {
 
 const runners = new Map();
 const MAX_SEEN_MESSAGES = 400;
+const CONFIG_REFRESH_MS = 45000;
+const POLL_INTERVAL_MS = 20000;
+const RETRY_DELAY_MS = 15000;
 
 function entityLabel(entity) {
   if (!entity) return '';
@@ -32,31 +36,59 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-async function resolveSourceEntity(client, sourceLink) {
-  const link = String(sourceLink || '').trim();
-  if (!link) throw new Error('Source message link is required');
-  if (/^https?:\/\//i.test(link) || link.startsWith('t.me/')) {
-    const username = link.replace(/^https?:\/\/(t\.me\/|telegram\.me\/)/i, '').replace(/^@/, '').split('/')[0];
+async function resolveEntityFromLink(client, link) {
+  const raw = String(link || '').trim();
+  if (!raw) throw new Error('Link is required');
+
+  const privateMatch = raw.match(/(?:https?:\/\/)?t\.me\/c\/(\d+)(?:\/(\d+))?/i);
+  if (privateMatch) {
+    return client.getEntity(BigInt(`-100${privateMatch[1]}`));
+  }
+
+  if (/^-?\d+$/.test(raw)) {
+    return client.getEntity(BigInt(raw));
+  }
+
+  if (/^https?:\/\//i.test(raw) || raw.startsWith('t.me/')) {
+    const path = raw.replace(/^https?:\/\/(t\.me\/|telegram\.me\/)/i, '').replace(/^@/, '');
+    const parts = path.split('/').filter(Boolean);
+    if (!parts.length) throw new Error('Invalid Telegram link');
+    const head = parts[0];
+    if (/^\d+$/.test(head) && parts.length >= 2) {
+      return client.getEntity(BigInt(`-100${head}`));
+    }
+    const username = head.startsWith('@') ? head : `@${head}`;
     return client.getEntity(username);
   }
-  return client.getEntity(link.startsWith('@') ? link : `@${link}`);
+
+  return client.getEntity(raw.startsWith('@') ? raw : `@${raw}`);
+}
+
+async function resolveSourceEntity(client, sourceLink) {
+  return resolveEntityFromLink(client, sourceLink);
 }
 
 async function resolveTargetEntities(client, targets) {
   const out = [];
   for (const t of targets) {
-    try {
-      let ref = t;
-      if (/^https?:\/\//i.test(t) || t.startsWith('t.me/')) {
-        ref = t.replace(/^https?:\/\/(t\.me\/|telegram\.me\/)/i, '').split('/')[0];
-      }
-      if (!ref.startsWith('@') && !/^-?\d/.test(ref)) ref = `@${ref}`;
-      out.push(await client.getEntity(ref));
-    } catch (err) {
-      throw new Error(`Invalid target "${t}": ${err.message || 'not a group/channel'}`);
-    }
+    out.push(await resolveEntityFromLink(client, t));
   }
   return out;
+}
+
+async function resolveTargetEntries(client, targets, db, accountId) {
+  const entries = [];
+  for (const ref of targets) {
+    try {
+      entries.push({ ref, entity: await resolveEntityFromLink(client, ref) });
+    } catch (err) {
+      const errMsg = String(err.message || err).slice(0, 500);
+      db.prepare('UPDATE plugging_accounts SET failed_count = failed_count + 1, last_error = ?, updated_at = datetime(\'now\') WHERE id = ?')
+        .run(`Invalid target "${ref}": ${errMsg}`, accountId);
+      logPlugActivity(db, accountId, 'error', `Invalid target "${ref}": ${errMsg}`, ref);
+    }
+  }
+  return entries;
 }
 
 function startRunner(db, accountId, getSettings) {
@@ -72,7 +104,13 @@ function startRunner(db, accountId, getSettings) {
   const order = db.prepare('SELECT * FROM plugging_orders WHERE id = ? AND status = ?').get(account.order_id, 'approved');
   if (!order) throw new Error('Plugging subscription is not active');
 
-  const state = { running: true, handler: null, seenIds: new Set() };
+  const state = {
+    running: true,
+    handler: null,
+    seenIds: new Set(),
+    pollBusy: false,
+    lastPollId: 0
+  };
   runners.set(accountId, state);
 
   db.prepare('UPDATE plugging_accounts SET runner_status = ?, last_error = ?, updated_at = datetime(\'now\') WHERE id = ?')
@@ -81,83 +119,204 @@ function startRunner(db, accountId, getSettings) {
   logPlugActivity(db, accountId, 'started', 'Forwarder starting…');
 
   (async () => {
-    try {
-      await withAuthorizedClient(settings, account.session_string, async (client) => {
-        const { NewMessage } = require('telegram/events');
-        const source = await resolveSourceEntity(client, account.source_link);
-        const targets = await resolveTargetEntities(client, parseTargets(account.targets_text));
-        if (!targets.length) throw new Error('Add at least one target group');
+    while (state.running) {
+      try {
+        account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ?').get(accountId);
+        await withAuthorizedClient(settings, account.session_string, async (client) => {
+          let source = null;
+          let targetEntries = [];
+          let pollTimer = null;
+          let configTimer = null;
 
-        const proxyNote = account.proxy_url ? ' · proxy active' : '';
-        logPlugActivity(
-          db, accountId, 'info',
-          `Watching ${entityLabel(source)} → ${targets.length} target(s) · stealth mode${proxyNote}`
-        );
+          let lastRoutingKey = '';
 
-        const handler = async (event) => {
-          if (!state.running) return;
-          const msg = event.message;
-          if (!msg || msg.out) return;
-          if (state.seenIds.has(msg.id)) return;
-          state.seenIds.add(msg.id);
-          if (state.seenIds.size > MAX_SEEN_MESSAGES) {
-            const drop = [...state.seenIds].slice(0, 100);
-            drop.forEach((id) => state.seenIds.delete(id));
-          }
+          async function refreshRouting() {
+            account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ?').get(accountId);
+            const sourceLink = String(account.source_link || '').trim();
+            const targetRefs = parseTargets(account.targets_text);
+            const routingKey = `${sourceLink}::${targetRefs.join('|')}`;
 
-          try {
-            db.prepare('UPDATE plugging_accounts SET cycles_count = cycles_count + 1, updated_at = datetime(\'now\') WHERE id = ?').run(accountId);
-            logPlugActivity(db, accountId, 'cycle', `New message detected (id ${msg.id})`);
+            if (!sourceLink) {
+              if (lastRoutingKey !== routingKey) {
+                lastRoutingKey = routingKey;
+                logPlugActivity(db, accountId, 'error', 'Source chat / channel link is missing — add it in settings');
+              }
+              source = null;
+              targetEntries = [];
+              return;
+            }
 
-            const stealthWait = computeStealthDelayMs(account.delay_minutes);
-            const humanPause = initialHumanPauseMs();
-            logPlugActivity(
-              db, accountId, 'info',
-              `Stealth wait ${formatWaitMinutes(humanPause + stealthWait)} (human-like timing)`
-            );
-            await sleep(humanPause);
-            if (!state.running) return;
-            await sleep(stealthWait);
-            if (!state.running) return;
+            let nextSource = null;
+            try {
+              nextSource = await resolveSourceEntity(client, sourceLink);
+            } catch (err) {
+              const errMsg = String(err.message || err).slice(0, 500);
+              if (lastRoutingKey !== routingKey) {
+                db.prepare('UPDATE plugging_accounts SET last_error = ?, updated_at = datetime(\'now\') WHERE id = ?')
+                  .run(`Invalid source "${sourceLink}": ${errMsg}`, accountId);
+                logPlugActivity(db, accountId, 'error', `Invalid source "${sourceLink}": ${errMsg}`);
+              }
+              source = null;
+              targetEntries = [];
+              lastRoutingKey = routingKey;
+              return;
+            }
 
-            for (let i = 0; i < targets.length; i++) {
-              if (i > 0) await sleep(staggerBetweenTargetsMs());
-              if (!state.running) return;
-              const target = targets[i];
-              const targetName = entityLabel(target);
-              try {
-                await client.forwardMessages(target, { messages: [msg.id], fromPeer: source });
-                db.prepare('UPDATE plugging_accounts SET success_count = success_count + 1 WHERE id = ?').run(accountId);
-                logPlugActivity(db, accountId, 'success', `Forwarded message #${msg.id} to ${targetName}`, targetName);
-              } catch (fwdErr) {
-                const errMsg = String(fwdErr.message || fwdErr).slice(0, 500);
-                db.prepare('UPDATE plugging_accounts SET failed_count = failed_count + 1, last_error = ? WHERE id = ?')
-                  .run(errMsg, accountId);
-                logPlugActivity(db, accountId, 'error', `Failed → ${targetName}: ${errMsg}`, targetName);
+            source = nextSource;
+            targetEntries = await resolveTargetEntries(client, targetRefs, db, accountId);
+
+            if (lastRoutingKey !== routingKey) {
+              lastRoutingKey = routingKey;
+              if (targetEntries.length) {
+                const proxyNote = account.proxy_url ? ' · proxy active' : '';
+                logPlugActivity(
+                  db, accountId, 'info',
+                  `Watching ${entityLabel(source)} → ${targetEntries.length} target(s) · stealth mode${proxyNote}`
+                );
+              } else {
+                logPlugActivity(db, accountId, 'error', 'No valid target groups — fix links in settings (forwarder stays running)');
               }
             }
-          } catch (cycleErr) {
-            const errMsg = String(cycleErr.message || cycleErr).slice(0, 500);
-            db.prepare('UPDATE plugging_accounts SET failed_count = failed_count + 1, last_error = ? WHERE id = ?')
-              .run(errMsg, accountId);
-            logPlugActivity(db, accountId, 'error', `Cycle error: ${errMsg}`);
-          }
-        };
 
-        client.addEventHandler(handler, new NewMessage({ chats: [source.id] }));
-        state.handler = handler;
-        while (state.running) {
-          await sleep(5000);
-        }
-        client.removeEventHandler(handler);
-      }, account.proxy_url);
-    } catch (err) {
-      const errMsg = String(err.message || err).slice(0, 500);
-      db.prepare('UPDATE plugging_accounts SET runner_status = ?, last_error = ?, updated_at = datetime(\'now\') WHERE id = ?')
-        .run('stopped', errMsg, accountId);
-      logPlugActivity(db, accountId, 'error', `Forwarder stopped: ${errMsg}`);
-      runners.delete(accountId);
+            if (source) {
+              try {
+                const recent = await client.getMessages(source, { limit: 1 });
+                if (recent?.length) state.lastPollId = recent[0].id;
+              } catch (_) { /* ignore */ }
+            }
+          }
+
+          async function processMessage(msg) {
+            if (!state.running || !msg || !source || !targetEntries.length) return;
+            if (msg.out) return;
+            if (state.seenIds.has(msg.id)) return;
+
+            state.seenIds.add(msg.id);
+            if (state.seenIds.size > MAX_SEEN_MESSAGES) {
+              [...state.seenIds].slice(0, 100).forEach((id) => state.seenIds.delete(id));
+            }
+
+            let okCount = 0;
+            let failCount = 0;
+
+            try {
+              db.prepare('UPDATE plugging_accounts SET cycles_count = cycles_count + 1, updated_at = datetime(\'now\') WHERE id = ?').run(accountId);
+              logPlugActivity(db, accountId, 'cycle', `New message detected (id ${msg.id})`);
+
+              const stealthWait = computeStealthDelayMs(account.delay_minutes);
+              const humanPause = initialHumanPauseMs();
+              logPlugActivity(
+                db, accountId, 'info',
+                `Stealth wait ${formatWaitMinutes(humanPause + stealthWait)} (human-like timing)`
+              );
+              await sleep(humanPause);
+              if (!state.running) return;
+              await sleep(stealthWait);
+              if (!state.running) return;
+
+              for (let i = 0; i < targetEntries.length; i++) {
+                if (i > 0) await sleep(staggerBetweenTargetsMs());
+                if (!state.running) return;
+
+                const { ref, entity: target } = targetEntries[i];
+                const targetName = entityLabel(target) || ref;
+                try {
+                  await client.forwardMessages(target, { messages: [msg.id], fromPeer: source });
+                  okCount += 1;
+                  db.prepare('UPDATE plugging_accounts SET success_count = success_count + 1, updated_at = datetime(\'now\') WHERE id = ?')
+                    .run(accountId);
+                  logPlugActivity(db, accountId, 'success', `Forwarded message #${msg.id} to ${targetName}`, targetName);
+                } catch (fwdErr) {
+                  failCount += 1;
+                  const errMsg = String(fwdErr.message || fwdErr).slice(0, 500);
+                  db.prepare('UPDATE plugging_accounts SET failed_count = failed_count + 1, last_error = ?, updated_at = datetime(\'now\') WHERE id = ?')
+                    .run(errMsg, accountId);
+                  logPlugActivity(db, accountId, 'error', `Failed → ${targetName}: ${errMsg}`, targetName);
+                }
+              }
+            } catch (cycleErr) {
+              failCount += 1;
+              const errMsg = String(cycleErr.message || cycleErr).slice(0, 500);
+              db.prepare('UPDATE plugging_accounts SET failed_count = failed_count + 1, last_error = ?, updated_at = datetime(\'now\') WHERE id = ?')
+                .run(errMsg, accountId);
+              logPlugActivity(db, accountId, 'error', `Cycle error: ${errMsg}`);
+            } finally {
+              if (okCount > 0 && failCount === 0) {
+                logPlugActivity(db, accountId, 'complete', `Completed message #${msg.id} → ${okCount} group(s)`);
+              } else if (okCount > 0) {
+                logPlugActivity(db, accountId, 'complete', `Completed message #${msg.id} with errors (${okCount} ok, ${failCount} failed)`);
+              } else if (failCount > 0) {
+                logPlugActivity(db, accountId, 'complete', `Completed message #${msg.id} — all targets failed (${failCount})`);
+              }
+            }
+          }
+
+          const handler = async (event) => {
+            await processMessage(event.message);
+          };
+
+          await refreshRouting();
+
+          if (source) {
+            client.addEventHandler(handler, new (require('telegram/events').NewMessage)({ chats: [source] }));
+            state.handler = handler;
+          }
+
+          pollTimer = setInterval(async () => {
+            if (!state.running || !source || state.pollBusy) return;
+            state.pollBusy = true;
+            try {
+              const messages = await client.getMessages(source, { limit: 8 });
+              const sorted = [...(messages || [])].sort((a, b) => a.id - b.id);
+              for (const msg of sorted) {
+                if (msg.id <= state.lastPollId) continue;
+                state.lastPollId = Math.max(state.lastPollId, msg.id);
+                await processMessage(msg);
+              }
+            } catch (pollErr) {
+              const errMsg = String(pollErr.message || pollErr).slice(0, 500);
+              logPlugActivity(db, accountId, 'error', `Poll error: ${errMsg}`);
+            } finally {
+              state.pollBusy = false;
+            }
+          }, POLL_INTERVAL_MS);
+
+          configTimer = setInterval(async () => {
+            if (!state.running) return;
+            try {
+              await refreshRouting();
+            } catch (cfgErr) {
+              logPlugActivity(db, accountId, 'error', `Config refresh: ${String(cfgErr.message || cfgErr).slice(0, 500)}`);
+            }
+          }, CONFIG_REFRESH_MS);
+
+          while (state.running) {
+            await sleep(5000);
+          }
+
+          if (pollTimer) clearInterval(pollTimer);
+          if (configTimer) clearInterval(configTimer);
+          if (state.handler) {
+            try { client.removeEventHandler(state.handler); } catch (_) { /* ignore */ }
+            state.handler = null;
+          }
+        }, account.proxy_url);
+      } catch (err) {
+        if (!state.running) break;
+        const errMsg = String(err.message || err).slice(0, 500);
+        db.prepare('UPDATE plugging_accounts SET last_error = ?, updated_at = datetime(\'now\') WHERE id = ?')
+          .run(errMsg, accountId);
+        logPlugActivity(db, accountId, 'error', `Connection issue (retrying): ${errMsg}`);
+        await sleep(RETRY_DELAY_MS);
+        continue;
+      }
+      break;
     }
+
+    db.prepare('UPDATE plugging_accounts SET runner_status = ?, updated_at = datetime(\'now\') WHERE id = ?')
+      .run('stopped', accountId);
+    logPlugActivity(db, accountId, 'stopped', 'Forwarder stopped');
+    runners.delete(accountId);
   })();
 
   return { ok: true };
@@ -167,12 +326,12 @@ function stopRunner(accountId) {
   const state = runners.get(accountId);
   if (state) {
     state.running = false;
-    runners.delete(accountId);
   }
 }
 
 function isRunning(accountId) {
-  return runners.has(accountId);
+  const state = runners.get(accountId);
+  return !!(state && state.running);
 }
 
-module.exports = { startRunner, stopRunner, isRunning, parseTargets };
+module.exports = { startRunner, stopRunner, isRunning, parseTargets, resolveEntityFromLink };
