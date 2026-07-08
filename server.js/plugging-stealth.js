@@ -8,9 +8,11 @@ function randomMs(min, max) {
 
 /** Base delay with jitter — never instant, never perfectly regular. */
 function computeStealthDelayMs(delayMinutes) {
-  const configured = Number(delayMinutes);
-  const baseMin = configured > 0 ? configured : 3;
+  const delayMin = Number(delayMinutes);
+  const baseMin = delayMin > 0 ? delayMin : 3;
   const baseMs = baseMin * 60 * 1000;
+  // Cap extremely long waits so testing and small delays still work predictably.
+  const cappedMs = Math.min(baseMs, 120 * 60 * 1000);
   const jitterPct = 0.12 + Math.random() * 0.28;
   const sign = Math.random() > 0.45 ? 1 : -1;
   const withJitter = baseMs + sign * baseMs * jitterPct;

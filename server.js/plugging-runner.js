@@ -14,8 +14,8 @@ const {
 
 const runners = new Map();
 const MAX_SEEN_MESSAGES = 400;
-const CONFIG_REFRESH_MS = 45000;
-const POLL_INTERVAL_MS = 20000;
+const CONFIG_REFRESH_MS = 60000;
+const POLL_INTERVAL_MS = 10000;
 const RETRY_DELAY_MS = 15000;
 
 function entityLabel(entity) {
@@ -68,27 +68,29 @@ async function resolveSourceEntity(client, sourceLink) {
   return resolveEntityFromLink(client, sourceLink);
 }
 
-async function resolveTargetEntities(client, targets) {
-  const out = [];
-  for (const t of targets) {
-    out.push(await resolveEntityFromLink(client, t));
-  }
-  return out;
-}
-
-async function resolveTargetEntries(client, targets, db, accountId) {
+async function resolveTargetEntries(client, targets, db, accountId, invalidLogged) {
   const entries = [];
   for (const ref of targets) {
     try {
       entries.push({ ref, entity: await resolveEntityFromLink(client, ref) });
     } catch (err) {
       const errMsg = String(err.message || err).slice(0, 500);
-      db.prepare('UPDATE plugging_accounts SET failed_count = failed_count + 1, last_error = ?, updated_at = datetime(\'now\') WHERE id = ?')
-        .run(`Invalid target "${ref}": ${errMsg}`, accountId);
-      logPlugActivity(db, accountId, 'error', `Invalid target "${ref}": ${errMsg}`, ref);
+      if (!invalidLogged.has(ref)) {
+        invalidLogged.add(ref);
+        db.prepare('UPDATE plugging_accounts SET last_error = ?, updated_at = datetime(\'now\') WHERE id = ?')
+          .run(`Invalid target "${ref}": ${errMsg}`, accountId);
+        logPlugActivity(db, accountId, 'error', `Invalid target "${ref}": ${errMsg}`, ref);
+      }
     }
   }
   return entries;
+}
+
+function shouldProcessMessage(msg) {
+  if (!msg) return false;
+  // Keep channel posts; skip only user's own outgoing chat messages.
+  if (msg.out && !msg.post) return false;
+  return true;
 }
 
 function startRunner(db, accountId, getSettings) {
@@ -108,15 +110,18 @@ function startRunner(db, accountId, getSettings) {
     running: true,
     handler: null,
     seenIds: new Set(),
+    processingIds: new Set(),
     pollBusy: false,
-    lastPollId: 0
+    lastPollId: 0,
+    invalidTargetsLogged: new Set(),
+    lastRoutingKey: ''
   };
   runners.set(accountId, state);
 
   db.prepare('UPDATE plugging_accounts SET runner_status = ?, last_error = ?, updated_at = datetime(\'now\') WHERE id = ?')
     .run('running', '', accountId);
 
-  logPlugActivity(db, accountId, 'started', 'Forwarder starting…');
+  logPlugActivity(db, accountId, 'started', 'Connecting to Telegram…');
 
   (async () => {
     while (state.running) {
@@ -127,68 +132,92 @@ function startRunner(db, accountId, getSettings) {
           let targetEntries = [];
           let pollTimer = null;
           let configTimer = null;
+          let sourcePeerId = null;
 
-          let lastRoutingKey = '';
-
-          async function refreshRouting() {
+          async function refreshRouting(force = false) {
             account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ?').get(accountId);
             const sourceLink = String(account.source_link || '').trim();
             const targetRefs = parseTargets(account.targets_text);
             const routingKey = `${sourceLink}::${targetRefs.join('|')}`;
+            const routingChanged = force || routingKey !== state.lastRoutingKey;
 
             if (!sourceLink) {
-              if (lastRoutingKey !== routingKey) {
-                lastRoutingKey = routingKey;
+              if (routingChanged) {
+                state.lastRoutingKey = routingKey;
                 logPlugActivity(db, accountId, 'error', 'Source chat / channel link is missing — add it in settings');
               }
               source = null;
               targetEntries = [];
+              sourcePeerId = null;
               return;
             }
+
+            if (!routingChanged) return;
+
+            state.lastRoutingKey = routingKey;
+            state.invalidTargetsLogged.clear();
 
             let nextSource = null;
             try {
               nextSource = await resolveSourceEntity(client, sourceLink);
+              sourcePeerId = await client.getPeerId(nextSource);
             } catch (err) {
               const errMsg = String(err.message || err).slice(0, 500);
-              if (lastRoutingKey !== routingKey) {
-                db.prepare('UPDATE plugging_accounts SET last_error = ?, updated_at = datetime(\'now\') WHERE id = ?')
-                  .run(`Invalid source "${sourceLink}": ${errMsg}`, accountId);
-                logPlugActivity(db, accountId, 'error', `Invalid source "${sourceLink}": ${errMsg}`);
-              }
+              db.prepare('UPDATE plugging_accounts SET last_error = ?, updated_at = datetime(\'now\') WHERE id = ?')
+                .run(`Invalid source "${sourceLink}": ${errMsg}`, accountId);
+              logPlugActivity(db, accountId, 'error', `Invalid source "${sourceLink}": ${errMsg}`);
               source = null;
               targetEntries = [];
-              lastRoutingKey = routingKey;
+              sourcePeerId = null;
               return;
             }
 
             source = nextSource;
-            targetEntries = await resolveTargetEntries(client, targetRefs, db, accountId);
+            targetEntries = await resolveTargetEntries(client, targetRefs, db, accountId, state.invalidTargetsLogged);
 
-            if (lastRoutingKey !== routingKey) {
-              lastRoutingKey = routingKey;
-              if (targetEntries.length) {
-                const proxyNote = account.proxy_url ? ' · proxy active' : '';
-                logPlugActivity(
-                  db, accountId, 'info',
-                  `Watching ${entityLabel(source)} → ${targetEntries.length} target(s) · stealth mode${proxyNote}`
-                );
-              } else {
-                logPlugActivity(db, accountId, 'error', 'No valid target groups — fix links in settings (forwarder stays running)');
-              }
-            }
+            const delayMin = Number(account.delay_minutes) || 0;
+            const delayNote = delayMin > 0 ? `${delayMin} min delay before each forward` : 'minimal delay mode';
 
-            if (source) {
+            if (targetEntries.length) {
+              const proxyNote = account.proxy_url ? ' · proxy active' : '';
+              let latestId = 'none';
               try {
                 const recent = await client.getMessages(source, { limit: 1 });
-                if (recent?.length) state.lastPollId = recent[0].id;
+                if (recent?.length) {
+                  state.lastPollId = recent[0].id;
+                  latestId = String(recent[0].id);
+                }
               } catch (_) { /* ignore */ }
+
+              logPlugActivity(
+                db, accountId, 'info',
+                `Live on Telegram — watching ${entityLabel(source)} → ${targetEntries.length} group(s) · ${delayNote}${proxyNote}`
+              );
+              logPlugActivity(
+                db, accountId, 'info',
+                `Only NEW posts after start are forwarded (latest post id ${latestId}). Post a test message in the source channel.`
+              );
+            } else {
+              logPlugActivity(db, accountId, 'error', 'No valid target groups — fix links in settings (forwarder stays running)');
             }
+          }
+
+          function enqueueMessage(msg) {
+            if (!shouldProcessMessage(msg)) return;
+            if (state.seenIds.has(msg.id) || state.processingIds.has(msg.id)) return;
+            state.processingIds.add(msg.id);
+            processMessage(msg)
+              .catch((err) => {
+                logPlugActivity(db, accountId, 'error', `Process error: ${String(err.message || err).slice(0, 500)}`);
+              })
+              .finally(() => {
+                state.processingIds.delete(msg.id);
+              });
           }
 
           async function processMessage(msg) {
             if (!state.running || !msg || !source || !targetEntries.length) return;
-            if (msg.out) return;
+            if (!shouldProcessMessage(msg)) return;
             if (state.seenIds.has(msg.id)) return;
 
             state.seenIds.add(msg.id);
@@ -201,18 +230,26 @@ function startRunner(db, accountId, getSettings) {
 
             try {
               db.prepare('UPDATE plugging_accounts SET cycles_count = cycles_count + 1, updated_at = datetime(\'now\') WHERE id = ?').run(accountId);
-              logPlugActivity(db, accountId, 'cycle', `New message detected (id ${msg.id})`);
+              logPlugActivity(db, accountId, 'cycle', `New post detected (id ${msg.id})`);
 
               const stealthWait = computeStealthDelayMs(account.delay_minutes);
               const humanPause = initialHumanPauseMs();
               logPlugActivity(
                 db, accountId, 'info',
-                `Stealth wait ${formatWaitMinutes(humanPause + stealthWait)} (human-like timing)`
+                `Waiting ${formatWaitMinutes(humanPause + stealthWait)} before forwarding (stealth timing)`
               );
               await sleep(humanPause);
               if (!state.running) return;
               await sleep(stealthWait);
               if (!state.running) return;
+
+              account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ?').get(accountId);
+              if (state.lastRoutingKey) {
+                const currentKey = `${String(account.source_link || '').trim()}::${parseTargets(account.targets_text).join('|')}`;
+                if (currentKey !== state.lastRoutingKey) {
+                  await refreshRouting(true);
+                }
+              }
 
               for (let i = 0; i < targetEntries.length; i++) {
                 if (i > 0) await sleep(staggerBetweenTargetsMs());
@@ -225,7 +262,7 @@ function startRunner(db, accountId, getSettings) {
                   okCount += 1;
                   db.prepare('UPDATE plugging_accounts SET success_count = success_count + 1, updated_at = datetime(\'now\') WHERE id = ?')
                     .run(accountId);
-                  logPlugActivity(db, accountId, 'success', `Forwarded message #${msg.id} to ${targetName}`, targetName);
+                  logPlugActivity(db, accountId, 'success', `Forwarded post #${msg.id} to ${targetName}`, targetName);
                 } catch (fwdErr) {
                   failCount += 1;
                   const errMsg = String(fwdErr.message || fwdErr).slice(0, 500);
@@ -242,36 +279,40 @@ function startRunner(db, accountId, getSettings) {
               logPlugActivity(db, accountId, 'error', `Cycle error: ${errMsg}`);
             } finally {
               if (okCount > 0 && failCount === 0) {
-                logPlugActivity(db, accountId, 'complete', `Completed message #${msg.id} → ${okCount} group(s)`);
+                logPlugActivity(db, accountId, 'complete', `Completed post #${msg.id} → ${okCount} group(s)`);
               } else if (okCount > 0) {
-                logPlugActivity(db, accountId, 'complete', `Completed message #${msg.id} with errors (${okCount} ok, ${failCount} failed)`);
+                logPlugActivity(db, accountId, 'complete', `Completed post #${msg.id} with errors (${okCount} ok, ${failCount} failed)`);
               } else if (failCount > 0) {
-                logPlugActivity(db, accountId, 'complete', `Completed message #${msg.id} — all targets failed (${failCount})`);
+                logPlugActivity(db, accountId, 'complete', `Completed post #${msg.id} — all targets failed (${failCount})`);
               }
             }
           }
 
           const handler = async (event) => {
-            await processMessage(event.message);
+            try {
+              if (sourcePeerId && event.chatId && String(event.chatId) !== String(sourcePeerId)) return;
+            } catch (_) { /* ignore */ }
+            enqueueMessage(event.message);
           };
 
-          await refreshRouting();
+          await refreshRouting(true);
 
           if (source) {
-            client.addEventHandler(handler, new (require('telegram/events').NewMessage)({ chats: [source] }));
+            const { NewMessage } = require('telegram/events');
+            client.addEventHandler(handler, new NewMessage({}));
             state.handler = handler;
           }
 
-          pollTimer = setInterval(async () => {
+          async function pollSource() {
             if (!state.running || !source || state.pollBusy) return;
             state.pollBusy = true;
             try {
-              const messages = await client.getMessages(source, { limit: 8 });
+              const messages = await client.getMessages(source, { limit: 12 });
               const sorted = [...(messages || [])].sort((a, b) => a.id - b.id);
               for (const msg of sorted) {
                 if (msg.id <= state.lastPollId) continue;
                 state.lastPollId = Math.max(state.lastPollId, msg.id);
-                await processMessage(msg);
+                enqueueMessage(msg);
               }
             } catch (pollErr) {
               const errMsg = String(pollErr.message || pollErr).slice(0, 500);
@@ -279,12 +320,15 @@ function startRunner(db, accountId, getSettings) {
             } finally {
               state.pollBusy = false;
             }
-          }, POLL_INTERVAL_MS);
+          }
+
+          await pollSource();
+          pollTimer = setInterval(pollSource, POLL_INTERVAL_MS);
 
           configTimer = setInterval(async () => {
             if (!state.running) return;
             try {
-              await refreshRouting();
+              await refreshRouting(false);
             } catch (cfgErr) {
               logPlugActivity(db, accountId, 'error', `Config refresh: ${String(cfgErr.message || cfgErr).slice(0, 500)}`);
             }

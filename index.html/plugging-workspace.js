@@ -298,7 +298,8 @@ function renderAccountDetail(id) {
       <label>Display name (optional prefix)</label>
       <input id="cfg-display" class="plug-field-input" value="${esc(a.displayName)}" placeholder="Reseller Name">
       <label>Delay (minutes between forwards)</label>
-      <input id="cfg-delay" class="plug-field-input" type="number" min="0" value="${a.delayMinutes}">
+      <input id="cfg-delay" class="plug-field-input" type="number" min="0" value="${a.delayMinutes}" placeholder="5">
+      <small class="plug-panel-desc" style="display:block;margin-top:0.35rem">Minutes to wait before forwarding each new post. Use 2–5 for testing.</small>
       <label>Target groups — one link per line</label>
       <textarea id="cfg-targets" class="plug-field-textarea" placeholder="https://t.me/yourgroup1\nhttps://t.me/yourgroup2">${esc(a.targetsText)}</textarea>
       <div class="plug-config-actions">

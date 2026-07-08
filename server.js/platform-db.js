@@ -248,7 +248,7 @@ function initPlatformDb(db) {
       phone_code_hash TEXT,
       source_link TEXT NOT NULL DEFAULT '',
       display_name TEXT NOT NULL DEFAULT '',
-      delay_minutes INTEGER NOT NULL DEFAULT 70,
+      delay_minutes INTEGER NOT NULL DEFAULT 5,
       targets_text TEXT NOT NULL DEFAULT '',
       runner_status TEXT NOT NULL DEFAULT 'stopped',
       success_count INTEGER NOT NULL DEFAULT 0,
