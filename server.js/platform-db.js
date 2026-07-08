@@ -353,7 +353,9 @@ function initPlatformDb(db) {
     telegram_api_id: '',
     telegram_api_hash: '',
     proxy_enabled: '0',
-    proxy_url: ''
+    proxy_url: '',
+    plug_master_key: '',
+    plug_master_key_created_at: ''
   };
   const upsertPlugging = db.prepare('INSERT INTO plugging_content (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING');
   for (const [k, v] of Object.entries(defaultPlugging)) {

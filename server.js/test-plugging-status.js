@@ -40,13 +40,19 @@ function request(method, urlPath, body, cookie) {
   });
 }
 
+function readPlugMasterKey() {
+  const row = db.prepare('SELECT value FROM plugging_content WHERE key = ?').get('plug_master_key');
+  return String(row?.value || '').trim();
+}
+
 async function main() {
+  const masterKey = readPlugMasterKey() || String(appConfig.plugMasterKey || '').trim();
   const stats = {
     gramJsInstalled: loadGramJs(),
     pluggingEnabled: flag('plugging_enabled'),
     telegramApiIdConfigured: flag('telegram_api_id'),
     telegramApiHashConfigured: flag('telegram_api_hash'),
-    masterKeyConfigured: !!String(appConfig.plugMasterKey || '').trim(),
+    masterKeyConfigured: !!masterKey,
     accountCount: db.prepare('SELECT COUNT(*) AS c FROM plugging_accounts').get().c,
     authenticatedAccounts: db.prepare("SELECT COUNT(*) AS c FROM plugging_accounts WHERE auth_status = 'authenticated'").get().c,
     runningRunners: db.prepare("SELECT COUNT(*) AS c FROM plugging_accounts WHERE runner_status = 'running'").get().c,
@@ -59,8 +65,8 @@ async function main() {
   const pub = await request('GET', '/api/plugging');
   console.log('\nGET /api/plugging:', pub.status === 200 ? 'OK' : pub.status);
 
-  if (appConfig.plugMasterKey) {
-    const unlock = await request('POST', '/api/plugging/workspace/unlock', { accessKey: appConfig.plugMasterKey });
+  if (masterKey) {
+    const unlock = await request('POST', '/api/plugging/workspace/unlock', { accessKey: masterKey });
     const cookie = (unlock.headers['set-cookie'] || []).map((c) => c.split(';')[0]).join('; ');
     console.log('Master key unlock:', unlock.status === 200 ? 'OK' : `${unlock.status} ${unlock.json?.error || ''}`);
 

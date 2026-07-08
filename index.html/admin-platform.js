@@ -301,19 +301,37 @@
     const masterBox = document.getElementById('plugging-master-key-box');
     if (masterBox) {
       if (master.enabled && master.accessKey) {
+        const created = master.createdAt
+          ? `Created ${new Date(master.createdAt).toLocaleString()} · Lifetime access`
+          : 'Lifetime access · no expiry';
         masterBox.innerHTML = `
           <code class="admin-plug-master-code">${esc(master.accessKey)}</code>
           <div style="margin-top:0.65rem;display:flex;gap:0.5rem;flex-wrap:wrap">
             <button type="button" class="admin-btn admin-btn-primary admin-btn-sm" id="plug-master-copy">Copy key</button>
             <a class="admin-btn admin-btn-ghost admin-btn-sm" href="/plugging/workspace" target="_blank" rel="noopener">Open workspace</a>
+            <button type="button" class="admin-btn admin-btn-danger admin-btn-sm" id="plug-master-regenerate">Regenerate</button>
           </div>
-          <p class="admin-card-meta" style="margin-top:0.5rem">${esc(master.note || '')}</p>`;
+          <p class="admin-card-meta" style="margin-top:0.5rem">${esc(created)}</p>
+          <p class="admin-card-meta">${esc(master.note || '')}</p>`;
         document.getElementById('plug-master-copy')?.addEventListener('click', () => {
           navigator.clipboard?.writeText(master.accessKey);
           if (window.showToast) showToast('Master key copied');
         });
+        document.getElementById('plug-master-regenerate')?.addEventListener('click', async () => {
+          if (!confirm('Regenerate master key? The old key will stop working immediately.')) return;
+          const next = await api('/admin/plugging/master-key/generate', { method: 'POST', body: { regenerate: true } });
+          if (next.accessKey && window.showToast) showToast('New master key generated');
+          loadPlatformPlugging();
+        });
       } else {
-        masterBox.innerHTML = `<p class="admin-card-meta">${esc(master.message || 'Master key not configured.')}</p>`;
+        masterBox.innerHTML = `
+          <p class="admin-card-meta">${esc(master.message || 'No master key yet.')}</p>
+          <button type="button" class="admin-btn admin-btn-primary admin-btn-sm" id="plug-master-generate" style="margin-top:0.65rem">Generate Key</button>`;
+        document.getElementById('plug-master-generate')?.addEventListener('click', async () => {
+          const next = await api('/admin/plugging/master-key/generate', { method: 'POST' });
+          if (next.accessKey && window.showToast) showToast('Master key generated');
+          loadPlatformPlugging();
+        });
       }
     }
 

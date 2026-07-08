@@ -20,6 +20,43 @@ function mountPluggingService(app, db, deps) {
 
   const COOKIE = 'plug_access_key';
   const COOKIE_OPTS = { httpOnly: true, sameSite: 'lax', maxAge: 7 * 24 * 60 * 60 * 1000 };
+  const COOKIE_OPTS_LIFETIME = { httpOnly: true, sameSite: 'lax', maxAge: 10 * 365 * 24 * 60 * 60 * 1000 };
+  const PLUG_MASTER_KEY_SETTING = 'plug_master_key';
+  const PLUG_MASTER_CREATED_SETTING = 'plug_master_key_created_at';
+
+  function readPlugMasterKeyFromDb() {
+    const row = db.prepare('SELECT value FROM plugging_content WHERE key = ?').get(PLUG_MASTER_KEY_SETTING);
+    return String(row?.value || '').trim();
+  }
+
+  function writePlugMasterKeyToDb(key) {
+    db.prepare(`
+      INSERT INTO plugging_content (key, value) VALUES (?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value
+    `).run(PLUG_MASTER_KEY_SETTING, key);
+    db.prepare(`
+      INSERT INTO plugging_content (key, value) VALUES (?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value
+    `).run(PLUG_MASTER_CREATED_SETTING, new Date().toISOString());
+  }
+
+  function getPlugMasterKey() {
+    const fromDb = readPlugMasterKeyFromDb();
+    if (fromDb) return fromDb;
+    return String(appConfig.plugMasterKey || '').trim();
+  }
+
+  function generatePlugMasterKeyValue() {
+    return `PLG-MASTER-${crypto.randomBytes(4).toString('hex').toUpperCase()}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+  }
+
+  function normalizePlugOrder(order) {
+    if (!order) return order;
+    if (order.order_ref === 'PLG-MASTER') {
+      return { ...order, maxSources: 999, maxDestinations: 999 };
+    }
+    return order;
+  }
 
   function getCookie(req, name) {
     const raw = req.headers.cookie || '';
@@ -72,17 +109,31 @@ function mountPluggingService(app, db, deps) {
     `).get(String(key || '').trim());
   }
 
-  function ensurePlugMasterOrder() {
-    const key = String(appConfig.plugMasterKey || '').trim();
+  function ensurePlugMasterOrder(keyOverride) {
+    const key = String(keyOverride || getPlugMasterKey() || '').trim();
     if (!key) return null;
 
     const existing = db.prepare(`
       SELECT po.*, pp.name AS plan_name, pp.max_sources AS maxSources, pp.max_destinations AS maxDestinations
       FROM plugging_orders po
       LEFT JOIN plugging_plans pp ON pp.id = po.plan_id
-      WHERE po.access_key = ? AND po.status = 'approved'
-    `).get(key);
-    if (existing) return existing;
+      WHERE po.order_ref = 'PLG-MASTER' AND po.status = 'approved'
+      ORDER BY po.id ASC LIMIT 1
+    `).get();
+
+    if (existing) {
+      if (existing.access_key !== key) {
+        db.prepare(`
+          UPDATE plugging_orders SET access_key = ?, updated_at = datetime('now') WHERE id = ?
+        `).run(key, existing.id);
+      }
+      return normalizePlugOrder(db.prepare(`
+        SELECT po.*, pp.name AS plan_name, pp.max_sources AS maxSources, pp.max_destinations AS maxDestinations
+        FROM plugging_orders po
+        LEFT JOIN plugging_plans pp ON pp.id = po.plan_id
+        WHERE po.id = ?
+      `).get(existing.id));
+    }
 
     const plan = db.prepare(`
       SELECT * FROM plugging_plans WHERE is_enabled = 1 ORDER BY max_sources DESC, max_destinations DESC, id ASC LIMIT 1
@@ -94,21 +145,27 @@ function mountPluggingService(app, db, deps) {
       ) VALUES ('PLG-MASTER', ?, 'Master Workspace', 'master@localhost', 0, 'approved', ?, datetime('now'))
     `).run(plan?.id || null, key);
 
-    return db.prepare(`
+    return normalizePlugOrder(db.prepare(`
       SELECT po.*, pp.name AS plan_name, pp.max_sources AS maxSources, pp.max_destinations AS maxDestinations
       FROM plugging_orders po
       LEFT JOIN plugging_plans pp ON pp.id = po.plan_id
       WHERE po.access_key = ? AND po.status = 'approved'
-    `).get(key);
+    `).get(key));
   }
 
   function resolvePlugAccessKey(key) {
     const trimmed = String(key || '').trim();
     if (!trimmed) return null;
-    if (appConfig.plugMasterKey && trimmed === appConfig.plugMasterKey) {
-      return ensurePlugMasterOrder();
+    const masterKey = getPlugMasterKey();
+    if (masterKey && trimmed === masterKey) {
+      return ensurePlugMasterOrder(masterKey);
     }
-    return getApprovedOrderByAccessKey(trimmed);
+    return normalizePlugOrder(getApprovedOrderByAccessKey(trimmed));
+  }
+
+  function isMasterAccessKey(key) {
+    const masterKey = getPlugMasterKey();
+    return !!masterKey && String(key || '').trim() === masterKey;
   }
 
   function requirePlugWorkspace(req, res, next) {
@@ -227,8 +284,14 @@ function mountPluggingService(app, db, deps) {
     const key = String(req.body?.accessKey || '').trim();
     const order = resolvePlugAccessKey(key);
     if (!order) return res.status(401).json({ error: 'Invalid access key or payment not approved yet' });
-    res.cookie(COOKIE, key, COOKIE_OPTS);
-    res.json({ ok: true, orderRef: order.order_ref, planName: order.plan_name });
+    const cookieOpts = isMasterAccessKey(key) ? COOKIE_OPTS_LIFETIME : COOKIE_OPTS;
+    res.cookie(COOKIE, key, cookieOpts);
+    res.json({
+      ok: true,
+      orderRef: order.order_ref,
+      planName: order.plan_name,
+      lifetime: isMasterAccessKey(key)
+    });
   });
 
   app.post('/api/plugging/workspace/logout', (req, res) => {
@@ -412,16 +475,53 @@ function mountPluggingService(app, db, deps) {
 
   // ── Admin orders ──
   app.get('/admin/plugging/master-key', requireAdmin, (req, res) => {
-    const accessKey = String(appConfig.plugMasterKey || '').trim();
-    if (!accessKey) {
-      return res.json({ enabled: false, message: 'Set PLUG_MASTER_KEY in .env and restart the server.' });
+    let accessKey = getPlugMasterKey();
+    if (!accessKey && String(appConfig.plugMasterKey || '').trim()) {
+      accessKey = String(appConfig.plugMasterKey || '').trim();
+      writePlugMasterKeyToDb(accessKey);
     }
-    ensurePlugMasterOrder();
+    if (!accessKey) {
+      return res.json({
+        enabled: false,
+        message: 'No master key yet. Click Generate Key to create lifetime owner access.'
+      });
+    }
+    ensurePlugMasterOrder(accessKey);
+    const createdRow = db.prepare('SELECT value FROM plugging_content WHERE key = ?').get(PLUG_MASTER_CREATED_SETTING);
     res.json({
       enabled: true,
       accessKey,
+      createdAt: createdRow?.value || null,
       workspaceUrl: '/plugging/workspace',
-      note: 'Owner master key — bypasses payment approval. Keep secret in production.'
+      note: 'Lifetime owner key — no expiry. Opens /plugging/workspace without customer approval. Keep secret.'
+    });
+  });
+
+  app.post('/admin/plugging/master-key/generate', requireAdmin, (req, res) => {
+    const regenerate = !!req.body?.regenerate;
+    const existing = readPlugMasterKeyFromDb() || String(appConfig.plugMasterKey || '').trim();
+    if (existing && !regenerate) {
+      ensurePlugMasterOrder(existing);
+      const createdRow = db.prepare('SELECT value FROM plugging_content WHERE key = ?').get(PLUG_MASTER_CREATED_SETTING);
+      return res.json({
+        enabled: true,
+        accessKey: existing,
+        createdAt: createdRow?.value || null,
+        workspaceUrl: '/plugging/workspace',
+        note: 'Lifetime owner key — no expiry. Opens /plugging/workspace without customer approval. Keep secret.'
+      });
+    }
+
+    const accessKey = generatePlugMasterKeyValue();
+    writePlugMasterKeyToDb(accessKey);
+    ensurePlugMasterOrder(accessKey);
+    res.json({
+      enabled: true,
+      accessKey,
+      createdAt: new Date().toISOString(),
+      workspaceUrl: '/plugging/workspace',
+      regenerated: regenerate,
+      note: 'Lifetime owner key — no expiry. Opens /plugging/workspace without customer approval. Keep secret.'
     });
   });
 
