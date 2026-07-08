@@ -49,6 +49,8 @@
   .product-card:not(.catalog-card),
   .card:not(.package-card),
   .plan-purchase-card,
+  .plan-tile,
+  .catalog-tile,
   .variant-showcase,
   .catalog-showcase,
   .nf-plan-card,
@@ -69,6 +71,8 @@
   .product-card:not(.catalog-card),
   .card:not(.package-card),
   .plan-purchase-card,
+  .plan-tile,
+  .catalog-tile,
   .variant-showcase,
   .catalog-showcase,
   .nf-plan-card {
@@ -92,6 +96,8 @@
   }
 
   .catalog-card:hover,
+  .catalog-tile:hover,
+  .plan-tile:hover,
   .catalog-showcase:hover,
   .variant-showcase:hover,
   .product-card:not(.catalog-card):hover,

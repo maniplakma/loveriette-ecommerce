@@ -557,58 +557,37 @@
   }
 
   body.page-shop main .products {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.5rem;
-    padding: 0 0.75rem 0.5rem;
+    grid-template-columns: 1fr;
+    gap: 0.65rem;
+    padding: 0 0.75rem 0.75rem;
     width: 100%;
     max-width: 100%;
     box-sizing: border-box;
   }
 
-  body.page-shop .catalog-showcase,
+  body.page-shop .catalog-tile,
   body.page-shop .catalog-card {
     min-width: 0;
     max-width: 100%;
   }
 
-  body.page-shop .catalog-showcase-link,
-  body.page-shop .catalog-card-link {
-    padding: 0.75rem;
-  }
-
-  body.page-shop .catalog-showcase-name,
-  body.page-shop .catalog-card-name {
-    font-size: 0.82rem;
-  }
-
-  body.page-shop .catalog-showcase-desc,
-  body.page-shop .catalog-desc {
-    font-size: 0.68rem;
-    -webkit-line-clamp: 2;
-  }
-
-  body.page-shop .catalog-showcase-icon .logo,
-  body.page-shop .catalog-card-icon .logo {
-    width: 40px;
-    height: 40px;
-  }
-
-  .plans-grid {
-    grid-template-columns: 1fr !important;
-    gap: 0.75rem !important;
+  body.page-product .plans-grid,
+  .plans-section .plans-grid {
+    grid-template-columns: 1fr;
+    gap: 0.65rem;
     padding: 0;
     min-width: 0;
   }
 
-  .product-page {
-    padding-left: 0.75rem;
-    padding-right: 0.75rem;
-    overflow-x: clip;
-  }
-
-  .variant-showcase {
+  body.page-product .plan-tile {
     max-width: 100%;
     min-width: 0;
+  }
+
+  .product-page {
+    padding-left: max(0.75rem, env(safe-area-inset-left));
+    padding-right: max(0.75rem, env(safe-area-inset-right));
+    overflow-x: clip;
   }
 
   body.page-shop #shop-share.page-share-bar {
@@ -619,10 +598,34 @@
 
 @media (max-width: 380px) {
   body.page-shop main .products {
-    gap: 0.4rem;
+    gap: 0.55rem;
+    padding-left: max(0.65rem, env(safe-area-inset-left));
+    padding-right: max(0.65rem, env(safe-area-inset-right));
   }
 
-  body.page-shop .catalog-card-name {
-    font-size: 0.7rem;
+  .catalog-tile-link,
+  .plan-tile {
+    padding: 0.65rem;
+  }
+
+  .catalog-tile-name,
+  .plan-tile-name {
+    font-size: 0.84rem;
+  }
+
+  .plan-tile-foot {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.55rem;
+  }
+
+  .plan-tile-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .plan-tile .btn-purchase {
+    flex: 1 1 auto;
+    min-width: 0;
   }
 }

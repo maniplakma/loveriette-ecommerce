@@ -112,45 +112,37 @@ function renderPlanCard(product, plan) {
   const description = planDescriptionText(plan);
 
   return `
-    <article class="variant-showcase${disabled ? ' is-disabled' : ''}">
-      <div class="variant-showcase-hero">
-        ${window.themeBadge && state !== 'sold_out' && state !== 'coming_soon'
-    ? `<div class="variant-showcase-badge">${themeBadge(state === 'available' ? 'available' : 'preorder', label)}</div>`
-    : `<span class="variant-showcase-badge plan-badge status-${state}">${escapeHtml(label)}</span>`}
-        <div class="variant-showcase-head">
-          <div class="variant-showcase-icon logo${product.icon ? ' has-icon' : ''}">
-            ${window.renderProductIcon ? window.renderProductIcon(product.icon, product.name, 'logo-img') : getLogoLetter(product.name)}
+    <article class="plan-tile${disabled ? ' is-disabled' : ''}">
+      <div class="plan-tile-row">
+        <div class="plan-tile-icon logo${product.icon ? ' has-icon' : ''}">
+          ${window.renderProductIcon ? window.renderProductIcon(product.icon, product.name, 'logo-img') : getLogoLetter(product.name)}
+        </div>
+        <div class="plan-tile-main">
+          <div class="plan-tile-top">
+            <h3 class="plan-tile-name">${escapeHtml(plan.name)}</h3>
+            ${window.themeBadge && state !== 'sold_out' && state !== 'coming_soon'
+    ? themeBadge(state === 'available' ? 'available' : 'preorder', label, { size: 'sm' })
+    : `<span class="plan-badge status-${state}">${escapeHtml(label)}</span>`}
           </div>
-          <div class="variant-showcase-title">
-            <h3>${escapeHtml(plan.name)}</h3>
-            ${duration && !description
-    ? `<p class="variant-showcase-duration"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> ${escapeHtml(duration)}</p>`
+          ${duration && !description
+    ? `<p class="plan-tile-meta"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> ${escapeHtml(duration)}</p>`
     : ''}
-          </div>
+          ${description ? `<p class="plan-tile-desc">${escapeHtml(description)}</p>` : ''}
         </div>
       </div>
-      <div class="variant-showcase-body">
-        ${description
-    ? `<div class="variant-showcase-details">
-          <p class="variant-showcase-details-label">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-            Plan details
-          </p>
-          <p>${escapeHtml(description)}</p>
-        </div>`
-    : ''}
-        <p class="variant-showcase-price">${formatMoney(plan.displayPrice ?? plan.price)}</p>
-      </div>
-      <div class="variant-showcase-actions">
-        ${disabled
+      <div class="plan-tile-foot">
+        <span class="plan-tile-price">${formatMoney(plan.displayPrice ?? plan.price)}</span>
+        <div class="plan-tile-actions">
+          ${disabled
     ? `<button type="button" class="btn-purchase" disabled>${purchaseLabel}</button>
            <button type="button" class="btn-cart-icon" disabled aria-label="Add to cart">
-             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
            </button>`
     : `<a href="checkout.html?product=${product.id}${planParam}" class="btn-purchase">${purchaseLabel}</a>
            <button type="button" class="btn-cart-icon add-to-cart" data-id="${product.id}"${plan.id ? ` data-variant="${plan.id}"` : ''} aria-label="Add to cart">
-             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
            </button>`}
+        </div>
       </div>
     </article>
   `;
