@@ -142,7 +142,6 @@ function showWorkspace() {
 function readConfigForm() {
   return {
     sourceLink: document.getElementById('cfg-source')?.value?.trim() || '',
-    displayName: document.getElementById('cfg-display')?.value?.trim() || '',
     delayMinutes: Number(document.getElementById('cfg-delay')?.value) || 0,
     targetsText: document.getElementById('cfg-targets')?.value || ''
   };
@@ -169,11 +168,9 @@ async function saveAccountConfig(id, { silent = false } = {}) {
     const saved = workspace.accounts?.find((x) => x.id === id);
     if (saved) {
       const source = document.getElementById('cfg-source');
-      const display = document.getElementById('cfg-display');
       const delay = document.getElementById('cfg-delay');
       const targets = document.getElementById('cfg-targets');
       if (source) source.value = saved.sourceLink || '';
-      if (display) display.value = saved.displayName || '';
       if (delay) delay.value = saved.delayMinutes ?? 70;
       if (targets) targets.value = saved.targetsText || '';
     }
@@ -299,12 +296,10 @@ function renderAccountDetail(id) {
     </div>
     <div class="plug-panel">
       <h3>Forwarding Setup</h3>
-      <p class="plug-panel-desc">Configure source, targets, and cycle delay — save first, then start.</p>
-      <label>Source chat / channel link</label>
-      <input id="cfg-source" class="plug-field-input" value="${esc(a.sourceLink)}" placeholder="https://t.me/sourcechannel">
-      <label>Your shop / affiliate link (required)</label>
-      <input id="cfg-display" class="plug-field-input" value="${esc(a.displayName)}" placeholder="https://loveriette.shop/?ref=yourname">
-      <small class="plug-panel-desc" style="display:block;margin-top:0.35rem">Full https:// URL — lahat ng links sa post papalitan nito. Required para tama ang nafo-forward.</small>
+      <p class="plug-panel-desc">Post link, target groups, at cycle delay — save first, then start.</p>
+      <label>Post link (required)</label>
+      <input id="cfg-source" class="plug-field-input" value="${esc(a.sourceLink)}" placeholder="https://t.me/directhererie/4">
+      <small class="plug-panel-desc" style="display:block;margin-top:0.35rem">Exact post URL lang — hal. https://t.me/channelname/123. Yan lang ang ifo-forward (native forward, hindi copy-paste).</small>
       <label>Delay between cycles (minutes)</label>
       <input id="cfg-delay" class="plug-field-input" type="number" min="0" value="${a.delayMinutes}" placeholder="3">
       <small class="plug-panel-desc" style="display:block;margin-top:0.35rem">Waits this long after a full cycle before the next post is forwarded. Groups send 3 seconds apart within each cycle.</small>

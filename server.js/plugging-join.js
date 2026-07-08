@@ -1,8 +1,6 @@
 /**
- * Join Telegram groups/channels and answer common captcha prompts (+, x, etc.).
+ * Join Telegram groups/channels silently — no captcha messages sent.
  */
-const { groupSendDelayMs } = require('./plugging-stealth');
-
 function loadGramJs() {
   try {
     const { Api } = require('telegram/tl');
@@ -10,10 +8,6 @@ function loadGramJs() {
   } catch (_) {
     return null;
   }
-}
-
-function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
 }
 
 function extractInviteHash(link) {
@@ -25,43 +19,6 @@ function extractInviteHash(link) {
   return null;
 }
 
-const CAPTCHA_ANSWERS = ['+', '✅', '👍', '☑️', '✔️', '✓', 'confirm', 'verify', '1', 'yes', 'x', 'X'];
-const CAPTCHA_HINT_RE = /captcha|verify|verification|human|click|press|button|anti.?spam|not a bot|prove|solve|\+|✅|👍/i;
-
-async function sendCaptchaAnswers(client, chat, logFn) {
-  if (!chat) return;
-  let sent = false;
-
-  try {
-    const recent = await client.getMessages(chat, { limit: 8 });
-    for (const msg of recent || []) {
-      const text = String(msg.message || msg.text || '');
-      if (!CAPTCHA_HINT_RE.test(text)) continue;
-      for (const answer of CAPTCHA_ANSWERS) {
-        try {
-          await client.sendMessage(chat, { message: answer, replyTo: msg.id });
-          if (logFn) logFn(`Captcha reply sent: "${answer}"`);
-          sent = true;
-          await sleep(800);
-          break;
-        } catch (_) { /* try next */ }
-      }
-      if (sent) break;
-    }
-  } catch (_) { /* ignore */ }
-
-  if (!sent) {
-    for (const answer of ['+', '✅', '👍']) {
-      try {
-        await client.sendMessage(chat, { message: answer });
-        if (logFn) logFn(`Join verify sent: "${answer}"`);
-        await sleep(600);
-        break;
-      } catch (_) { /* ignore */ }
-    }
-  }
-}
-
 async function joinEntity(client, entity, refLabel, logFn) {
   const gram = loadGramJs();
   if (!gram || !entity) return false;
@@ -70,19 +27,16 @@ async function joinEntity(client, entity, refLabel, logFn) {
     if (entity.broadcast || entity.megagroup || entity.gigagroup) {
       await client.invoke(new gram.Api.channels.JoinChannel({ channel: entity }));
       if (logFn) logFn(`Joined ${refLabel}`);
-      await sendCaptchaAnswers(client, entity, logFn);
       return true;
     }
     if (entity.className === 'Chat') {
       if (logFn) logFn(`Already in ${refLabel}`);
-      await sendCaptchaAnswers(client, entity, logFn);
       return true;
     }
   } catch (err) {
     const msg = String(err.message || err).toUpperCase();
     if (msg.includes('USER_ALREADY_PARTICIPANT') || msg.includes('ALREADY')) {
       if (logFn) logFn(`Already in ${refLabel}`);
-      await sendCaptchaAnswers(client, entity, logFn);
       return true;
     }
     throw err;
@@ -98,7 +52,6 @@ async function joinFromInvite(client, hash, refLabel, logFn) {
     const result = await client.invoke(new gram.Api.messages.ImportChatInvite({ hash }));
     const chat = result?.chats?.[0] || null;
     if (logFn) logFn(`Joined via invite ${refLabel}`);
-    if (chat) await sendCaptchaAnswers(client, chat, logFn);
     return chat;
   } catch (err) {
     const msg = String(err.message || err).toUpperCase();
@@ -106,14 +59,13 @@ async function joinFromInvite(client, hash, refLabel, logFn) {
       const check = await client.invoke(new gram.Api.messages.CheckChatInvite({ hash }));
       const chat = check?.chat || null;
       if (logFn) logFn(`Already in invite ${refLabel}`);
-      if (chat) await sendCaptchaAnswers(client, chat, logFn);
       return chat;
     }
     throw err;
   }
 }
 
-async function joinTargetWithCaptcha(client, link, entity, logFn) {
+async function joinTarget(client, link, entity, logFn) {
   const hash = extractInviteHash(link);
   if (hash) {
     const joined = await joinFromInvite(client, hash, link, logFn);
@@ -132,8 +84,6 @@ async function joinSourceChannel(client, source, logFn) {
 
 module.exports = {
   extractInviteHash,
-  joinTargetWithCaptcha,
-  joinSourceChannel,
-  sendCaptchaAnswers,
-  CAPTCHA_ANSWERS
+  joinTarget,
+  joinSourceChannel
 };

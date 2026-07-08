@@ -8,7 +8,7 @@ const appConfig = require('./config');
 const { sendHtmlPage } = require('./send-html-page');
 const { sendLoginCode, verifyLoginCode } = require('./plugging-telegram');
 const { startRunner, stopRunner, isRunning, runTestForward } = require('./plugging-runner');
-const { normalizeCustomLink } = require('./plugging-forward');
+const { isPostLink } = require('./plugging-post');
 const { pickProxyForNewAccount, listPluggingProxies, autoEnableProxySetting, ensureAccountProxy } = require('./plugging-proxy');
 const { logPlugActivity, getAccountActivity, clearAccountActivity } = require('./plugging-activity');
 const {
@@ -201,16 +201,16 @@ function mountPluggingService(app, db, deps) {
     const targetLines = targetsText.split(/\r?\n/).filter((line) => line.trim()).length;
 
     if (!sourceLink) {
-      throw new Error('Source chat / channel link is required');
+      throw new Error('Post link is required');
+    }
+    if (!isPostLink(sourceLink)) {
+      throw new Error('Use a post link like https://t.me/channelname/123 — not a channel-only link');
     }
     if (targetLines < 1) {
       throw new Error('Add at least one target group link');
     }
     if (targetLines > (maxDestinations || 3)) {
       throw new Error(`Your plan allows up to ${maxDestinations || 3} destination groups`);
-    }
-    if (displayName && !normalizeCustomLink(displayName)) {
-      throw new Error('Your shop link must be a full URL starting with https:// (example: https://loveriette.shop/?ref=you)');
     }
 
     db.prepare(`
@@ -426,7 +426,7 @@ function mountPluggingService(app, db, deps) {
       if (body.sourceLink != null || body.targetsText != null || body.displayName != null || body.delayMinutes != null) {
         account = persistAccountConfig(account, body, req.plugOrder.maxDestinations);
       } else if (!String(account.source_link || '').trim()) {
-        return res.status(400).json({ error: 'Save a source chat link before starting' });
+        return res.status(400).json({ error: 'Save a post link before starting (https://t.me/channel/123)' });
       } else if (!String(account.targets_text || '').split(/\r?\n/).filter((l) => l.trim()).length) {
         return res.status(400).json({ error: 'Save at least one target group before starting' });
       }
