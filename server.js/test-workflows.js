@@ -179,9 +179,9 @@ async function runApiChecks(adminCookie) {
     db.prepare(`
       INSERT INTO orders (
         order_number, order_seq, email, payment_method_id,
-        subtotal, discount, total, status, tingi_drop_enabled, fulfillment_mode
-      ) VALUES (?, ?, ?, ?, ?, 0, ?, 'pending', 0, 'auto')
-    `).run(ghostNumber, seq2, 'ghost-pending@test.local', pm.id, product.price, product.price);
+        subtotal, discount, total, status, tingi_drop_enabled, fulfillment_mode, receipt_url
+      ) VALUES (?, ?, ?, ?, ?, 0, ?, 'pending', 0, 'auto', ?)
+    `).run(ghostNumber, seq2, 'ghost-pending@test.local', pm.id, product.price, product.price, 'legacy-import-proof-placeholder');
     const ghostList = await request('GET', '/admin/all-orders?tab=pending', null, adminCookie);
     const ghostVisible = ghostList.status === 200
       && Array.isArray(ghostList.json)

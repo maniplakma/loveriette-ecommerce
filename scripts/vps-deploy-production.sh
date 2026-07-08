@@ -66,6 +66,9 @@ echo "==> Restart PM2 ($PM2_NAME)"
 pm2 restart "$PM2_NAME" 2>/dev/null || pm2 start ecosystem.config.cjs --env production
 pm2 save
 
+echo "==> Purge ghost orders (no valid payment proof in DB)"
+node scripts/purge-ghost-orders.js || true
+
 echo "==> Health checks"
 sleep 3
 HOME_CODE="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${PORT}/" || echo 000)"

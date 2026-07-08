@@ -132,7 +132,23 @@ function initDashboard() {
     if (delBtn) deleteProduct(delBtn.dataset.del);
   });
 
-  $('orders-list')?.addEventListener('click', (e) => {
+  $('orders-list')?.addEventListener('click', async (e) => {
+    const delBtn = e.target.closest('[data-del-order]');
+    if (delBtn) {
+      const orderRef = delBtn.dataset.delOrder;
+      if (!orderRef || !confirm(`Delete order #${orderRef}? This cannot be undone.`)) return;
+      delBtn.disabled = true;
+      try {
+        await api(`/admin/orders/${encodeURIComponent(orderRef)}`, { method: 'DELETE' });
+        showToast(`Order #${orderRef} deleted`, 'approved');
+        invalidateOrdersCache();
+        await loadAllOrders();
+      } catch (err) {
+        showToast(err.message, 'error');
+        delBtn.disabled = false;
+      }
+      return;
+    }
     const btn = e.target.closest('[data-order]');
     if (btn) openOrderModal(btn.dataset.order);
   });
@@ -553,7 +569,10 @@ function renderOrdersList(orders, tab) {
       </div>
       ${orderProofCell(o)}
       <div class="admin-order-amt"><strong>${peso(o.total)}</strong><small>${o.paymentMethod}</small></div>
-      <button class="admin-btn admin-btn-primary admin-btn-sm" data-order="${o.orderNumber}">View</button>
+      <div class="admin-order-actions">
+        ${!o.receiptUrl ? `<button type="button" class="admin-btn admin-btn-ghost admin-btn-sm" data-del-order="${esc(o.orderNumber)}">Remove</button>` : ''}
+        <button class="admin-btn admin-btn-primary admin-btn-sm" data-order="${o.orderNumber}">View</button>
+      </div>
     </div>
   `).join('');
   list.classList.remove('is-loading');
@@ -576,6 +595,9 @@ async function refreshOrdersTab(tab, gen, { background = false } = {}) {
 
 async function loadAllOrders(opts = {}) {
   const tab = activeOrdersTab();
+  if (tab === 'pending') {
+    try { await api('/admin/orders/purge-no-proof', { method: 'POST', body: '{}' }); } catch (_) { /* ignore */ }
+  }
   const list = $('orders-list');
   const gen = ++ordersFetchGen;
   const cached = ordersTabCache[tab];
