@@ -10,8 +10,8 @@ function formatCatalogPrice(price) {
 
 function catalogPriceHtml(price) {
   const parts = formatCatalogPrice(price);
-  if (!parts) return '<span class="catalog-price-empty">No price yet</span>';
-  return `<span class="catalog-price-currency">₱</span><span class="catalog-price-major">${parts.major}</span><span class="catalog-price-minor">${parts.minor}</span>`;
+  if (!parts) return '<span class="catalog-price-empty">—</span>';
+  return `<span class="catalog-showcase-price">₱${parts.major}<small>.${parts.minor}</small></span>`;
 }
 
 function catalogStockBadge(label, state = 'available') {
@@ -28,28 +28,25 @@ function renderCatalogProductCard({ href, name, description, icon, price, badgeH
     ? window.renderProductIcon(icon, name, 'logo-img')
     : esc(name.charAt(0));
   return `
-    <article class="product-card catalog-card catalog-card--float">
-      <a href="${esc(href)}" class="catalog-card-link">
-        <span class="catalog-card-gloss" aria-hidden="true"></span>
-        <div class="catalog-card-head">
-          <div class="catalog-card-icon">
+    <article class="catalog-showcase">
+      <a href="${esc(href)}" class="catalog-showcase-link">
+        <div class="catalog-showcase-top">
+          <div class="catalog-showcase-icon">
             <div class="logo${icon ? ' has-icon' : ''}">${iconHtml}</div>
           </div>
-          <div class="catalog-card-badge">${badgeHtml}</div>
+          <div class="catalog-showcase-badge">${badgeHtml}</div>
         </div>
-        <div class="catalog-card-body">
-          <h2 class="catalog-card-name">${esc(name)}</h2>
-          <p class="catalog-desc">${esc(description)}</p>
+        <div class="catalog-showcase-body">
+          <h2 class="catalog-showcase-name">${esc(name)}</h2>
+          <p class="catalog-showcase-desc">${esc(description)}</p>
         </div>
-        <div class="catalog-card-foot">
-          <div class="catalog-card-price-block">
-            <span class="catalog-price-label">STARTING AT</span>
-            <span class="catalog-price-value">${catalogPriceHtml(price)}</span>
+        <footer class="catalog-showcase-foot">
+          <div class="catalog-showcase-price-wrap">
+            <span class="catalog-showcase-price-label">from</span>
+            ${catalogPriceHtml(price)}
           </div>
-          <span class="catalog-card-arrow" aria-hidden="true">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25"><polyline points="9 18 15 12 9 6"/></svg>
-          </span>
-        </div>
+          <span class="catalog-showcase-cta">Explore <span aria-hidden="true">→</span></span>
+        </footer>
       </a>
     </article>`;
 }

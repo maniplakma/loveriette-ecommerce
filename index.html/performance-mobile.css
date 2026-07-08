@@ -49,6 +49,8 @@
   .product-card:not(.catalog-card),
   .card:not(.package-card),
   .plan-purchase-card,
+  .variant-showcase,
+  .catalog-showcase,
   .nf-plan-card,
   .plugging-ws-box,
   .platform-section .faq-item,
@@ -67,6 +69,8 @@
   .product-card:not(.catalog-card),
   .card:not(.package-card),
   .plan-purchase-card,
+  .variant-showcase,
+  .catalog-showcase,
   .nf-plan-card {
     background: var(--surface-color) !important;
   }
@@ -88,6 +92,8 @@
   }
 
   .catalog-card:hover,
+  .catalog-showcase:hover,
+  .variant-showcase:hover,
   .product-card:not(.catalog-card):hover,
   .service-card--premium:hover {
     transform: none !important;
