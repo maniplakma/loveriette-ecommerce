@@ -781,6 +781,29 @@ function migrateWebsiteInquiryChat(db) {
     }
   } catch (_) { /* ignore */ }
 
+  // Always strip lending from CMS service cards (idempotent — admin may re-save old data)
+  try {
+    const catRow = db.prepare("SELECT id, content_json FROM cms_sections WHERE section_key = 'service_categories'").get();
+    if (catRow) {
+      let content = {};
+      try { content = JSON.parse(catRow.content_json || '{}'); } catch (_) { content = {}; }
+      if (Array.isArray(content.items)) {
+        const filtered = content.items.filter((i) => {
+          const link = String(i?.link || '').toLowerCase();
+          const title = String(i?.title || '').toLowerCase();
+          return link !== '/lending' && !link.includes('lending.html') && title !== 'lending';
+        });
+        if (filtered.length !== content.items.length) {
+          content.items = filtered;
+          db.prepare('UPDATE cms_sections SET content_json = ? WHERE id = ?')
+            .run(JSON.stringify(content), catRow.id);
+        }
+      }
+    }
+    db.prepare("DELETE FROM cms_faqs WHERE scope = 'lending'").run();
+    db.prepare("DELETE FROM admin_notifications WHERE type = 'lending'").run();
+  } catch (_) { /* ignore */ }
+
   try {
     if (!db.prepare("SELECT 1 FROM platform_content WHERE key = '_homepage_content_v3'").get()) {
       const defaults = {

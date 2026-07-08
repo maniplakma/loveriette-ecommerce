@@ -10,7 +10,7 @@ window.domReady = window.onPageReady = function domReady(fn) {
 /** Lightweight in-memory API cache with TTL */
 const ApiCache = (() => {
   const store = new Map();
-  const DEFAULT_TTL = 30000;
+  const DEFAULT_TTL = 45000;
 
   function get(key) {
     const entry = store.get(key);

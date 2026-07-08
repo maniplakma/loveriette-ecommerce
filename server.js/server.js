@@ -2160,6 +2160,7 @@ app.get('/products/:id', (req, res) => {
   product.bulkPricingEnabled = !!product.bulk_pricing_enabled;
   product.bulkTiers = parseBulkTiers(product.bulk_tiers);
   product.displayPrice = lowestUnitPrice(product.id, null, product.price);
+  res.set('Cache-Control', 'public, max-age=45, stale-while-revalidate=120');
   res.json(product);
 });
 
@@ -3364,21 +3365,49 @@ function resolveCategory(name) {
   return row;
 }
 
-// Replace all plans/variants for a product with the supplied array
+// Replace all plans/variants for a product — upsert by index to preserve variant IDs (stock_items FK)
 function saveVariants(productId, variants) {
   if (!Array.isArray(variants)) return;
-  db.prepare('DELETE FROM product_variants WHERE product_id = ?').run(productId);
+  const existing = db.prepare(
+    'SELECT id FROM product_variants WHERE product_id = ? ORDER BY sort_order ASC, id ASC'
+  ).all(productId);
+  const incoming = variants.filter((v) => v && String(v.name || '').trim());
+  const upd = db.prepare(`
+    UPDATE product_variants SET
+      name = ?, duration = ?, price = ?, cost = ?, description = ?, rules = ?, sort_order = ?,
+      bulk_pricing_enabled = ?, bulk_tiers = ?
+    WHERE id = ?
+  `);
   const ins = db.prepare(`
     INSERT INTO product_variants (
       product_id, name, duration, price, cost, description, rules, sort_order,
       bulk_pricing_enabled, bulk_tiers
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
-  variants
-    .filter((v) => v && String(v.name || '').trim())
-    .forEach((v, i) => {
-      const catalogText = String(v.description || v.duration || '').trim();
-      ins.run(
+  const del = db.prepare('DELETE FROM product_variants WHERE id = ?');
+  const keepIds = [];
+
+  incoming.forEach((v, i) => {
+    const catalogText = String(v.description || v.duration || '').trim();
+    const bulkJson = JSON.stringify(v.bulkTiers || v.bulk_tiers || []);
+    const bulkEnabled = (v.bulkPricingEnabled || v.bulk_pricing_enabled) ? 1 : 0;
+    const row = existing[i];
+    if (row) {
+      upd.run(
+        String(v.name).trim(),
+        catalogText,
+        Number(v.price) || 0,
+        Number(v.cost) || 0,
+        catalogText,
+        String(v.rules || '').trim(),
+        i,
+        bulkEnabled,
+        bulkJson,
+        row.id
+      );
+      keepIds.push(row.id);
+    } else {
+      const r = ins.run(
         productId,
         String(v.name).trim(),
         catalogText,
@@ -3387,10 +3416,18 @@ function saveVariants(productId, variants) {
         catalogText,
         String(v.rules || '').trim(),
         i,
-        (v.bulkPricingEnabled || v.bulk_pricing_enabled) ? 1 : 0,
-        JSON.stringify(v.bulkTiers || v.bulk_tiers || [])
+        bulkEnabled,
+        bulkJson
       );
-    });
+      keepIds.push(r.lastInsertRowid);
+    }
+  });
+
+  for (let i = incoming.length; i < existing.length; i++) {
+    const orphan = existing[i];
+    const stockCount = db.prepare('SELECT COUNT(*) AS c FROM stock_items WHERE variant_id = ?').get(orphan.id).c;
+    if (stockCount === 0) del.run(orphan.id);
+  }
 }
 
 function getVariants(productId) {
@@ -3416,6 +3453,7 @@ function batchVariantsByProductIds(productIds) {
   `).all(...productIds);
   rows.forEach((v) => {
     const { product_id, ...rest } = v;
+    rest.bulkTiers = parseBulkTiers(rest.bulkTiers);
     if (!map[product_id]) map[product_id] = [];
     map[product_id].push(rest);
   });

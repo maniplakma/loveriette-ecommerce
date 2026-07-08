@@ -120,7 +120,12 @@ function initDashboard() {
   document.querySelector('#catalog-table tbody')?.addEventListener('click', (e) => {
     const editBtn = e.target.closest('[data-edit]');
     if (editBtn) {
-      openProductModal(catalogProductsCache.find((p) => p.id == editBtn.dataset.edit));
+      const product = catalogProductsCache.find((p) => p.id == editBtn.dataset.edit);
+      if (!product) {
+        showToast('Product not found — refresh catalog', 'error');
+        return;
+      }
+      openProductModal(product).catch((err) => showToast(err.message || 'Could not open editor', 'error'));
       return;
     }
     const delBtn = e.target.closest('[data-del]');
@@ -815,12 +820,30 @@ function initIconPicker(initialIcon = '', productName = '') {
   setIcon(initialIcon || hidden.value || '', !!initialIcon);
 }
 
+function normalizeBulkTiers(tiers) {
+  if (!tiers) return [];
+  if (typeof tiers === 'string') {
+    try {
+      const parsed = JSON.parse(tiers);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (_) {
+      return [];
+    }
+  }
+  return Array.isArray(tiers) ? tiers : [];
+}
+
 function formatBulkTiersText(tiers = []) {
-  if (!tiers?.length) return '';
-  return tiers.map((t) => {
+  const list = normalizeBulkTiers(tiers);
+  if (!list.length) return '';
+  return list.map((t) => {
     const max = t.maxQty == null ? '+' : t.maxQty;
     return `${t.minQty}-${max}:${t.price}`;
   }).join(', ');
+}
+
+function escTextarea(s) {
+  return String(s || '').replace(/<\/textarea/gi, '&lt;/textarea');
 }
 
 function parseBulkTiersInput(text) {
@@ -862,8 +885,8 @@ function variantRowHTML(v = {}) {
         </div>
       </div>
       <div class="admin-variant-bulk">
-        <label class="admin-toggle admin-variant-bulk-toggle"><input type="checkbox" class="v-bulk-enabled" ${v.bulkPricingEnabled ? 'checked' : ''}> <span>Bulk pricing for this plan</span></label>
-        <textarea class="v-bulk-tiers admin-modal-input" rows="2" placeholder="Tiers: 1-4:100, 5-9:90, 10+:80">${formatBulkTiersText(v.bulkTiers)}</textarea>
+        <label class="admin-toggle admin-variant-bulk-toggle"><input type="checkbox" class="v-bulk-enabled" ${(v.bulkPricingEnabled || v.bulk_pricing_enabled) ? 'checked' : ''}> <span>Bulk pricing for this plan</span></label>
+        <textarea class="v-bulk-tiers admin-modal-input" rows="2" placeholder="Tiers: 1-4:100, 5-9:90, 10+:80">${formatBulkTiersText(v.bulkTiers ?? v.bulk_tiers)}</textarea>
       </div>
     </div>`;
 }
@@ -901,11 +924,11 @@ async function openProductModal(product = null) {
     <div class="admin-field"><label>Category</label>
       <select name="category" required>
         ${product ? '' : '<option value="" disabled selected>-- Select category --</option>'}
-        ${cats.map((c) => `<option ${p.category === c ? 'selected' : ''}>${c}</option>`).join('')}
+        ${cats.map((c) => `<option value="${esc(c)}" ${p.category === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}
       </select>
     </div>
     <div class="admin-field"><label>Short description</label><input name="description" value="${(p.description || '').replace(/"/g, '&quot;')}"></div>
-    <div class="admin-field"><label>Long description</label><textarea name="long_description">${p.long_description || ''}</textarea></div>
+    <div class="admin-field"><label>Long description</label><textarea name="long_description">${escTextarea(p.long_description)}</textarea></div>
     <div class="admin-field"><label>Base price (₱)</label><input name="price" type="number" min="0" value="${p.price ?? ''}" required></div>
     <div class="admin-field"><label>Cost (₱) — for profit tracking</label><input name="cost" type="number" min="0" value="${p.cost ?? 0}"></div>
     <div class="admin-field"><label>Status</label>
@@ -921,7 +944,7 @@ async function openProductModal(product = null) {
     <div class="admin-field"><label>Meta description (SEO)</label><textarea name="meta_description" rows="2">${p.meta_description || ''}</textarea></div>
     <label class="admin-toggle" style="margin:.3rem 0"><input type="checkbox" name="allow_pre_order" ${(product ? p.allow_pre_order : 1) ? 'checked' : ''}> <span>Allow Pre-Order <small class="admin-card-meta">(buyers can order even when out of stock)</small></span></label>
     <label class="admin-toggle" style="margin:.3rem 0"><input type="checkbox" name="bulk_pricing_enabled" ${p.bulkPricingEnabled || p.bulk_pricing_enabled ? 'checked' : ''}> <span>Enable bulk pricing (base product)</span></label>
-    <div class="admin-field"><label>Bulk tiers (base product)</label><textarea name="bulk_tiers" rows="2" placeholder="1-4:100, 5-9:90, 10+:80">${formatBulkTiersText(p.bulkTiers)}</textarea></div>
+    <div class="admin-field"><label>Bulk tiers (base product)</label><textarea name="bulk_tiers" rows="2" placeholder="1-4:100, 5-9:90, 10+:80">${formatBulkTiersText(p.bulkTiers ?? p.bulk_tiers)}</textarea></div>
     <div class="admin-variants">
       <div class="admin-variants-head"><label>Plans / Variants</label><button type="button" class="admin-btn admin-btn-ghost admin-btn-sm" id="variant-add">+ Add Plan</button></div>
       <p class="admin-variants-hint">Optional. Add subscription plans (e.g. 1 Month, 3 Months). Leave empty to use the base price only.</p>

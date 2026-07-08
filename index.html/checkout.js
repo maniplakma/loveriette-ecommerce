@@ -66,7 +66,7 @@ function updateTingiVisibility() {
 
   const eligible = tingiConfig.checkoutEnabled && qty >= tingiConfig.minQty && qty <= tingiConfig.maxQty;
 
-  wrap.hidden = !productId || !tingiConfig.checkoutEnabled;
+  wrap.hidden = !tingiConfig.checkoutEnabled || (!productId && !items.length);
 
   if (checkbox) {
 
@@ -128,9 +128,15 @@ function unitPriceFromTiers(quantity, basePrice, enabled, tiers) {
 
   const qty = Math.max(1, Number(quantity) || 1);
 
-  if (!enabled || !tiers?.length) return basePrice;
+  let tierList = tiers;
+  if (typeof tierList === 'string') {
+    try { tierList = JSON.parse(tierList); } catch { tierList = []; }
+  }
+  if (!Array.isArray(tierList)) tierList = [];
 
-  for (const tier of tiers) {
+  if (!enabled || !tierList.length) return basePrice;
+
+  for (const tier of tierList) {
 
     const max = tier.maxQty == null ? Infinity : tier.maxQty;
 

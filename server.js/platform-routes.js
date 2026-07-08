@@ -43,6 +43,22 @@ function mountPlatformRoutes(app, db, deps) {
     }
   };
 
+  function isLendingServiceItem(item) {
+    if (!item || typeof item !== 'object') return false;
+    const link = String(item.link || '').toLowerCase();
+    const title = String(item.title || '').toLowerCase();
+    const icon = String(item.icon || '').toLowerCase();
+    return link.includes('/lending')
+      || link.includes('lending.html')
+      || title === 'lending'
+      || icon === 'loan';
+  }
+
+  function stripLendingItems(items) {
+    if (!Array.isArray(items)) return items;
+    return items.filter((i) => !isLendingServiceItem(i));
+  }
+
   function ensureSectionItems(section) {
     if (!section?.key) return section;
     const fallback = HOMEPAGE_SECTION_DEFAULTS[section.key];
@@ -50,6 +66,10 @@ function mountPlatformRoutes(app, db, deps) {
     const content = section.content && typeof section.content === 'object' ? { ...section.content } : {};
     if (!Array.isArray(content.items) || !content.items.length) {
       content.items = fallback.items;
+    }
+    if (section.key === 'service_categories' && Array.isArray(content.items)) {
+      content.items = stripLendingItems(content.items);
+      if (!content.items.length) content.items = fallback.items;
     }
     return { ...section, content };
   }
@@ -242,6 +262,10 @@ function mountPlatformRoutes(app, db, deps) {
       sendHtmlPage(res, frontendDir, file);
     });
   });
+
+  app.get('/lending', (req, res) => res.redirect(301, '/'));
+  app.get('/lending.html', (req, res) => res.redirect(301, '/'));
+  app.get(/^\/lending\/.*/, (req, res) => res.redirect(301, '/'));
 
   app.get(['/product', '/product/'], (req, res) => res.redirect(302, '/shop'));
 
@@ -593,13 +617,25 @@ function mountPlatformRoutes(app, db, deps) {
 
   app.put('/admin/cms/sections/:key', requireAdmin, (req, res) => {
     const { title, subtitle, body, contentJson, sortOrder, isEnabled } = req.body || {};
+    let contentJsonStr = contentJson != null ? JSON.stringify(contentJson) : null;
+    if (req.params.key === 'service_categories' && contentJson && Array.isArray(contentJson.items)) {
+      const filtered = {
+        ...contentJson,
+        items: contentJson.items.filter((i) => {
+          const link = String(i?.link || '').toLowerCase();
+          const titleLc = String(i?.title || '').toLowerCase();
+          return link !== '/lending' && !link.includes('lending.html') && titleLc !== 'lending';
+        })
+      };
+      contentJsonStr = JSON.stringify(filtered);
+    }
     db.prepare(`
       UPDATE cms_sections SET title = COALESCE(?, title), subtitle = COALESCE(?, subtitle),
         body = COALESCE(?, body), content_json = COALESCE(?, content_json),
         sort_order = COALESCE(?, sort_order), is_enabled = COALESCE(?, is_enabled),
         updated_at = datetime('now')
       WHERE section_key = ?
-    `).run(title, subtitle, body, contentJson != null ? JSON.stringify(contentJson) : null,
+    `).run(title, subtitle, body, contentJsonStr,
       sortOrder, isEnabled != null ? (isEnabled ? 1 : 0) : null, req.params.key);
     res.json({ ok: true });
   });

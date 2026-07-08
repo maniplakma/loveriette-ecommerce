@@ -1475,6 +1475,46 @@ body.page-loading { opacity: 0.98; }
 .package-card--compact .package-card-body {
   padding: 0.85rem 1rem 1rem;
 }
+
+a.package-card {
+  text-decoration: none;
+  color: inherit;
+  display: block;
+}
+
+.platform-loading-hint {
+  grid-column: 1 / -1;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.65);
+  padding: 1.5rem 0;
+}
+
+.platform-inquiry-dialog {
+  border: none;
+  border-radius: 16px;
+  padding: 1.5rem;
+  max-width: 420px;
+  width: min(90vw, 420px);
+  background: #1a0a0a;
+  color: #f5e6e6;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
+}
+
+.platform-inquiry-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.platform-form--dark label {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.platform-form--dark input,
+.platform-form--dark textarea {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: #fff;
+}
+
 @media (min-width: 768px) {
   .package-detail-grid {
     grid-template-columns: minmax(240px, 0.9fr) minmax(0, 1.4fr);

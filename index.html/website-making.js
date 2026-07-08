@@ -23,7 +23,7 @@
 
   async function fetchWebsiteData() {
     if (window.ApiCache?.fetchJson) {
-      return ApiCache.fetchJson('/api/website-making', {}, 30000);
+      return ApiCache.fetchJson('/api/website-making', {}, 60000);
     }
     const res = await fetch('/api/website-making', { credentials: 'include' });
     const data = await res.json().catch(() => ({}));
@@ -55,13 +55,34 @@
       </article>`;
   }
 
-  function renderPackages(packages) {
+  function renderPackages(packages, { fromApi = false } = {}) {
     const grid = document.getElementById('packages-grid');
     const empty = document.getElementById('packages-empty');
     if (!grid) return;
-    const list = Array.isArray(packages) && packages.length ? packages : DEFAULT_PACKAGES;
+    const list = Array.isArray(packages) && packages.length
+      ? packages
+      : (fromApi ? [] : DEFAULT_PACKAGES);
     grid.innerHTML = list.map(renderPackageCard).join('');
     if (empty) empty.hidden = list.length > 0;
+  }
+
+  function renderPortfolio(items) {
+    const section = document.getElementById('portfolio-section');
+    const grid = document.getElementById('portfolio-grid');
+    if (!section || !grid) return;
+    const list = Array.isArray(items) ? items : [];
+    if (!list.length) {
+      section.hidden = true;
+      return;
+    }
+    section.hidden = false;
+    grid.innerHTML = list.map((item) => `
+      <article class="package-card package-card--portfolio">
+        ${item.imageUrl ? `<div class="package-card-media"><img src="${esc(item.imageUrl)}" alt="" loading="lazy"></div>` : ''}
+        <h3>${esc(item.title)}</h3>
+        <p>${esc(item.description)}</p>
+        ${item.linkUrl ? `<a href="${esc(item.linkUrl)}" class="btn-outline-platform" target="_blank" rel="noopener">View project</a>` : ''}
+      </article>`).join('');
   }
 
   function renderFaqs(faqs) {
@@ -78,11 +99,13 @@
     });
   }
 
-  function showLoadError() {
-    const grid = document.getElementById('packages-grid');
-    if (!grid || grid.children.length > 0) return;
-    renderPackages(DEFAULT_PACKAGES);
-    renderFaqs(DEFAULT_FAQS);
+  function applyPageMeta() {
+    if (window.applySeoMeta) {
+      applySeoMeta({ title: 'Website Making — loveriette', description: 'Professional websites for your business', url: '/website-making' });
+    }
+    if (window.renderShareButtons) {
+      renderShareButtons(document.getElementById('web-share'), '/website-making', 'Website Making');
+    }
   }
 
   async function loadWebsiteMaking() {
@@ -91,20 +114,17 @@
       data = await fetchWebsiteData();
     } catch (e) {
       console.warn('Website making API failed — using defaults', e);
-      renderPackages(DEFAULT_PACKAGES);
+      applyPageMeta();
+      renderPackages(DEFAULT_PACKAGES, { fromApi: false });
       renderFaqs(DEFAULT_FAQS);
+      renderPortfolio([]);
       return;
     }
 
-    if (window.applySeoMeta) {
-      applySeoMeta({ title: 'Website Making — loveriette', description: 'Professional websites for your business', url: '/website-making' });
-    }
-    if (window.renderShareButtons) {
-      renderShareButtons(document.getElementById('web-share'), '/website-making', 'Website Making');
-    }
-
-    renderPackages(data.packages);
+    applyPageMeta();
+    renderPackages(data.packages, { fromApi: true });
     renderFaqs(data.faqs);
+    renderPortfolio(data.portfolio);
   }
 
   const domReady = window.domReady || window.onPageReady || function (fn) {
@@ -114,6 +134,6 @@
 
   domReady(() => {
     if (typeof initPlatformNav === 'function') initPlatformNav('website');
-    loadWebsiteMaking().catch(showLoadError);
+    loadWebsiteMaking();
   });
 })();

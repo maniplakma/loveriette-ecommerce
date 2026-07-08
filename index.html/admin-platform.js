@@ -26,7 +26,12 @@
       document.getElementById('cms-services-subtitle').value = svcSection.subtitle || '';
       let content = {};
       try { content = JSON.parse(svcSection.content_json || '{}'); } catch (_) {}
-      renderCmsServiceItems(content.items || []);
+      const items = (content.items || []).filter((i) => {
+        const link = String(i?.link || '').toLowerCase();
+        const title = String(i?.title || '').toLowerCase();
+        return link !== '/lending' && !link.includes('lending.html') && title !== 'lending';
+      });
+      renderCmsServiceItems(items);
     }
 
     if (data.footer) {
@@ -60,10 +65,19 @@
       cta: row.querySelector('.svc-cta')?.value?.trim() || '',
       icon: row.querySelector('.svc-icon')?.value?.trim() || 'star',
       primary: !!row.querySelector('.svc-primary')?.checked
-    })).filter((i) => i.title && i.link);
+    })).filter((i) => {
+      if (!i.title || !i.link) return false;
+      const link = i.link.toLowerCase();
+      const title = i.title.toLowerCase();
+      return link !== '/lending' && !link.includes('lending.html') && title !== 'lending';
+    });
   }
 
   function bindCmsEvents() {
+    const root = document.getElementById('tab-cms');
+    if (!root || root.dataset.cmsBound === '1') return;
+    root.dataset.cmsBound = '1';
+
     document.getElementById('cms-faq-add')?.addEventListener('click', async () => {
       const scope = prompt('Scope (home/website/plugging):', 'home');
       const question = prompt('Question:');
@@ -106,11 +120,13 @@
       renderCmsServiceItems(items);
     });
 
-    document.querySelectorAll('.cms-service-del').forEach((b) => b.addEventListener('click', () => {
+    document.getElementById('cms-services-items')?.addEventListener('click', (e) => {
+      const btn = e.target.closest('.cms-service-del');
+      if (!btn) return;
       const items = collectCmsServiceItems();
-      items.splice(Number(b.dataset.idx), 1);
+      items.splice(Number(btn.dataset.idx), 1);
       renderCmsServiceItems(items);
-    }));
+    });
   }
 
   /* ── Website Making ── */
@@ -150,13 +166,7 @@
       if (window.showToast) showToast('Status updated');
     }));
 
-    document.getElementById('web-pkg-add')?.addEventListener('click', async () => {
-      const name = prompt('Package name:');
-      const price = prompt('Price (₱):', '15000');
-      if (!name) return;
-      await api('/admin/website-making/packages', { method: 'POST', body: { name, price: Number(price) || 0, description: '', features: [] } });
-      loadPlatformWebsite();
-    }, { once: true });
+    bindWebsiteEvents();
 
     document.querySelectorAll('[data-del-pkg]').forEach((b) => b.addEventListener('click', async () => {
       if (!confirm('Delete package?')) return;
@@ -164,6 +174,20 @@
       loadPlatformWebsite();
     }));
   };
+
+  function bindWebsiteEvents() {
+    const root = document.getElementById('tab-website-making');
+    if (!root || root.dataset.webBound === '1') return;
+    root.dataset.webBound = '1';
+
+    document.getElementById('web-pkg-add')?.addEventListener('click', async () => {
+      const name = prompt('Package name:');
+      const price = prompt('Price (₱):', '15000');
+      if (!name) return;
+      await api('/admin/website-making/packages', { method: 'POST', body: { name, price: Number(price) || 0, description: '', features: [] } });
+      loadPlatformWebsite();
+    });
+  }
 
   async function openInquiryChat(id) {
     const modal = document.getElementById('inquiry-chat-modal');
@@ -400,31 +424,36 @@
   };
 
   function bindPluggingEvents() {
-    document.getElementById('plugging-settings-form')?.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const body = Object.fromEntries(new FormData(e.target));
-      body.plugging_enabled = e.target.querySelector('[name="plugging_enabled"]').checked ? '1' : '0';
-      await api('/admin/plugging/settings', { method: 'PUT', body });
-      if (window.showToast) showToast('Plugging settings saved');
-    }, { once: true });
+    const root = document.getElementById('tab-plugging');
+    if (root && root.dataset.plugBound !== '1') {
+      root.dataset.plugBound = '1';
 
-    document.getElementById('plugging-proxy-add-form')?.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const label = e.target.querySelector('[name="proxy_label"]').value;
-      const url = e.target.querySelector('[name="proxy_url"]').value;
-      await api('/admin/plugging/proxies', { method: 'POST', body: { label, url } });
-      e.target.reset();
-      if (window.showToast) showToast('Proxy added');
-      loadPlatformPlugging();
-    }, { once: true });
+      document.getElementById('plugging-settings-form')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const body = Object.fromEntries(new FormData(e.target));
+        body.plugging_enabled = e.target.querySelector('[name="plugging_enabled"]').checked ? '1' : '0';
+        await api('/admin/plugging/settings', { method: 'PUT', body });
+        if (window.showToast) showToast('Plugging settings saved');
+      });
 
-    document.getElementById('plugging-product-add')?.addEventListener('click', async () => {
-      const name = prompt('Product name (e.g. Standard Plugging):');
-      if (!name) return;
-      const description = prompt('Description:', '') || '';
-      await api('/admin/plugging/products', { method: 'POST', body: { name, description } });
-      loadPlatformPlugging();
-    }, { once: true });
+      document.getElementById('plugging-proxy-add-form')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const label = e.target.querySelector('[name="proxy_label"]').value;
+        const url = e.target.querySelector('[name="proxy_url"]').value;
+        await api('/admin/plugging/proxies', { method: 'POST', body: { label, url } });
+        e.target.reset();
+        if (window.showToast) showToast('Proxy added');
+        loadPlatformPlugging();
+      });
+
+      document.getElementById('plugging-product-add')?.addEventListener('click', async () => {
+        const name = prompt('Product name (e.g. Standard Plugging):');
+        if (!name) return;
+        const description = prompt('Description:', '') || '';
+        await api('/admin/plugging/products', { method: 'POST', body: { name, description } });
+        loadPlatformPlugging();
+      });
+    }
 
     document.querySelectorAll('[data-add-variant]').forEach((b) => b.addEventListener('click', async () => {
       const productId = Number(b.dataset.addVariant);

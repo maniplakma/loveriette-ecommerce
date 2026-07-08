@@ -14,9 +14,11 @@
   <link rel="stylesheet" href="performance-mobile.css?v=20260705cleanup">
   <link rel="stylesheet" href="theme.css?v=20260703audit">
   <link rel="stylesheet" href="typography.css">
-  <link rel="stylesheet" href="platform.css?v=20260707aesthetic">
+  <link rel="stylesheet" href="platform.css?v=20260708audit">
   <script src="theme.js?v=20260705cleanup" defer></script>
+  <script src="theme-colors.js?v=20260705cleanup" defer></script>
   <script src="share-utils.js?v=20260703audit" defer></script>
+  <script src="api-cache.js?v=20260707restore"></script>
 </head>
 <body>
   <nav class="top-nav"><div class="nav-inner"><ul class="nav-left">
@@ -49,38 +51,23 @@
       <p>Choose a package that fits your business — ecommerce, auto-order, landing pages, and more.</p>
     </div>
     <div class="package-grid" id="packages-grid">
-      <article class="package-card">
-        <h3>Ecommerce Website</h3>
-        <p>Full online store with cart &amp; checkout.</p>
-        <div class="package-price">Starting at ₱25,000</div>
-        <ul class="package-features"><li>Product catalog</li><li>Cart &amp; checkout</li><li>Admin panel</li><li>Mobile responsive</li></ul>
-        <div class="package-actions"><a href="/website-making/ecommerce" class="btn-primary-platform">View Package</a></div>
-      </article>
-      <article class="package-card">
-        <h3>Auto Order Website</h3>
-        <p>Automated order processing site.</p>
-        <div class="package-price">Starting at ₱18,000</div>
-        <ul class="package-features"><li>Auto order flow</li><li>Payment QR</li><li>Order notifications</li><li>Admin dashboard</li></ul>
-        <div class="package-actions"><a href="/website-making/auto-order" class="btn-primary-platform">View Package</a></div>
-      </article>
-      <article class="package-card">
-        <h3>Custom Website</h3>
-        <p>Tailored design for your brand.</p>
-        <div class="package-price">Starting at ₱35,000</div>
-        <ul class="package-features"><li>Custom design</li><li>Unique features</li><li>SEO setup</li><li>Training included</li></ul>
-        <div class="package-actions"><a href="/website-making/custom" class="btn-primary-platform">View Package</a></div>
-      </article>
+      <p class="platform-loading-hint">Loading packages…</p>
     </div>
     <p class="platform-empty-hint" id="packages-empty" hidden>No packages available yet.</p>
+  </section>
+
+  <section class="platform-section" id="portfolio-section" hidden>
+    <div class="platform-section-head">
+      <h2>our work</h2>
+      <p>Recent website projects and builds.</p>
+    </div>
+    <div class="package-grid" id="portfolio-grid"></div>
   </section>
 
   <section class="platform-section">
     <div class="platform-section-head"><h2>FAQ</h2></div>
     <div class="faq-list" id="web-faq">
-      <div class="faq-item open">
-        <button type="button" class="faq-question">How long does it take to build a website?</button>
-        <div class="faq-answer"><p>Typical turnaround is 1–2 weeks depending on package complexity, content readiness, and revision rounds.</p></div>
-      </div>
+      <p class="platform-loading-hint">Loading FAQs…</p>
     </div>
   </section>
 

@@ -78,7 +78,12 @@ const DEFAULTS = {
 function coalesceItems(section, fallbackItems) {
   const raw = section?.content?.items || section?.items;
   if (!Array.isArray(raw)) return fallbackItems;
-  const items = raw.filter((i) => i && (i.title || i.question));
+  const items = raw.filter((i) => {
+    if (!i || !(i.title || i.question)) return false;
+    const link = String(i.link || '').toLowerCase();
+    const title = String(i.title || '').toLowerCase();
+    return link !== '/lending' && !link.includes('lending.html') && title !== 'lending';
+  });
   return items.length ? items : fallbackItems;
 }
 
