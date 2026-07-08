@@ -9,7 +9,8 @@ const {
   shouldProcessMessage,
   joinSourceChannel,
   inspectSource,
-  forwardPostWithRetries
+  forwardPostWithRetries,
+  normalizeCustomLink
 } = require('./plugging-forward');
 
 const runners = new Map();
@@ -282,6 +283,12 @@ function startRunner(db, accountId, getSettings) {
                 `Live — watching ${entityLabel(source)} · 3 sec per group · ${cycleNote}`
               );
               logPlugActivity(db, accountId, 'info', 'Ready — new posts forward immediately. Only posts after Start are sent.');
+              const customLink = normalizeCustomLink(account.display_name);
+              if (customLink) {
+                logPlugActivity(db, accountId, 'info', `Custom link active — posts will use ${customLink}`);
+              } else if (String(account.display_name || '').trim()) {
+                logPlugActivity(db, accountId, 'info', 'Name prefix active — add a full https:// link to replace shop URLs');
+              }
               return true;
             } catch (err) {
               source = null;
@@ -345,13 +352,17 @@ function startRunner(db, accountId, getSettings) {
                 const targetName = entityLabel(target) || ref;
                 const result = await forwardPostWithRetries(
                   client, source, target, msg, targetName,
-                  (retryMsg) => logPlugActivity(db, accountId, 'error', retryMsg, targetName)
+                  (retryMsg) => logPlugActivity(db, accountId, 'error', retryMsg, targetName),
+                  { displayName: account.display_name }
                 );
                 if (result.ok) {
                   okCount += 1;
                   db.prepare('UPDATE plugging_accounts SET success_count = success_count + 1, updated_at = datetime(\'now\') WHERE id = ?')
                     .run(accountId);
-                  logPlugActivity(db, accountId, 'success', `Sent post #${msg.id} → ${targetName}`, targetName);
+                  const modeNote = result.mode === 'relink'
+                    ? ` · your link applied${result.replacedLinks ? ` (${result.replacedLinks} replaced)` : ''}`
+                    : '';
+                  logPlugActivity(db, accountId, 'success', `Sent post #${msg.id} → ${targetName}${modeNote}`, targetName);
                 } else {
                   failCount += 1;
                   const errMsg = String(result.error || 'Forward failed').slice(0, 500);
@@ -564,15 +575,19 @@ async function runTestForward(db, accountId, getSettings, maxTargets = 3) {
       const targetName = entityLabel(target) || ref;
       const result = await forwardPostWithRetries(
         client, source, target, msg, targetName,
-        (retryMsg) => logPlugActivity(db, accountId, 'error', retryMsg, targetName)
+        (retryMsg) => logPlugActivity(db, accountId, 'error', retryMsg, targetName),
+        { displayName: account.display_name }
       );
       if (result.ok) {
         okCount += 1;
         db.prepare('UPDATE plugging_accounts SET success_count = success_count + 1, updated_at = datetime(\'now\') WHERE id = ?')
           .run(accountId);
+        const modeNote = result.mode === 'relink'
+          ? ` · your link applied${result.replacedLinks ? ` (${result.replacedLinks} replaced)` : ''}`
+          : '';
         logPlugActivity(
           db, accountId, 'success',
-          `Test sent post #${msg.id} → ${targetName} (${result.mode || 'forward'})`,
+          `Test sent post #${msg.id} → ${targetName} (${result.mode || 'forward'})${modeNote}`,
           targetName
         );
         results.push({ target: targetName, ok: true, mode: result.mode || 'forward' });
