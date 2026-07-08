@@ -223,7 +223,7 @@ function startRunner(db, accountId, getSettings) {
 
   const postLink = String(account.source_link || '').trim();
   if (!isPostLink(postLink)) {
-    throw new Error('Post link required — use https://t.me/channelname/123 (not channel-only link)');
+    throw new Error('Post link kailangan may post number — hal. https://t.me/directhererie/4');
   }
 
   const settings = getSettings();
@@ -262,7 +262,7 @@ function startRunner(db, accountId, getSettings) {
             account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ?').get(accountId);
             const postLinkNow = String(account.source_link || '').trim();
             if (!isPostLink(postLinkNow)) {
-              logPlugActivity(db, accountId, 'error', 'Invalid post link — use https://t.me/channelname/123');
+              logPlugActivity(db, accountId, 'error', 'Invalid post link — hal. https://t.me/directhererie/4 (kailangan may /post number)');
               await sleep(RETRY_DELAY_MS);
               continue;
             }
@@ -347,7 +347,7 @@ async function runTestForward(db, accountId, getSettings, maxTargets = 3) {
 
   const postLink = String(account.source_link || '').trim();
   if (!isPostLink(postLink)) {
-    throw new Error('Post link required — use https://t.me/channelname/123');
+    throw new Error('Post link kailangan may post number — hal. https://t.me/directhererie/4');
   }
 
   const targetRefs = parseTargets(account.targets_text);

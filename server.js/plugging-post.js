@@ -4,8 +4,22 @@
  */
 const { joinSourceChannel } = require('./plugging-join');
 
-function parsePostLink(link) {
+function normalizePostLink(link) {
   const raw = String(link || '').trim();
+  if (!raw) return '';
+
+  const atSlash = raw.match(/^@([A-Za-z0-9_]+)\/(\d+)$/);
+  if (atSlash) return `https://t.me/${atSlash[1]}/${atSlash[2]}`;
+
+  const bareSlash = raw.match(/^([A-Za-z0-9_]+)\/(\d+)$/);
+  if (bareSlash) return `https://t.me/${bareSlash[1]}/${bareSlash[2]}`;
+
+  if (/^t\.me\//i.test(raw)) return `https://${raw}`;
+  return raw;
+}
+
+function parsePostLink(link) {
+  const raw = normalizePostLink(link);
   if (!raw) throw new Error('Post link is required');
 
   const privateMatch = raw.match(/(?:https?:\/\/)?t\.me\/c\/(\d+)\/(\d+)/i);
@@ -29,7 +43,7 @@ function parsePostLink(link) {
     };
   }
 
-  throw new Error('Invalid post link — use https://t.me/channelname/123 (not a channel-only link)');
+  throw new Error('Post link kailangan may post number — hal. https://t.me/directhererie/4 (hindi channel link lang)');
 }
 
 function isPostLink(link) {
@@ -68,6 +82,7 @@ async function resolvePostMessage(client, postLink, logFn) {
 }
 
 module.exports = {
+  normalizePostLink,
   parsePostLink,
   isPostLink,
   resolvePostMessage

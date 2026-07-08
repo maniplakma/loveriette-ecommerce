@@ -8,7 +8,8 @@ const appConfig = require('./config');
 const { sendHtmlPage } = require('./send-html-page');
 const { sendLoginCode, verifyLoginCode } = require('./plugging-telegram');
 const { startRunner, stopRunner, isRunning, runTestForward } = require('./plugging-runner');
-const { isPostLink } = require('./plugging-post');
+const { isPostLink, normalizePostLink } = require('./plugging-post');
+const { extractInviteHash } = require('./plugging-join');
 const { pickProxyForNewAccount, listPluggingProxies, autoEnableProxySetting, ensureAccountProxy } = require('./plugging-proxy');
 const { logPlugActivity, getAccountActivity, clearAccountActivity } = require('./plugging-activity');
 const {
@@ -190,13 +191,50 @@ function mountPluggingService(app, db, deps) {
     };
   }
 
+  function normalizeTargetRef(ref) {
+    const raw = String(ref || '').trim();
+    if (!raw) return '';
+
+    if (extractInviteHash(raw)) return raw;
+
+    const tmeUser = raw.match(/(?:https?:\/\/)?t\.me\/(?!c\/|\+|joinchat\/)([A-Za-z0-9_]+)(?:\/(\d+))?/i);
+    if (tmeUser) {
+      if (tmeUser[2]) {
+        throw new Error('Huwag ilagay ang post link sa target groups — @groupname lang (hal. @plugtesting1)');
+      }
+      return `@${tmeUser[1]}`;
+    }
+
+    if (raw.startsWith('@')) {
+      const user = raw.slice(1).split('/')[0];
+      if (raw.includes('/')) {
+        throw new Error(`Target "${raw}" — @username lang, walang /post number`);
+      }
+      return `@${user}`;
+    }
+
+    if (/^[A-Za-z0-9_]+$/.test(raw)) return `@${raw}`;
+
+    throw new Error(`Invalid target "${raw}" — use @groupname (hal. @plugtesting1)`);
+  }
+
+  function normalizeTargetsText(text) {
+    const lines = String(text || '')
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    return lines.map(normalizeTargetRef).join('\n');
+  }
+
   function persistAccountConfig(account, body, maxDestinations) {
-    const sourceLink = String(body.sourceLink ?? account.source_link ?? '').trim();
+    const sourceLink = normalizePostLink(String(body.sourceLink ?? account.source_link ?? '').trim());
     const displayName = String(body.displayName ?? account.display_name ?? '').trim();
     const delayMinutes = body.delayMinutes != null
       ? Math.max(0, Number(body.delayMinutes) || 0)
       : Number(account.delay_minutes) || 0;
-    const targetsText = body.targetsText != null ? String(body.targetsText) : String(account.targets_text || '');
+    const targetsText = normalizeTargetsText(
+      body.targetsText != null ? String(body.targetsText) : String(account.targets_text || '')
+    );
     const label = body.label != null ? String(body.label).trim() : String(account.label || '');
     const targetLines = targetsText.split(/\r?\n/).filter((line) => line.trim()).length;
 
@@ -204,7 +242,7 @@ function mountPluggingService(app, db, deps) {
       throw new Error('Post link is required');
     }
     if (!isPostLink(sourceLink)) {
-      throw new Error('Use a post link like https://t.me/channelname/123 — not a channel-only link');
+      throw new Error('Post link kailangan may post number — hal. https://t.me/directhererie/4 (hindi https://t.me/directhererie lang)');
     }
     if (targetLines < 1) {
       throw new Error('Add at least one target group link');

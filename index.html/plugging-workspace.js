@@ -296,15 +296,16 @@ function renderAccountDetail(id) {
     </div>
     <div class="plug-panel">
       <h3>Forwarding Setup</h3>
-      <p class="plug-panel-desc">Post link, target groups, at cycle delay — save first, then start.</p>
+      <p class="plug-panel-desc">Post link ng message, @username ng groups, at cycle delay — save muna bago start.</p>
       <label>Post link (required)</label>
       <input id="cfg-source" class="plug-field-input" value="${esc(a.sourceLink)}" placeholder="https://t.me/directhererie/4">
-      <small class="plug-panel-desc" style="display:block;margin-top:0.35rem">Exact post URL lang — hal. https://t.me/channelname/123. Yan lang ang ifo-forward (native forward, hindi copy-paste).</small>
+      <small class="plug-panel-desc" style="display:block;margin-top:0.35rem">Exact post URL — hal. <strong>https://t.me/directhererie/4</strong>. Yan lang ang ifo-forward (native forward). Hindi naghahanap ng bagong post sa channel.</small>
       <label>Delay between cycles (minutes)</label>
-      <input id="cfg-delay" class="plug-field-input" type="number" min="0" value="${a.delayMinutes}" placeholder="3">
-      <small class="plug-panel-desc" style="display:block;margin-top:0.35rem">Waits this long after a full cycle before the next post is forwarded. Groups send 3 seconds apart within each cycle.</small>
-      <label>Target groups — one link per line</label>
-      <textarea id="cfg-targets" class="plug-field-textarea" placeholder="https://t.me/yourgroup1\nhttps://t.me/yourgroup2">${esc(a.targetsText)}</textarea>
+      <input id="cfg-delay" class="plug-field-input" type="number" min="0" value="${a.delayMinutes}" placeholder="70">
+      <small class="plug-panel-desc" style="display:block;margin-top:0.35rem">Same post lang uulitin sa lahat ng groups pagkatapos ng delay. Groups send 3 seconds apart within each cycle.</small>
+      <label>Target groups — @username bawat line</label>
+      <textarea id="cfg-targets" class="plug-field-textarea" placeholder="@plugtesting1&#10;@plugtesting2">${esc(a.targetsText)}</textarea>
+      <small class="plug-panel-desc" style="display:block;margin-top:0.35rem">@username ng group/channel — hal. @plugtesting1. Hindi post link o https:// URL.</small>
       <div class="plug-config-actions">
         <button type="button" class="btn-primary-platform plug-btn-compact" data-action="save-config">Save Settings</button>
       </div>
