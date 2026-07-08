@@ -984,6 +984,14 @@ a.admin-btn-success:hover { color: #fff; }
 .admin-order-amt strong { display: block; font-size: 0.95rem; }
 .admin-order-amt small { color: var(--a-muted); font-size: 0.72rem; }
 
+.admin-order-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.35rem;
+  flex: 0 0 auto;
+}
+
 .admin-pill {
   display: inline-block;
   padding: 0.12rem 0.45rem;

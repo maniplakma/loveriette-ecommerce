@@ -160,30 +160,29 @@ const PAYMENT_PROOF_WINDOW_MINUTES = 30;
 function orderHasPaymentProof(orderRow) {
   const url = String(orderRow?.receipt_url || '').trim();
   if (!url || url === 'null' || url === 'undefined') return false;
-  if (url.startsWith('/uploads/receipts/')) {
-    const filePath = path.join(receiptsDir, path.basename(url));
-    return fs.existsSync(filePath);
-  }
-  return url.length > 4;
+  if (!url.startsWith('/uploads/receipts/')) return false;
+  const filePath = path.join(receiptsDir, path.basename(url));
+  return fs.existsSync(filePath);
 }
 
 function deleteOrderRecord(orderRow) {
-  if (!orderRow?.id) return;
+  if (!orderRow?.id) return false;
   if (orderRow.redeem_code_id) {
     db.prepare('UPDATE redeem_codes SET used_count = used_count - 1 WHERE id = ? AND used_count > 0')
       .run(orderRow.redeem_code_id);
   }
   db.prepare('DELETE FROM orders WHERE id = ?').run(orderRow.id);
+  return true;
 }
 
 function purgeOrdersWithoutPaymentProof() {
   const candidates = db.prepare(`
-    SELECT id, redeem_code_id, receipt_url, status, created_at
+    SELECT id, redeem_code_id, receipt_url, status, created_at, order_number, order_seq
     FROM orders
     WHERE status IN (?, ?)
   `).all(ORDER_STATUS.PENDING, ORDER_STATUS.PENDING_PAYMENT);
 
-  let removed = 0;
+  const removed = [];
   for (const row of candidates) {
     if (orderHasPaymentProof(row)) continue;
     if (row.status === ORDER_STATUS.PENDING_PAYMENT) {
@@ -193,8 +192,9 @@ function purgeOrdersWithoutPaymentProof() {
       const expired = Date.now() - created > PAYMENT_PROOF_WINDOW_MINUTES * 60 * 1000;
       if (!expired) continue;
     }
-    deleteOrderRecord(row);
-    removed += 1;
+    if (deleteOrderRecord(row)) {
+      removed.push(row.order_seq ?? row.order_number ?? row.id);
+    }
   }
   return removed;
 }
@@ -4317,6 +4317,28 @@ app.get('/admin/all-orders', requireAdmin, (req, res) => {
   res.json(mapOrderCards(rows));
 });
 
+app.post('/admin/orders/purge-no-proof', requireAdmin, (req, res) => {
+  const removed = purgeOrdersWithoutPaymentProof();
+  res.json({ ok: true, removed, count: removed.length });
+});
+
+app.delete('/admin/orders/:orderNumber', requireAdmin, (req, res) => {
+  const order = findOrderByRef(req.params.orderNumber);
+  if (!order) return res.status(404).json({ error: 'Order not found' });
+  if (isApprovedOrderStatus(order.status)) {
+    return res.status(400).json({ error: 'Approved orders cannot be deleted from admin' });
+  }
+  if (isRejectedOrderStatus(order.status) || order.status === ORDER_STATUS.REFUNDED) {
+    return res.status(400).json({ error: 'Use transactions history — this order is already closed' });
+  }
+  if (isPendingReviewStatus(order.status) && orderHasPaymentProof(order)) {
+    return res.status(400).json({ error: 'This order has payment proof — approve or reject instead of deleting' });
+  }
+  const displayId = orderDisplayId(order);
+  deleteOrderRecord(order);
+  res.json({ ok: true, deleted: displayId });
+});
+
 app.post('/admin/orders/:orderNumber/reject', requireAdmin, (req, res) => {
   const order = findOrderByRef(req.params.orderNumber);
   if (!order) return res.status(404).json({ error: 'Order not found' });
@@ -5922,12 +5944,14 @@ app.listen(port, host, () => {
   processExpiredTingiHolds();
   setInterval(processExpiredTingiHolds, 15 * 60 * 1000);
   const removedOrders = purgeOrdersWithoutPaymentProof();
-  if (removedOrders > 0) {
-    console.log(`[orders] Purged ${removedOrders} order(s) without payment proof`);
+  if (removedOrders.length > 0) {
+    console.log(`[orders] Purged ghost orders without proof: ${removedOrders.join(', ')}`);
   }
   setInterval(() => {
-    const n = purgeOrdersWithoutPaymentProof();
-    if (n > 0) console.log(`[orders] Purged ${n} order(s) without payment proof`);
+    const removed = purgeOrdersWithoutPaymentProof();
+    if (removed.length > 0) {
+      console.log(`[orders] Purged ghost orders without proof: ${removed.join(', ')}`);
+    }
   }, 5 * 60 * 1000);
   purgeExpiredGmail(db);
   setInterval(() => purgeExpiredGmail(db), 60 * 60 * 1000);

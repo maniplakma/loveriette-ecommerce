@@ -18,6 +18,7 @@
     "test:e2e": "node server.js/test-e2e-full.js",
     "test:prod": "node server.js/test-prod-regression.js",
     "test:qa": "node server.js/test-platform.js && node server.js/test-audit.js && node server.js/test-workflows.js && node server.js/test-e2e-full.js",
+    "purge:ghost-orders": "node scripts/purge-ghost-orders.js",
     "tunnel": "node server.js/tunnel.js",
     "migrate:ezyshell": "node scripts/migrate-ezyshell.js",
     "backup:local": "powershell -ExecutionPolicy Bypass -File scripts/backup-local.ps1"
