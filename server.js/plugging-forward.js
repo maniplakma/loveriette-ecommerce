@@ -1,18 +1,23 @@
 /**
- * Telegram forward helpers for plugging runner + diagnostics.
+ * Telegram forward helpers — always copy-send with optional link replacement.
  */
 const { groupSendDelayMs } = require('./plugging-stealth');
+const { joinSourceChannel: joinSourceWithCaptcha } = require('./plugging-join');
 
 const URL_RE = /(?:https?:\/\/(?:www\.)?|(?:t\.me|telegram\.me)\/)[^\s<>"')\]]+/gi;
+const BARE_DOMAIN_RE = /(?:[a-z0-9-]+\.)+(?:shop|store|com|ph|net|org)(?:\/[^\s<>"')\]]*)?/gi;
 
 function loadGramJs() {
   try {
     const { Api } = require('telegram/tl');
-    const { utils } = require('telegram');
-    return { Api, utils };
+    return { Api };
   } catch (_) {
     return null;
   }
+}
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
 }
 
 function shouldProcessMessage(msg) {
@@ -27,53 +32,69 @@ function normalizeCustomLink(raw) {
   if (/^https?:\/\//i.test(s)) return s;
   if (/^(?:t\.me|telegram\.me)\//i.test(s)) return `https://${s}`;
   if (s.startsWith('@')) return `https://t.me/${s.slice(1)}`;
+  if (/^[\w.-]+\.(shop|store|com|ph|net|org)(\/|$)/i.test(s)) return `https://${s}`;
   return '';
+}
+
+function getMessageText(msg) {
+  return String(msg.message || msg.text || '').trim();
+}
+
+function replaceLinksInText(text, customLink) {
+  if (!customLink) return { text, replacedLinks: 0 };
+  let out = String(text || '');
+  let replacedLinks = 0;
+
+  const urlMatches = out.match(URL_RE);
+  if (urlMatches?.length) {
+    replacedLinks += urlMatches.length;
+    out = out.replace(URL_RE, customLink);
+  }
+
+  const bareMatches = out.match(BARE_DOMAIN_RE);
+  if (bareMatches?.length) {
+    replacedLinks += bareMatches.length;
+    out = out.replace(BARE_DOMAIN_RE, customLink.replace(/^https?:\/\//i, ''));
+  }
+
+  if (!replacedLinks && out) {
+    out = `${out}\n\n${customLink}`;
+    replacedLinks = 1;
+  } else if (!out) {
+    out = customLink;
+    replacedLinks = 1;
+  }
+
+  return { text: out, replacedLinks };
 }
 
 function buildOutboundMessage(msg, displayName) {
   const customLink = normalizeCustomLink(displayName);
   const prefix = customLink ? '' : String(displayName || '').trim();
-  let text = String(msg.message || msg.text || '').trim();
+  const baseText = getMessageText(msg);
+  let text = baseText;
   let replacedLinks = 0;
 
   if (customLink) {
-    const matches = text.match(URL_RE);
-    if (matches?.length) {
-      replacedLinks = matches.length;
-      text = text.replace(URL_RE, customLink);
-    } else if (text) {
-      text = `${text}\n\n${customLink}`;
-      replacedLinks = 1;
-    } else {
-      text = customLink;
-      replacedLinks = 1;
-    }
+    const replaced = replaceLinksInText(baseText, customLink);
+    text = replaced.text;
+    replacedLinks = replaced.replacedLinks;
   } else if (prefix) {
-    text = text ? `${prefix}\n${text}` : prefix;
+    text = baseText ? `${prefix}\n${baseText}` : prefix;
   }
 
   return { text, customLink, replacedLinks, hasPrefix: !!prefix };
 }
 
-function needsCustomSend(displayName) {
-  const customLink = normalizeCustomLink(displayName);
-  const prefix = customLink ? '' : String(displayName || '').trim();
-  return !!(customLink || prefix);
-}
-
-async function joinSourceChannel(client, source) {
-  const gram = loadGramJs();
-  if (!gram || !source) return false;
+async function joinSourceChannel(client, source, logFn) {
   try {
-    await client.invoke(new gram.Api.channels.JoinChannel({ channel: source }));
-    return true;
+    return await joinSourceWithCaptcha(client, source, logFn);
   } catch (_) {
     return false;
   }
 }
 
 async function inspectSource(client, source) {
-  const gram = loadGramJs();
   if (!source) return { ok: false, error: 'No source entity' };
 
   try {
@@ -82,7 +103,7 @@ async function inspectSource(client, source) {
     const latest = list[0] || null;
     let peerId = null;
     try {
-      peerId = gram ? await client.getPeerId(source) : null;
+      peerId = await client.getPeerId(source);
     } catch (_) { /* ignore */ }
 
     return {
@@ -91,7 +112,8 @@ async function inspectSource(client, source) {
       latestId: latest?.id || null,
       latestDate: latest?.date || null,
       recentCount: list.length,
-      canRead: list.length > 0 || latest != null
+      canRead: list.length > 0,
+      latest
     };
   } catch (err) {
     return { ok: false, error: String(err.message || err) };
@@ -114,32 +136,23 @@ async function forwardPost(client, source, target, msg, options = {}) {
   const displayName = String(options.displayName || '').trim();
   const customLink = normalizeCustomLink(displayName);
 
-  if (!needsCustomSend(displayName)) {
-    try {
-      await client.forwardMessages(target, { messages: [msg.id], fromPeer: source });
-      return { ok: true, mode: 'forward', replacedLinks: 0 };
-    } catch (forwardErr) {
-      try {
-        const prepared = await sendPreparedMessage(client, target, msg, displayName);
-        return { ok: true, mode: 'copy', replacedLinks: prepared.replacedLinks };
-      } catch (copyErr) {
-        return {
-          ok: false,
-          error: String(copyErr.message || copyErr || forwardErr.message || forwardErr)
-        };
-      }
-    }
-  }
-
   try {
     const prepared = await sendPreparedMessage(client, target, msg, displayName);
     return {
       ok: true,
-      mode: customLink ? 'relink' : 'copy-prefix',
+      mode: customLink ? 'relink' : (displayName ? 'copy-prefix' : 'copy'),
       replacedLinks: prepared.replacedLinks
     };
   } catch (copyErr) {
-    return { ok: false, error: String(copyErr.message || copyErr) };
+    try {
+      await client.forwardMessages(target, { messages: [msg.id], fromPeer: source });
+      return { ok: true, mode: 'forward-fallback', replacedLinks: 0 };
+    } catch (forwardErr) {
+      return {
+        ok: false,
+        error: String(copyErr.message || copyErr || forwardErr.message || forwardErr)
+      };
+    }
   }
 }
 
@@ -150,7 +163,7 @@ async function forwardPostWithRetries(client, source, target, msg, targetName, l
     if (result.ok) return result;
     lastError = result.error;
     if (logFn) logFn(`Retry ${attempt}/3 → ${targetName}: ${lastError}`);
-    if (attempt < 3) await new Promise((r) => setTimeout(r, groupSendDelayMs()));
+    if (attempt < 3) await sleep(groupSendDelayMs());
   }
   return { ok: false, error: lastError || 'Forward failed' };
 }
@@ -161,6 +174,7 @@ module.exports = {
   inspectSource,
   buildOutboundMessage,
   normalizeCustomLink,
+  getMessageText,
   forwardPost,
   forwardPostWithRetries
 };

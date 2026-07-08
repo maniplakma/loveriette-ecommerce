@@ -302,9 +302,9 @@ function renderAccountDetail(id) {
       <p class="plug-panel-desc">Configure source, targets, and cycle delay — save first, then start.</p>
       <label>Source chat / channel link</label>
       <input id="cfg-source" class="plug-field-input" value="${esc(a.sourceLink)}" placeholder="https://t.me/sourcechannel">
-      <label>Your shop / affiliate link</label>
+      <label>Your shop / affiliate link (required)</label>
       <input id="cfg-display" class="plug-field-input" value="${esc(a.displayName)}" placeholder="https://loveriette.shop/?ref=yourname">
-      <small class="plug-panel-desc" style="display:block;margin-top:0.35rem">All links in forwarded posts are replaced with this URL. Required for your own reseller link.</small>
+      <small class="plug-panel-desc" style="display:block;margin-top:0.35rem">Full https:// URL — lahat ng links sa post papalitan nito. Required para tama ang nafo-forward.</small>
       <label>Delay between cycles (minutes)</label>
       <input id="cfg-delay" class="plug-field-input" type="number" min="0" value="${a.delayMinutes}" placeholder="3">
       <small class="plug-panel-desc" style="display:block;margin-top:0.35rem">Waits this long after a full cycle before the next post is forwarded. Groups send 3 seconds apart within each cycle.</small>

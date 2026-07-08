@@ -44,22 +44,43 @@ function parseProxy(proxyUrl) {
   return undefined;
 }
 
-async function createClient(settings, sessionString = '', accountProxyUrl = '') {
+async function connectWithTimeout(client, timeoutMs = 45000) {
+  let timer = null;
+  try {
+    await Promise.race([
+      client.connect(),
+      new Promise((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`Telegram connect timeout (${Math.round(timeoutMs / 1000)}s) — check API credentials or proxy`)),
+          timeoutMs
+        );
+      })
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+async function createClient(settings, sessionString = '', accountProxyUrl = '', { forceNoProxy = false } = {}) {
   if (!loadGramJs()) throw new Error('Telegram library not available');
   const apiId = Number(settings.telegram_api_id || process.env.TELEGRAM_API_ID);
   const apiHash = String(settings.telegram_api_hash || process.env.TELEGRAM_API_HASH || '');
   if (!apiId || !apiHash) throw new Error('Telegram API credentials not configured in admin panel');
 
-  const proxyUrl = String(accountProxyUrl || '').trim()
-    || (settings.proxy_enabled === '1' ? String(settings.proxy_url || '').trim() : '');
+  const proxyUrl = forceNoProxy
+    ? ''
+    : (String(accountProxyUrl || '').trim()
+      || (settings.proxy_enabled === '1' ? String(settings.proxy_url || '').trim() : ''));
   const proxy = proxyUrl ? parseProxy(proxyUrl) : undefined;
 
   const client = new TelegramClient(new StringSession(sessionString || ''), apiId, apiHash, {
-    connectionRetries: 5,
-    useWSS: true,
+    connectionRetries: 8,
+    retryDelay: 1500,
+    timeout: 30,
+    useWSS: !proxy,
     proxy
   });
-  await client.connect();
+  await connectWithTimeout(client, 45000);
   return client;
 }
 
@@ -100,14 +121,25 @@ async function verifyLoginCode(settings, { phone, code, phoneCodeHash, sessionSt
 }
 
 async function withAuthorizedClient(settings, sessionString, fn, accountProxyUrl = '') {
-  const client = await createClient(settings, sessionString, accountProxyUrl);
+  let client;
+  let usedProxy = String(accountProxyUrl || '').trim();
   try {
+    try {
+      client = await createClient(settings, sessionString, accountProxyUrl);
+    } catch (firstErr) {
+      if (!usedProxy) throw firstErr;
+      client = await createClient(settings, sessionString, '', { forceNoProxy: true });
+      usedProxy = '';
+    }
+
     if (!(await client.isUserAuthorized())) {
       throw new Error('Telegram session expired — please log in again with your phone number.');
     }
-    return await fn(client);
+    return await fn(client, { usedProxy });
   } finally {
-    await client.disconnect();
+    if (client) {
+      try { await client.disconnect(); } catch (_) { /* ignore */ }
+    }
   }
 }
 

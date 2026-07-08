@@ -8,6 +8,7 @@ const appConfig = require('./config');
 const { sendHtmlPage } = require('./send-html-page');
 const { sendLoginCode, verifyLoginCode } = require('./plugging-telegram');
 const { startRunner, stopRunner, isRunning, runTestForward } = require('./plugging-runner');
+const { normalizeCustomLink } = require('./plugging-forward');
 const { pickProxyForNewAccount, listPluggingProxies, autoEnableProxySetting, ensureAccountProxy } = require('./plugging-proxy');
 const { logPlugActivity, getAccountActivity, clearAccountActivity } = require('./plugging-activity');
 const {
@@ -207,6 +208,9 @@ function mountPluggingService(app, db, deps) {
     }
     if (targetLines > (maxDestinations || 3)) {
       throw new Error(`Your plan allows up to ${maxDestinations || 3} destination groups`);
+    }
+    if (displayName && !normalizeCustomLink(displayName)) {
+      throw new Error('Your shop link must be a full URL starting with https:// (example: https://loveriette.shop/?ref=you)');
     }
 
     db.prepare(`
