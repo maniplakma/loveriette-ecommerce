@@ -112,30 +112,36 @@ function renderPlanCard(product, plan) {
   const description = planDescriptionText(plan);
 
   return `
-    <article class="plan-purchase-card${disabled ? ' is-disabled' : ''}">
-      ${window.themeBadge && state !== 'sold_out' && state !== 'coming_soon'
-        ? themeBadge(state === 'available' ? 'available' : 'preorder', label)
-        : `<span class="plan-badge status-${state}">${escapeHtml(label)}</span>`}
-      <div class="plan-purchase-top">
-        <div class="plan-purchase-icon logo${product.icon ? ' has-icon' : ''}">
-          ${window.renderProductIcon ? window.renderProductIcon(product.icon, product.name, 'logo-img') : getLogoLetter(product.name)}
-        </div>
-        <div class="plan-purchase-info">
-          <h3>${escapeHtml(plan.name)}</h3>
-          ${duration && !description ? `<p class="plan-tag"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> ${escapeHtml(duration)}</p>` : ''}
+    <article class="variant-showcase${disabled ? ' is-disabled' : ''}">
+      <div class="variant-showcase-hero">
+        ${window.themeBadge && state !== 'sold_out' && state !== 'coming_soon'
+    ? `<div class="variant-showcase-badge">${themeBadge(state === 'available' ? 'available' : 'preorder', label)}</div>`
+    : `<span class="variant-showcase-badge plan-badge status-${state}">${escapeHtml(label)}</span>`}
+        <div class="variant-showcase-head">
+          <div class="variant-showcase-icon logo${product.icon ? ' has-icon' : ''}">
+            ${window.renderProductIcon ? window.renderProductIcon(product.icon, product.name, 'logo-img') : getLogoLetter(product.name)}
+          </div>
+          <div class="variant-showcase-title">
+            <h3>${escapeHtml(plan.name)}</h3>
+            ${duration && !description
+    ? `<p class="variant-showcase-duration"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> ${escapeHtml(duration)}</p>`
+    : ''}
+          </div>
         </div>
       </div>
-      ${description
-    ? `<div class="plan-desc-box">
-          <p class="plan-desc-box-label">
+      <div class="variant-showcase-body">
+        ${description
+    ? `<div class="variant-showcase-details">
+          <p class="variant-showcase-details-label">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
             Plan details
           </p>
-          <p class="plan-desc-box-text">${escapeHtml(description)}</p>
+          <p>${escapeHtml(description)}</p>
         </div>`
     : ''}
-      <p class="plan-purchase-price">${formatMoney(plan.displayPrice ?? plan.price)}</p>
-      <div class="plan-purchase-actions">
+        <p class="variant-showcase-price">${formatMoney(plan.displayPrice ?? plan.price)}</p>
+      </div>
+      <div class="variant-showcase-actions">
         ${disabled
     ? `<button type="button" class="btn-purchase" disabled>${purchaseLabel}</button>
            <button type="button" class="btn-cart-icon" disabled aria-label="Add to cart">
