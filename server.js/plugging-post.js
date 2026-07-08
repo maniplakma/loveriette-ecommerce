@@ -43,7 +43,7 @@ function parsePostLink(link) {
     };
   }
 
-  throw new Error('Post link kailangan may post number — hal. https://t.me/directhererie/4 (hindi channel link lang)');
+  throw new Error('Post link must include a post number, e.g. https://t.me/channel/123');
 }
 
 function isPostLink(link) {

@@ -27,7 +27,7 @@ function activityKindLabel(kind) {
     success: 'Sent',
     complete: 'Complete',
     error: 'Error',
-    cycle: 'Detected',
+    cycle: 'Cycle',
     started: 'Started',
     stopped: 'Stopped',
     info: 'Info'
@@ -149,10 +149,32 @@ function readConfigForm() {
 
 function setConfigSaveMessage(text, isError = false) {
   const msg = document.getElementById('cfg-save-msg');
-  if (!msg) return;
-  msg.hidden = !text;
-  msg.textContent = text || '';
-  msg.className = isError ? 'plug-form-msg plug-form-error' : 'plug-form-msg plug-form-success';
+  const banner = document.getElementById('cfg-action-msg');
+  if (msg) {
+    msg.hidden = !text;
+    msg.textContent = text || '';
+    msg.className = isError ? 'plug-form-msg plug-form-error' : 'plug-form-msg plug-form-success';
+  }
+  if (banner) {
+    banner.hidden = !text;
+    banner.textContent = text || '';
+    banner.className = isError ? 'plug-action-msg plug-form-error' : 'plug-action-msg plug-form-success';
+  }
+}
+
+function validateConfigForStart(config) {
+  const post = String(config.sourceLink || '').trim();
+  if (!post) throw new Error('Post link is required');
+  const hasPostId = /(?:https?:\/\/)?t\.me\/c\/\d+\/\d+/i.test(post)
+    || /(?:https?:\/\/)?t\.me\/(?!c\/|\+|joinchat\/)[A-Za-z0-9_]+\/\d+/i.test(post)
+    || /^@[A-Za-z0-9_]+\/\d+$/.test(post)
+    || /^[A-Za-z0-9_]+\/\d+$/.test(post);
+  if (!hasPostId) {
+    throw new Error('Post link must include a post number, e.g. https://t.me/channel/123');
+  }
+  if (!String(config.targetsText || '').trim()) {
+    throw new Error('Add at least one target group');
+  }
 }
 
 async function saveAccountConfig(id, { silent = false } = {}) {
@@ -267,12 +289,12 @@ function renderAccountDetail(id) {
         <span class="plug-status-badge ${a.runnerStatus === 'running' ? 'running' : ''}">${esc(a.runnerStatus)}</span>
       </div>
       <div class="plug-actions">
-        ${authed ? `<button type="button" class="btn-primary-platform plug-btn-compact" data-action="start">▶ Start</button>
-        <button type="button" class="btn-outline-platform plug-btn-compact" data-action="stop">Stop</button>
-        <button type="button" class="btn-outline-platform plug-btn-compact" data-action="test-forward">Test Forward</button>` : ''}
+        ${authed ? `<button type="button" class="btn-primary-platform plug-btn-compact" data-action="start">Start</button>
+        <button type="button" class="btn-outline-platform plug-btn-compact" data-action="stop">Stop</button>` : ''}
         <button type="button" class="plug-btn plug-btn-danger plug-btn-compact" data-action="delete">Delete</button>
       </div>
     </div>
+    <p id="cfg-action-msg" class="plug-action-msg" hidden></p>
 
     ${needsOtp && !authed ? `
     <div class="plug-panel">
@@ -296,16 +318,12 @@ function renderAccountDetail(id) {
     </div>
     <div class="plug-panel">
       <h3>Forwarding Setup</h3>
-      <p class="plug-panel-desc">Post link ng message, @username ng groups, at cycle delay — save muna bago start.</p>
-      <label>Post link (required)</label>
-      <input id="cfg-source" class="plug-field-input" value="${esc(a.sourceLink)}" placeholder="https://t.me/directhererie/4">
-      <small class="plug-panel-desc" style="display:block;margin-top:0.35rem">Exact post URL — hal. <strong>https://t.me/directhererie/4</strong>. Yan lang ang ifo-forward (native forward). Hindi naghahanap ng bagong post sa channel.</small>
+      <label>Post link</label>
+      <input id="cfg-source" class="plug-field-input" value="${esc(a.sourceLink)}" placeholder="https://t.me/channel/123">
       <label>Delay between cycles (minutes)</label>
       <input id="cfg-delay" class="plug-field-input" type="number" min="0" value="${a.delayMinutes}" placeholder="70">
-      <small class="plug-panel-desc" style="display:block;margin-top:0.35rem">Same post lang uulitin sa lahat ng groups pagkatapos ng delay. Groups send 3 seconds apart within each cycle.</small>
-      <label>Target groups — @username bawat line</label>
-      <textarea id="cfg-targets" class="plug-field-textarea" placeholder="@plugtesting1&#10;@plugtesting2">${esc(a.targetsText)}</textarea>
-      <small class="plug-panel-desc" style="display:block;margin-top:0.35rem">@username ng group/channel — hal. @plugtesting1. Hindi post link o https:// URL.</small>
+      <label>Target groups</label>
+      <textarea id="cfg-targets" class="plug-field-textarea" placeholder="@group1&#10;@group2">${esc(a.targetsText)}</textarea>
       <div class="plug-config-actions">
         <button type="button" class="btn-primary-platform plug-btn-compact" data-action="save-config">Save Settings</button>
       </div>
@@ -348,9 +366,15 @@ function renderAccountDetail(id) {
   });
 
   el.querySelector('[data-action="start"]')?.addEventListener('click', async () => {
+    const btn = el.querySelector('[data-action="start"]');
     try {
       setConfigSaveMessage('');
       const config = readConfigForm();
+      validateConfigForStart(config);
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Starting…';
+      }
       await api(`/api/plugging/workspace/accounts/${id}/start`, {
         method: 'POST',
         body: JSON.stringify(config)
@@ -359,6 +383,11 @@ function renderAccountDetail(id) {
       startActivityPoll(id);
     } catch (e) {
       setConfigSaveMessage(e.message, true);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Start';
+      }
     }
   });
 
@@ -366,33 +395,6 @@ function renderAccountDetail(id) {
     await api(`/api/plugging/workspace/accounts/${id}/stop`, { method: 'POST' });
     await refreshWorkspace();
     loadActivity(id, true);
-  });
-
-  el.querySelector('[data-action="test-forward"]')?.addEventListener('click', async () => {
-    const btn = el.querySelector('[data-action="test-forward"]');
-    try {
-      setConfigSaveMessage('');
-      if (btn) {
-        btn.disabled = true;
-        btn.textContent = 'Testing…';
-      }
-      const config = readConfigForm();
-      await api(`/api/plugging/workspace/accounts/${id}/test-forward`, {
-        method: 'POST',
-        body: JSON.stringify(config)
-      });
-      setConfigSaveMessage('Test forward sent — check Live Activity below.');
-      await refreshWorkspace();
-      startActivityPoll(id);
-    } catch (e) {
-      setConfigSaveMessage(e.message, true);
-      loadActivity(id, true);
-    } finally {
-      if (btn) {
-        btn.disabled = false;
-        btn.textContent = 'Test Forward';
-      }
-    }
   });
 
   el.querySelector('[data-action="clear-activity"]')?.addEventListener('click', async () => {

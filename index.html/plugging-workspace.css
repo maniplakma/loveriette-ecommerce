@@ -256,6 +256,19 @@ body.plug-body {
 .plug-form-error { color: #e57373; font-size: 0.82rem; margin: 0.65rem 0 0; text-align: center; }
 .plug-form-msg { font-size: 0.82rem; margin: 0.65rem 0 0; text-align: center; }
 .plug-form-msg:not(.plug-form-error) { color: #81c995; }
+.plug-action-msg {
+  margin: 0.75rem 0 0;
+  padding: 0.65rem 0.85rem;
+  border-radius: 10px;
+  font-size: 0.84rem;
+  background: rgba(129, 201, 149, 0.08);
+  border: 1px solid rgba(129, 201, 149, 0.25);
+}
+.plug-action-msg.plug-form-error {
+  background: rgba(229, 9, 20, 0.08);
+  border-color: rgba(229, 9, 20, 0.35);
+  color: #ff8a8a;
+}
 .plug-form-success { color: #81c995 !important; }
 .plug-config-actions {
   margin-top: 0.85rem;

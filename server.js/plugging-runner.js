@@ -223,7 +223,7 @@ function startRunner(db, accountId, getSettings) {
 
   const postLink = String(account.source_link || '').trim();
   if (!isPostLink(postLink)) {
-    throw new Error('Post link kailangan may post number — hal. https://t.me/directhererie/4');
+    throw new Error('Post link must include a post number, e.g. https://t.me/channel/123');
   }
 
   const settings = getSettings();
@@ -254,7 +254,7 @@ function startRunner(db, accountId, getSettings) {
       try {
         account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ?').get(accountId);
         await withAuthorizedClient(settings, account.session_string, async (client) => {
-          logPlugActivity(db, accountId, 'info', 'Telegram connected — loading post & targets');
+          logPlugActivity(db, accountId, 'info', 'Telegram connected — loading saved post link');
 
           let firstCycle = true;
 
@@ -262,7 +262,7 @@ function startRunner(db, accountId, getSettings) {
             account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ?').get(accountId);
             const postLinkNow = String(account.source_link || '').trim();
             if (!isPostLink(postLinkNow)) {
-              logPlugActivity(db, accountId, 'error', 'Invalid post link — hal. https://t.me/directhererie/4 (kailangan may /post number)');
+              logPlugActivity(db, accountId, 'error', 'Invalid post link — use https://t.me/channel/123');
               await sleep(RETRY_DELAY_MS);
               continue;
             }
@@ -276,7 +276,7 @@ function startRunner(db, accountId, getSettings) {
               if (firstCycle) {
                 logPlugActivity(
                   db, accountId, 'info',
-                  `Post ready — ${resolved.label} (only this post will be forwarded)`
+                  `Forwarding post #${resolved.messageId} from ${resolved.label}`
                 );
               }
 
@@ -339,70 +339,4 @@ function isRunning(accountId) {
   return !!(state && state.running);
 }
 
-async function runTestForward(db, accountId, getSettings, maxTargets = 3) {
-  let account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ?').get(accountId);
-  if (!account || !account.session_string) {
-    throw new Error('Account is not logged in to Telegram yet');
-  }
-
-  const postLink = String(account.source_link || '').trim();
-  if (!isPostLink(postLink)) {
-    throw new Error('Post link kailangan may post number — hal. https://t.me/directhererie/4');
-  }
-
-  const targetRefs = parseTargets(account.targets_text);
-  if (!targetRefs.length) throw new Error('Add at least one target group');
-
-  const settings = getSettings();
-  ensureAccountProxy(db, accountId, settings);
-  account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ?').get(accountId);
-
-  const results = [];
-
-  await withAuthorizedClient(settings, account.session_string, async (client) => {
-    const resolved = await resolvePostMessage(client, postLink, (msg) => {
-      logPlugActivity(db, accountId, 'info', msg);
-    });
-
-    logPlugActivity(
-      db, accountId, 'info',
-      `Test forward — post #${resolved.messageId} from ${resolved.label}`
-    );
-
-    const tracker = createTargetTracker();
-    const entries = await buildTargetEntries(client, targetRefs, tracker, db, accountId);
-    if (!entries.length) throw new Error('No valid target groups — check your group links');
-
-    const testTargets = entries.slice(0, Math.max(1, Math.min(maxTargets, entries.length)));
-    let okCount = 0;
-
-    for (let i = 0; i < testTargets.length; i++) {
-      if (i > 0) await sleep(groupSendDelayMs());
-      const { entity: target } = testTargets[i];
-      const targetName = entityLabel(target) || testTargets[i].ref;
-      const result = await forwardPostWithRetries(
-        client, resolved.source, target, resolved.message, targetName,
-        (retryMsg) => logPlugActivity(db, accountId, 'error', retryMsg, targetName)
-      );
-      if (result.ok) {
-        okCount += 1;
-        db.prepare('UPDATE plugging_accounts SET success_count = success_count + 1, updated_at = datetime(\'now\') WHERE id = ?')
-          .run(accountId);
-        logPlugActivity(db, accountId, 'success', `Test forwarded post #${resolved.messageId} → ${targetName}`, targetName);
-        results.push({ target: targetName, ok: true, mode: 'forward' });
-      } else {
-        const errMsg = String(result.error || 'Forward failed').slice(0, 500);
-        logPlugActivity(db, accountId, 'error', `Test failed → ${targetName}: ${errMsg}`, targetName);
-        results.push({ target: targetName, ok: false, error: errMsg });
-      }
-    }
-
-    if (okCount === 0) {
-      throw new Error('Test forward failed — see Live Activity for details');
-    }
-  }, account.proxy_url);
-
-  return { ok: true, results };
-}
-
-module.exports = { startRunner, stopRunner, isRunning, parseTargets, resolveEntityFromLink, runTestForward };
+module.exports = { startRunner, stopRunner, isRunning, parseTargets, resolveEntityFromLink };

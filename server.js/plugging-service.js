@@ -7,7 +7,7 @@ const crypto = require('crypto');
 const appConfig = require('./config');
 const { sendHtmlPage } = require('./send-html-page');
 const { sendLoginCode, verifyLoginCode } = require('./plugging-telegram');
-const { startRunner, stopRunner, isRunning, runTestForward } = require('./plugging-runner');
+const { startRunner, stopRunner, isRunning } = require('./plugging-runner');
 const { isPostLink, normalizePostLink } = require('./plugging-post');
 const { extractInviteHash } = require('./plugging-join');
 const { pickProxyForNewAccount, listPluggingProxies, autoEnableProxySetting, ensureAccountProxy } = require('./plugging-proxy');
@@ -200,7 +200,7 @@ function mountPluggingService(app, db, deps) {
     const tmeUser = raw.match(/(?:https?:\/\/)?t\.me\/(?!c\/|\+|joinchat\/)([A-Za-z0-9_]+)(?:\/(\d+))?/i);
     if (tmeUser) {
       if (tmeUser[2]) {
-        throw new Error('Huwag ilagay ang post link sa target groups — @groupname lang (hal. @plugtesting1)');
+        throw new Error('Use @groupname for targets — do not paste a post link here');
       }
       return `@${tmeUser[1]}`;
     }
@@ -208,14 +208,14 @@ function mountPluggingService(app, db, deps) {
     if (raw.startsWith('@')) {
       const user = raw.slice(1).split('/')[0];
       if (raw.includes('/')) {
-        throw new Error(`Target "${raw}" — @username lang, walang /post number`);
+        throw new Error(`Target "${raw}" must be @groupname only`);
       }
       return `@${user}`;
     }
 
     if (/^[A-Za-z0-9_]+$/.test(raw)) return `@${raw}`;
 
-    throw new Error(`Invalid target "${raw}" — use @groupname (hal. @plugtesting1)`);
+    throw new Error(`Invalid target "${raw}" — use @groupname`);
   }
 
   function normalizeTargetsText(text) {
@@ -242,7 +242,7 @@ function mountPluggingService(app, db, deps) {
       throw new Error('Post link is required');
     }
     if (!isPostLink(sourceLink)) {
-      throw new Error('Post link kailangan may post number — hal. https://t.me/directhererie/4 (hindi https://t.me/directhererie lang)');
+      throw new Error('Post link must include a post number, e.g. https://t.me/channel/123');
     }
     if (targetLines < 1) {
       throw new Error('Add at least one target group link');
@@ -470,6 +470,7 @@ function mountPluggingService(app, db, deps) {
       }
 
       ensureAccountProxy(db, account.id, getPluggingSettings());
+      clearAccountActivity(db, account.id);
       startRunner(db, account.id, getPluggingSettings);
       res.json({ ok: true, runnerStatus: 'running' });
     } catch (err) {
@@ -486,26 +487,6 @@ function mountPluggingService(app, db, deps) {
       .run('stopped', req.params.id);
     logPlugActivity(db, account.id, 'stopped', 'Forwarder stopped manually');
     res.json({ ok: true, runnerStatus: 'stopped' });
-  });
-
-  app.post('/api/plugging/workspace/accounts/:id/test-forward', requirePlugWorkspace, async (req, res) => {
-    const account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ? AND order_id = ?')
-      .get(req.params.id, req.plugOrder.id);
-    if (!account) return res.status(404).json({ error: 'Account not found' });
-    if (account.auth_status !== 'authenticated') {
-      return res.status(400).json({ error: 'Complete Telegram login first' });
-    }
-    try {
-      const body = req.body || {};
-      if (body.sourceLink != null || body.targetsText != null || body.displayName != null || body.delayMinutes != null) {
-        persistAccountConfig(account, body, req.plugOrder.maxDestinations);
-      }
-      ensureAccountProxy(db, account.id, getPluggingSettings());
-      const result = await runTestForward(db, account.id, getPluggingSettings, 3);
-      res.json(result);
-    } catch (err) {
-      res.status(400).json({ error: err.message || 'Test forward failed' });
-    }
   });
 
   app.get('/api/plugging/workspace/accounts/:id/activity', requirePlugWorkspace, (req, res) => {
