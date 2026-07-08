@@ -2,16 +2,7 @@
 function formatCatalogPrice(price) {
   const n = Number(price);
   if (!n) return null;
-  return {
-    major: Math.floor(n).toLocaleString(),
-    minor: String(Math.round((n - Math.floor(n)) * 100)).padStart(2, '0')
-  };
-}
-
-function catalogPriceHtml(price) {
-  const parts = formatCatalogPrice(price);
-  if (!parts) return '<span class="catalog-price-empty">—</span>';
-  return `<span class="catalog-showcase-price">₱${parts.major}<small>.${parts.minor}</small></span>`;
+  return `₱${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function catalogStockBadge(label, state = 'available') {
@@ -27,31 +18,29 @@ function renderCatalogProductCard({ href, name, description, icon, price, badgeH
   const iconHtml = window.renderProductIcon
     ? window.renderProductIcon(icon, name, 'logo-img')
     : esc(name.charAt(0));
+  const priceText = formatCatalogPrice(price) || '—';
   return `
-    <article class="catalog-showcase">
-      <a href="${esc(href)}" class="catalog-showcase-link">
-        <div class="catalog-showcase-top">
-          <div class="catalog-showcase-icon">
-            <div class="logo${icon ? ' has-icon' : ''}">${iconHtml}</div>
+    <article class="catalog-tile">
+      <a href="${esc(href)}" class="catalog-tile-link">
+        <div class="catalog-tile-row">
+          <div class="catalog-tile-icon logo${icon ? ' has-icon' : ''}">${iconHtml}</div>
+          <div class="catalog-tile-main">
+            <div class="catalog-tile-top">
+              <h2 class="catalog-tile-name">${esc(name)}</h2>
+              <span class="catalog-tile-badge">${badgeHtml}</span>
+            </div>
+            <p class="catalog-tile-desc">${esc(description)}</p>
           </div>
-          <div class="catalog-showcase-badge">${badgeHtml}</div>
         </div>
-        <div class="catalog-showcase-body">
-          <h2 class="catalog-showcase-name">${esc(name)}</h2>
-          <p class="catalog-showcase-desc">${esc(description)}</p>
+        <div class="catalog-tile-foot">
+          <span class="catalog-tile-price">${priceText}</span>
+          <span class="catalog-tile-cta">View →</span>
         </div>
-        <footer class="catalog-showcase-foot">
-          <div class="catalog-showcase-price-wrap">
-            <span class="catalog-showcase-price-label">from</span>
-            ${catalogPriceHtml(price)}
-          </div>
-          <span class="catalog-showcase-cta">Explore <span aria-hidden="true">→</span></span>
-        </footer>
       </a>
     </article>`;
 }
 
 window.formatCatalogPrice = formatCatalogPrice;
-window.catalogPriceHtml = catalogPriceHtml;
+window.catalogPriceHtml = formatCatalogPrice;
 window.catalogStockBadge = catalogStockBadge;
 window.renderCatalogProductCard = renderCatalogProductCard;
