@@ -924,6 +924,19 @@ async function runGamesCheck(adminCookie) {
   if (eligSettings.status !== 200) { fail('games eligibility settings', eligSettings.json?.error || eligSettings.status); return; }
   ok('games strict eligibility configured (3 qty)');
 
+  const variant = db.prepare('SELECT id FROM product_variants WHERE product_id = ? ORDER BY id LIMIT 1').get(product.id);
+  if (!variant) { fail('games stock seed', 'no variant for product'); return; }
+  for (let i = 0; i < 3; i++) {
+    const stock = await request('POST', '/admin/inventory', {
+      variant_id: variant.id,
+      email: `games-stock-${Date.now()}-${i}@test.local`,
+      password: 'testpass',
+      profiles: [`Profile ${i + 1}`]
+    }, adminCookie);
+    if (stock.status !== 201) { fail('games stock seed', stock.status); return; }
+  }
+  ok('games stock seeded for delivery');
+
   const seq = db.prepare('SELECT COALESCE(MAX(order_seq), 0) + 1 AS n FROM orders').get().n;
   const orderNumber = String(seq);
   const ins = db.prepare(`
@@ -940,8 +953,8 @@ async function runGamesCheck(adminCookie) {
   if (approveRes.status !== 200) { fail('games order approve', approveRes.json?.error || approveRes.status); return; }
 
   const slot = db.prepare('SELECT id FROM game_wheel_slots WHERE order_id = ?').get(orderId);
-  if (slot?.id) ok('wheel slot granted for approved order');
-  else fail('wheel slot granted', 'missing');
+  if (slot?.id) ok('wheel slot granted after delivery');
+  else fail('wheel slot granted after delivery', 'missing');
 
   const scratch = db.prepare('SELECT id FROM game_scratch_cards WHERE order_id = ?').get(orderId);
   if (scratch?.id) ok('scratch card granted');
@@ -972,8 +985,12 @@ async function runGamesCheck(adminCookie) {
 
   const gamesPage = await request('GET', '/games');
   const pageBody = gamesPage.json?.raw || '';
-  if (gamesPage.status === 200 && pageBody.includes('games-arena')) ok('GET /games page');
-  else fail('GET /games page', gamesPage.status);
+  if (gamesPage.status === 200 && pageBody.includes('games-hub-guide-btn')) {
+    ok('GET /games page with guide link');
+  } else fail('GET /games page guide', gamesPage.status);
+
+  if (hub.json.eligibility?.guides?.wheel) ok('games hub includes guide URLs');
+  else fail('games hub guides', JSON.stringify(hub.json.eligibility?.guides || {}));
 
   const login = await loginUser(email, 'testpass123');
   if (login.cookie) {

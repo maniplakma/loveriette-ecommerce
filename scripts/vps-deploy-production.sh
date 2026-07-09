@@ -34,6 +34,9 @@ if [[ -d .git ]]; then
   git fetch origin "$BRANCH"
   git checkout "$BRANCH" 2>/dev/null || git checkout -b "$BRANCH" "origin/$BRANCH"
   git reset --hard "origin/$BRANCH"
+  echo "    Commit: $(git rev-parse --short HEAD)"
+  echo "    Games features need PR #14/#15 merged into main, or deploy with:"
+  echo "    BRANCH=cursor/games-timer-winners-expand-ec32 curl -fsSL .../vps-deploy-production.sh | bash"
 else
   echo "    No .git — cloning into temp and syncing..."
   TMP="$(mktemp -d)"

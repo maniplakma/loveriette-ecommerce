@@ -98,9 +98,8 @@
     const isVisible = visible !== false;
     const state = !isVisible ? 'closed' : (open ? 'open' : 'results');
     const status = !isVisible ? 'Closed' : (statusLabel || (open ? 'Open' : 'Results'));
-    const guide = guideUrl
-      ? `<a href="${esc(guideUrl)}" class="games-guide-link" target="_blank" rel="noopener noreferrer" data-no-expand>How to play</a>`
-      : '';
+    const guideHref = guideUrl || `/guide.html#game-${type}`;
+    const guide = `<a href="${esc(guideHref)}" class="games-guide-link" target="_blank" rel="noopener noreferrer" data-no-expand>How to play</a>`;
     const expandHint = expandable !== false
       ? '<span class="games-expand-hint" aria-hidden="true">Tap to expand</span>'
       : '';
@@ -110,9 +109,9 @@
         <header class="games-arena-head">
           ${icon(type, 'games-icon--head')}
           <h2>${esc(title)}</h2>
-          ${guide}
           <span class="games-arena-status games-arena-status--${isVisible && open ? 'open' : 'closed'}">${esc(status)}</span>
         </header>
+        <div class="games-arena-guide-row">${guide}</div>
         ${metaHtml || ''}
         ${isVisible && prizesHtml ? `<div class="games-arena-prizes"><h3 class="games-arena-sub">Prizes</h3>${prizesHtml}</div>` : ''}
         <div class="games-arena-body">${body}</div>
@@ -132,7 +131,7 @@
 
   function gateBanner(kind, channelUrl, minTotal, elig) {
     if (kind === 'closed') return closedBody(channelUrl);
-    const purchaseMsg = elig?.message || 'Shop order → unlock after approval';
+    const purchaseMsg = elig?.message || 'Shop order → unlock after delivery';
     if (kind === 'purchase') {
       return `
         <div class="games-arena-gate games-arena-gate--compact">

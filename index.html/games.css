@@ -561,14 +561,53 @@
 }
 
 .games-guide-link {
-  font-size: 0.68rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
   font-weight: 700;
   color: var(--games-accent);
   text-decoration: none;
-  padding: 0.2rem 0.5rem;
+  padding: 0.35rem 0.75rem;
   border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--games-accent) 35%, transparent);
+  border: 1px solid color-mix(in srgb, var(--games-accent) 45%, transparent);
+  background: color-mix(in srgb, var(--games-accent) 10%, transparent);
   white-space: nowrap;
+}
+
+.games-arena-guide-row {
+  padding: 0 1rem 0.4rem;
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+}
+
+.games-hub-guide-row {
+  margin: 0.65rem 0 0;
+  text-align: center;
+}
+
+.games-hub-guide-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.45rem 1rem;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-decoration: none;
+  color: var(--games-accent);
+  border: 1px solid color-mix(in srgb, var(--games-accent) 40%, transparent);
+  background: color-mix(in srgb, var(--games-accent) 8%, transparent);
+}
+
+.games-hub-guide-btn:hover {
+  background: color-mix(in srgb, var(--games-accent) 16%, transparent);
+}
+
+.games-arena-head {
+  flex-wrap: wrap;
 }
 
 .games-guide-link:hover {

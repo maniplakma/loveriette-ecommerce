@@ -7,7 +7,7 @@ const bcrypt = require('bcryptjs');
 const appConfig = require('./config');
 const db = require('./db');
 const { creditLoyaltyForPurchase } = require('./loyalty');
-const { grantGamesForApprovedOrder } = require('./games-engine');
+const { tryGrantGamesForDeliveredOrder } = require('./games-engine');
 const { fetchLatestUnreadGmail, parseGmailFilters, getLastFetchedMessageId } = require('./gmail-fetch');
 const {
   oauthConfigured,
@@ -700,6 +700,7 @@ function claimOneStockForOrder(orderId) {
       if (postSummary.remaining <= 0) {
         db.prepare('UPDATE orders SET tingi_hold_until = NULL WHERE id = ?').run(orderId);
         queueBuyerEmail(() => trySendOrderDeliveredEmail(db, getSetting, orderId));
+        tryGrantGamesForDeliveredOrder(db, gamesNotifyDeps(), orderId);
       }
       return {
         ok: true,
@@ -1009,6 +1010,7 @@ function fulfillOrderRemaining(orderId) {
     db.prepare('UPDATE orders SET tingi_hold_until = NULL WHERE id = ?').run(orderId);
     queueBuyerEmail(() => trySendOrderDeliveredEmail(db, getSetting, orderId));
   }
+  tryGrantGamesForDeliveredOrder(db, gamesNotifyDeps(), orderId);
   return { assigned };
 }
 
@@ -1912,10 +1914,13 @@ function markOrderApprovedAndFulfill(orderId) {
     orderRef: fullOrder.order_number || String(fullOrder.id),
     source: 'order'
   });
-  grantGamesForApprovedOrder(db, {
-    notify: (userId, type, title, body) => createUserNotification(userId, type, title, body)
-  }, fullOrder);
   return { ok: true };
+}
+
+function gamesNotifyDeps() {
+  return {
+    notify: (userId, type, title, body) => createUserNotification(userId, type, title, body)
+  };
 }
 
 function orderItemFulfillmentRemaining(orderItemId, quantity) {

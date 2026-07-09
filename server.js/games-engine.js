@@ -3,6 +3,7 @@
 const crypto = require('crypto');
 const {
   orderQualifiesForGames,
+  orderIsDeliveredForGames,
   eligibilityMessage,
   buildEligibilityHub,
   getGamesRules
@@ -537,10 +538,18 @@ function fulfillPrize(db, deps, { userId, prize, orderRef, source }) {
   return { fulfilled: true, message: label, manual: true, fulfillment };
 }
 
+function tryGrantGamesForDeliveredOrder(db, deps, orderId) {
+  if (!orderIsDeliveredForGames(db, orderId)) return;
+  const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
+  if (!order) return;
+  grantGamesForApprovedOrder(db, deps, order);
+}
+
 function grantGamesForApprovedOrder(db, deps, order) {
   if (readSetting(db, 'games_enabled', '1') !== '1') return;
   const userId = resolveUserId(db, { userId: order.user_id, email: order.email });
   if (!userId) return;
+  if (!orderIsDeliveredForGames(db, order.id)) return;
   if (!orderQualifiesForGames(db, order.id)) return;
 
   const total = Number(order.total) || 0;
@@ -556,7 +565,7 @@ function grantGamesForApprovedOrder(db, deps, order) {
         INSERT INTO game_wheel_slots (campaign_id, user_id, order_id, order_number, display_name)
         VALUES (?, ?, ?, ?, ?)
       `).run(wheel.id, userId, orderId, orderNumber, displayName);
-      deps?.notify?.(userId, 'promo', 'Spin the Wheel entry!', `Order #${orderNumber} earned you a slot on "${wheel.title}".`);
+      deps?.notify?.(userId, 'promo', 'Spin the Wheel entry!', `Order #${orderNumber} is delivered — you earned a slot on "${wheel.title}".`);
     }
   }
 
@@ -839,6 +848,7 @@ module.exports = {
   buildGamesHubState,
   activeWheelCampaign,
   grantGamesForApprovedOrder,
+  tryGrantGamesForDeliveredOrder,
   runWheelDraw,
   processDueWheelDraws,
   scratchCard,

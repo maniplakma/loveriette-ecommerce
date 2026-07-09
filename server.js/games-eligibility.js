@@ -53,31 +53,52 @@ function getEligibleProducts(db, productIds) {
   `).all(...productIds);
 }
 
-function orderQualifiesForGames(db, orderId) {
+function getQualifyingOrderItems(db, orderId) {
   const rules = getGamesRules(db);
-  if (!rules.strict || !rules.productIds.length) return true;
-
-  const order = db.prepare('SELECT id, status FROM orders WHERE id = ?').get(orderId);
-  if (!order || order.status !== 'approved') return false;
-
   const items = db.prepare(`
-    SELECT product_id, quantity FROM order_items WHERE order_id = ?
+    SELECT id, product_id, quantity FROM order_items WHERE order_id = ?
   `).all(orderId);
-
-  return items.some((line) =>
+  if (!rules.strict || !rules.productIds.length) return items;
+  return items.filter((line) =>
     rules.productIds.includes(Number(line.product_id))
     && Number(line.quantity) >= rules.requiredQuantity
   );
+}
+
+function orderIsDeliveredForGames(db, orderId) {
+  const order = db.prepare('SELECT id, status FROM orders WHERE id = ?').get(orderId);
+  if (!order || order.status !== 'approved') return false;
+
+  const relevant = getQualifyingOrderItems(db, orderId);
+  if (!relevant.length) return false;
+
+  for (const item of relevant) {
+    const fulfilled = db.prepare(
+      'SELECT COUNT(*) AS c FROM order_fulfillments WHERE order_item_id = ?'
+    ).get(item.id).c;
+    if (fulfilled < Number(item.quantity)) return false;
+  }
+  return true;
+}
+
+function orderQualifiesForGames(db, orderId) {
+  const order = db.prepare('SELECT id, status FROM orders WHERE id = ?').get(orderId);
+  if (!order || order.status !== 'approved') return false;
+  if (!orderIsDeliveredForGames(db, orderId)) return false;
+
+  const rules = getGamesRules(db);
+  if (!rules.strict || !rules.productIds.length) return true;
+  return getQualifyingOrderItems(db, orderId).length > 0;
 }
 
 function eligibilityMessage(db) {
   const rules = getGamesRules(db);
   const products = getEligibleProducts(db, rules.productIds);
   if (!rules.strict || !rules.productIds.length) {
-    return 'Purchase from the shop — your game unlocks after payment approval.';
+    return 'Purchase from the shop — games unlock after your order is delivered.';
   }
   const names = products.map((p) => p.name).join(', ') || 'selected account products';
-  return `Buy at least ${rules.requiredQuantity} quantity of ${names} — unlocks after order approval.`;
+  return `Buy at least ${rules.requiredQuantity} quantity of ${names} — play unlocks once delivered.`;
 }
 
 function buildEligibilityHub(db) {
@@ -117,6 +138,8 @@ module.exports = {
   DEFAULT_GUIDES,
   getGamesRules,
   getEligibleProducts,
+  getQualifyingOrderItems,
+  orderIsDeliveredForGames,
   orderQualifiesForGames,
   eligibilityMessage,
   buildEligibilityHub,
