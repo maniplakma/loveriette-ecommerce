@@ -123,6 +123,32 @@ async function tryLoadWorkspace() {
   }
 }
 
+async function unlockWithKey(key, { save = true } = {}) {
+  const trimmed = String(key || '').trim();
+  if (!trimmed) throw new Error('Enter your access key');
+  await api('/api/plugging/workspace/unlock', {
+    method: 'POST',
+    body: JSON.stringify({ accessKey: trimmed })
+  });
+  if (save && window.setStoredPlugKey) setStoredPlugKey(trimmed);
+  return tryLoadWorkspace();
+}
+
+async function initWorkspaceSession() {
+  if (await tryLoadWorkspace()) return;
+
+  const saved = window.getStoredPlugKey ? getStoredPlugKey() : '';
+  if (saved) {
+    const input = document.getElementById('access-key-input');
+    if (input) input.value = saved;
+    try {
+      if (await unlockWithKey(saved, { save: true })) return;
+    } catch (_) {
+      /* saved key invalid or expired — keep prefilled for manual retry */
+    }
+  }
+}
+
 function showWorkspace() {
   document.getElementById('gate-view').hidden = true;
   document.getElementById('workspace-view').hidden = false;
@@ -134,6 +160,18 @@ function showWorkspace() {
   const pri = workspace.priority ? ' · Priority' : '';
   document.getElementById('plan-info').textContent =
     `${workspace.planName} · ${src} account(s) · ${dst} groups each${pri}${exp}`;
+
+  const loyaltyEl = document.getElementById('loyalty-info');
+  if (loyaltyEl) {
+    if (workspace.loyalty) {
+      loyaltyEl.hidden = false;
+      loyaltyEl.textContent = `Loyalty: ₱${Number(workspace.loyalty.balance || 0).toLocaleString()}`;
+      loyaltyEl.title = workspace.loyalty.earnRateLabel || '₱1 loyalty credit per ₱200 spent';
+    } else {
+      loyaltyEl.hidden = true;
+    }
+  }
+
   renderAccountList();
   if (selectedId) renderAccountDetail(selectedId);
   else renderEmptyDetail();
@@ -482,11 +520,7 @@ document.getElementById('unlock-btn').addEventListener('click', async () => {
   const err = document.getElementById('gate-error');
   err.hidden = true;
   try {
-    await api('/api/plugging/workspace/unlock', {
-      method: 'POST',
-      body: JSON.stringify({ accessKey: document.getElementById('access-key-input').value.trim() })
-    });
-    await tryLoadWorkspace();
+    await unlockWithKey(document.getElementById('access-key-input').value, { save: true });
   } catch (e) {
     err.hidden = false;
     err.textContent = e.message;
@@ -497,9 +531,10 @@ document.getElementById('add-account-btn').addEventListener('click', submitAddAc
 
 document.getElementById('logout-btn').addEventListener('click', async () => {
   stopActivityPoll();
+  if (window.clearStoredPlugKey) clearStoredPlugKey();
   await api('/api/plugging/workspace/logout', { method: 'POST' });
   location.reload();
 });
 
 bindAccountDetailActions();
-tryLoadWorkspace();
+initWorkspaceSession();

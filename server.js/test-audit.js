@@ -318,11 +318,17 @@ async function runPluggingOrderFlow(adminCookie) {
   const pm = db.prepare('SELECT id FROM payment_methods WHERE is_active = 1 LIMIT 1').get();
   if (!plan || !pm) { fail('plugging seed', 'missing plan/pm'); return; }
 
+  const plugEmail = `plug-qa-${Date.now()}@test.local`;
+  const reg = await request('POST', '/auth/register', { email: plugEmail, password: 'testpass123', name: 'Plug QA Buyer' });
+  const buyerCookie = (reg.headers['set-cookie'] || []).map((c) => c.split(';')[0]).join('; ');
+  if (reg.status !== 201 && reg.status !== 200) { fail('plugging buyer register', reg.status); return; }
+  const buyerBefore = db.prepare('SELECT id, wallet_balance FROM users WHERE LOWER(email) = ?').get(plugEmail.toLowerCase());
+
   const sub = await request('POST', '/api/plugging/subscribe', {
     planId: plan.id,
     name: 'Plug QA Buyer',
-    email: `plug-qa-${Date.now()}@test.local`
-  });
+    email: plugEmail
+  }, buyerCookie);
   if (sub.status !== 201 || !sub.json.orderRef) {
     fail('POST /api/plugging/subscribe', sub.json?.error || sub.status);
     return;
@@ -353,6 +359,19 @@ async function runPluggingOrderFlow(adminCookie) {
   const unlock = await request('POST', '/api/plugging/workspace/unlock', { accessKey: approved.json.accessKey });
   if (unlock.status === 200 && unlock.json.ok) ok('workspace unlock with access key');
   else fail('workspace unlock', unlock.json?.error || unlock.status);
+
+  const plugCookie = (unlock.headers['set-cookie'] || []).map((c) => c.split(';')[0]).join('; ');
+  const wsPersist = await request('GET', '/api/plugging/workspace', null, plugCookie);
+  if (wsPersist.status === 200 && wsPersist.json.orderRef === orderRef) ok('workspace session persists via cookie');
+  else fail('workspace session persist', wsPersist.status);
+
+  if (plan.price >= 200 && buyerBefore?.id) {
+    const buyerAfter = db.prepare('SELECT wallet_balance FROM users WHERE id = ?').get(buyerBefore.id);
+    const expected = Math.floor(plan.price / 200);
+    const gained = (buyerAfter?.wallet_balance || 0) - (buyerBefore.wallet_balance || 0);
+    if (gained === expected) ok(`plugging loyalty credit ₱${expected}`);
+    else fail('plugging loyalty credit', `expected +${expected}, got +${gained}`);
+  }
 }
 
 async function runBuyerAccountFlow() {

@@ -59,6 +59,7 @@ async function heroEnterWorkspace() {
     });
     const json = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(json.error || 'Invalid access key');
+    if (window.setStoredPlugKey) setStoredPlugKey(key);
     location.href = '/plugging/workspace';
   } catch (e) {
     err.textContent = e.message;

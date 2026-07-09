@@ -12,6 +12,7 @@ const { isPostLink, normalizePostLink } = require('./plugging-post');
 const { extractInviteHash } = require('./plugging-join');
 const { pickProxyForNewAccount, listPluggingProxies, autoEnableProxySetting, ensureAccountProxy } = require('./plugging-proxy');
 const { logPlugActivity, getAccountActivity, clearAccountActivity } = require('./plugging-activity');
+const { creditLoyaltyForPurchase, getLoyaltyBalance } = require('./loyalty');
 const {
   normalizePlugOrder,
   computeExpiresAtFromDuration,
@@ -25,12 +26,35 @@ function mountPluggingService(app, db, deps) {
     requireAdmin,
     frontendDir,
     getPluggingSettings,
-    trackVisit
+    trackVisit,
+    getSessionUserId
   } = deps;
 
   const COOKIE = 'plug_access_key';
-  const COOKIE_OPTS = { httpOnly: true, sameSite: 'lax', maxAge: 7 * 24 * 60 * 60 * 1000 };
-  const COOKIE_OPTS_LIFETIME = { httpOnly: true, sameSite: 'lax', maxAge: 10 * 365 * 24 * 60 * 60 * 1000 };
+  const COOKIE_LIFETIME_MS = 10 * 365 * 24 * 60 * 60 * 1000;
+  const COOKIE_DEFAULT_MS = 365 * 24 * 60 * 60 * 1000;
+
+  function cookieBaseOpts() {
+    return {
+      httpOnly: true,
+      sameSite: 'lax',
+      path: '/',
+      secure: !!appConfig.cookieSecure
+    };
+  }
+
+  function cookieOptsForOrder(order, key) {
+    const base = cookieBaseOpts();
+    if (isMasterAccessKey(key)) {
+      return { ...base, maxAge: COOKIE_LIFETIME_MS };
+    }
+    const exp = order?.expiresAt || order?.expires_at;
+    if (exp) {
+      const ms = new Date(exp).getTime() - Date.now();
+      if (ms > 0) return { ...base, maxAge: ms };
+    }
+    return { ...base, maxAge: COOKIE_DEFAULT_MS };
+  }
   const PLUG_MASTER_KEY_SETTING = 'plug_master_key';
   const PLUG_MASTER_CREATED_SETTING = 'plug_master_key_created_at';
 
@@ -292,10 +316,11 @@ function mountPluggingService(app, db, deps) {
     if (!name) return res.status(400).json({ error: 'Name is required' });
 
     const orderRef = genOrderRef();
+    const userId = getSessionUserId?.(req) || null;
     db.prepare(`
-      INSERT INTO plugging_orders (order_ref, plan_id, customer_name, email, total, status)
-      VALUES (?, ?, ?, ?, ?, 'pending_payment')
-    `).run(orderRef, plan.id, String(name).trim(), String(email || '').trim(), plan.price);
+      INSERT INTO plugging_orders (order_ref, plan_id, customer_name, email, total, status, user_id)
+      VALUES (?, ?, ?, ?, ?, 'pending_payment', ?)
+    `).run(orderRef, plan.id, String(name).trim(), String(email || '').trim(), plan.price, userId);
 
     res.status(201).json({
       orderRef,
@@ -356,23 +381,26 @@ function mountPluggingService(app, db, deps) {
     const key = String(req.body?.accessKey || '').trim();
     const order = resolvePlugAccessKey(key);
     if (!order) return res.status(401).json({ error: 'Invalid access key, payment not approved yet, or subscription expired' });
-    const cookieOpts = isMasterAccessKey(key) ? COOKIE_OPTS_LIFETIME : COOKIE_OPTS;
-    res.cookie(COOKIE, key, cookieOpts);
+    res.cookie(COOKIE, key, cookieOptsForOrder(order, key));
     res.json({
       ok: true,
       orderRef: order.order_ref,
       planName: order.plan_name,
-      lifetime: isMasterAccessKey(key)
+      lifetime: isMasterAccessKey(key),
+      remember: true
     });
   });
 
   app.post('/api/plugging/workspace/logout', (req, res) => {
-    res.clearCookie(COOKIE);
+    res.clearCookie(COOKIE, cookieBaseOpts());
     res.json({ ok: true });
   });
 
   app.get('/api/plugging/workspace', requirePlugWorkspace, (req, res) => {
     const accounts = db.prepare('SELECT * FROM plugging_accounts WHERE order_id = ? ORDER BY id ASC').all(req.plugOrder.id);
+    const loyalty = req.plugOrder.order_ref === 'PLG-MASTER'
+      ? null
+      : getLoyaltyBalance(db, { userId: req.plugOrder.user_id, email: req.plugOrder.email });
     res.json({
       orderRef: req.plugOrder.order_ref,
       planName: req.plugOrder.plan_name,
@@ -383,6 +411,7 @@ function mountPluggingService(app, db, deps) {
       priority: !!req.plugOrder.planPriority,
       expiresAt: req.plugOrder.expiresAt || null,
       isMaster: !!req.plugOrder.isMaster,
+      loyalty,
       accounts: accounts.map(mapAccount)
     });
   });
@@ -633,6 +662,17 @@ function mountPluggingService(app, db, deps) {
             expires_at = ?, updated_at = datetime('now')
         WHERE id = ?
       `).run(accessKey, expiresAt, order.id);
+
+      const approvedOrder = db.prepare('SELECT * FROM plugging_orders WHERE id = ?').get(order.id);
+      if (approvedOrder.order_ref !== 'PLG-MASTER' && Number(approvedOrder.total) >= 200) {
+        creditLoyaltyForPurchase(db, {
+          userId: approvedOrder.user_id,
+          email: approvedOrder.email,
+          total: approvedOrder.total,
+          orderRef: approvedOrder.order_ref,
+          source: 'plugging'
+        });
+      }
     } else if (status) {
       db.prepare('UPDATE plugging_orders SET status = ?, updated_at = datetime(\'now\') WHERE id = ?').run(status, order.id);
     }

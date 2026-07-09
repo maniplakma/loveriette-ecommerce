@@ -6,6 +6,7 @@ const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const appConfig = require('./config');
 const db = require('./db');
+const { creditLoyaltyForPurchase } = require('./loyalty');
 const { fetchLatestUnreadGmail, parseGmailFilters, getLastFetchedMessageId } = require('./gmail-fetch');
 const {
   oauthConfigured,
@@ -1038,26 +1039,6 @@ function processExpiredTingiHolds() {
   }
 }
 
-function creditLoyaltyWallet(order) {
-  if (getSetting('loyalty_enabled', '1') !== '1' || !order.user_id) return;
-  const exists = db.prepare(`
-    SELECT id FROM wallet_transactions WHERE order_number = ? AND user_id = ? AND type = 'loyalty'
-  `).get(order.order_number, order.user_id);
-  if (exists) return;
-  const earnRate = Number(getSetting('loyalty_earn_rate', '0.25'));
-  const redeemRate = Number(getSetting('loyalty_redeem_rate', '100')) || 100;
-  const points = Math.floor(order.total * earnRate);
-  if (points <= 0) return;
-  const credit = Math.floor(points / redeemRate);
-  if (credit <= 0) return;
-
-  db.prepare('UPDATE users SET wallet_balance = wallet_balance + ? WHERE id = ?').run(credit, order.user_id);
-  db.prepare(`
-    INSERT INTO wallet_transactions (user_id, type, amount, order_number, description)
-    VALUES (?, 'loyalty', ?, ?, ?)
-  `).run(order.user_id, credit, order.order_number, `Loyalty credit for order ${order.order_number}`);
-}
-
 function parseAccessProfileDetails(raw) {
   if (!raw) return [];
   try {
@@ -1923,6 +1904,13 @@ function markOrderApprovedAndFulfill(orderId) {
     fulfillOrderRemaining(orderId);
   }
   processExpiredTingiHolds();
+  creditLoyaltyForPurchase(db, {
+    userId: fullOrder.user_id,
+    email: fullOrder.email,
+    total: fullOrder.total,
+    orderRef: fullOrder.order_number || String(fullOrder.id),
+    source: 'order'
+  });
   return { ok: true };
 }
 
