@@ -125,6 +125,10 @@ function initGamesSchema(db) {
   if (!settings) {
     db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('games_enabled', '1');
   }
+  const channel = db.prepare('SELECT value FROM settings WHERE key = ?').get('games_channel_url');
+  if (!channel) {
+    db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('games_channel_url', 'https://t.me/loveriette');
+  }
 }
 
 module.exports = { initGamesSchema };

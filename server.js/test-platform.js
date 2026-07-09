@@ -68,6 +68,7 @@ async function runPageRoutes() {
   const staticPaths = [
     '/',
     '/shop',
+    '/games',
     '/website-making',
     '/plugging',
     '/plugging/subscribe',

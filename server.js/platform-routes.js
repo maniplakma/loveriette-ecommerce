@@ -36,8 +36,9 @@ function mountPlatformRoutes(app, db, deps) {
     },
     service_categories: {
       items: [
-        { title: 'Plugging', desc: 'Telegram message auto forwarder — relay messages across your groups and channels.', link: '/plugging', icon: 'plug', cta: 'View Plugging', primary: true },
-        { title: 'Shop', desc: 'Premium digital products and subscriptions delivered after purchase.', link: '/shop', icon: 'cart', cta: 'Browse Shop' },
+        { title: 'Shop', desc: 'Premium digital products and subscriptions delivered after purchase.', link: '/shop', icon: 'cart', cta: 'Browse Shop', primary: true },
+        { title: 'Games', desc: 'Spin the wheel, scratch cards, and mystery boxes with every approved order.', link: '/games', icon: 'game', cta: 'Play Games' },
+        { title: 'Plugging', desc: 'Telegram message auto forwarder — relay messages across your groups and channels.', link: '/plugging', icon: 'plug', cta: 'View Plugging' },
         { title: 'Website Making', desc: 'Custom ecommerce sites and ongoing maintenance for your brand.', link: '/website-making', icon: 'web', cta: 'View Packages' }
       ]
     }
@@ -144,15 +145,22 @@ function mountPlatformRoutes(app, db, deps) {
     return getPlatformSettings().website_making_enabled !== '0';
   }
 
+  function isGamesEnabled() {
+    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('games_enabled');
+    return (row?.value ?? '1') === '1';
+  }
+
   function filterServiceCategoryItems(items) {
     if (!Array.isArray(items)) return items;
     const shopOn = isShopEnabled();
+    const gamesOn = isGamesEnabled();
     const plugOn = isPluggingEnabled();
     const webOn = isWebsiteMakingEnabled();
     return items.filter((i) => {
       if (isLendingServiceItem(i)) return false;
       const link = String(i?.link || '').toLowerCase();
       if (!shopOn && (link === '/shop' || link.startsWith('/product'))) return false;
+      if (!gamesOn && link === '/games') return false;
       if (!plugOn && link.startsWith('/plugging')) return false;
       if (!webOn && link.includes('website-making')) return false;
       return true;
@@ -1033,7 +1041,9 @@ function mountPlatformRoutes(app, db, deps) {
   mountGamesService(app, db, {
     requireAdmin,
     requireAuth,
-    createUserNotification: deps.createUserNotification
+    createUserNotification: deps.createUserNotification,
+    frontendDir,
+    trackVisit: (req) => trackVisit({ path: req.path, get: (h) => req.get(h) })
   });
 
   return { logActivity };

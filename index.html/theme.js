@@ -18,7 +18,8 @@
     const path = (location.pathname || '').toLowerCase();
     return body.classList.contains('page-home')
       || body.classList.contains('page-shop')
-      || /^\/(shop|plugging|website-making)\/?$/i.test(path.replace(/\/$/, '') || '/')
+      || body.classList.contains('page-games')
+      || /^\/(shop|games|plugging|website-making)\/?$/i.test(path.replace(/\/$/, '') || '/')
       || /\/(plugging|website-making)\/?$/i.test(path);
   }
 

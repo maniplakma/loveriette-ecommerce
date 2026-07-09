@@ -393,10 +393,11 @@ function initPlatformDb(db) {
           { icon: 'star', title: 'Premium Quality', text: 'Curated services at affordable prices.' }
         ]
       }), 1],
-      ['service_categories', 'categories', 'Our Services', 'Shop, websites, and plugging — one platform', '', JSON.stringify({
+      ['service_categories', 'categories', 'Our Services', 'Shop, games, plugging, and websites — one platform', '', JSON.stringify({
         items: [
-          { title: 'Plugging', desc: 'Telegram message auto forwarder — automatically relay messages to your groups and channels.', link: '/plugging', icon: 'plug', cta: 'Plugging', primary: true },
-          { title: 'Shop', desc: 'Premium digital products, apps, and subscriptions delivered instantly after purchase.', link: '/shop', icon: 'cart', cta: 'Browse Shop' },
+          { title: 'Shop', desc: 'Premium digital products, apps, and subscriptions delivered instantly after purchase.', link: '/shop', icon: 'cart', cta: 'Browse Shop', primary: true },
+          { title: 'Games', desc: 'Spin the wheel, scratch cards, and mystery boxes with every approved order.', link: '/games', icon: 'game', cta: 'Play Games' },
+          { title: 'Plugging', desc: 'Telegram message auto forwarder — automatically relay messages to your groups and channels.', link: '/plugging', icon: 'plug', cta: 'View Plugging' },
           { title: 'Website Making', desc: 'Custom ecommerce sites, auto-order platforms, and ongoing maintenance for your brand.', link: '/website-making', icon: 'web', cta: 'View Packages' }
         ]
       }), 2]
@@ -457,9 +458,11 @@ function initPlatformDb(db) {
     ins.run('website', 'Website making packages updated');
   }
 
+  const SERVICE_ORDER = ['/shop', '/games', '/plugging', '/website-making'];
   const defaultServices = [
-    { title: 'Plugging', desc: 'Telegram message auto forwarder — automatically relay messages to your groups and channels.', link: '/plugging', icon: 'plug', cta: 'Plugging', primary: true },
-    { title: 'Shop', desc: 'Premium digital products, apps, and subscriptions delivered instantly after purchase.', link: '/shop', icon: 'cart', cta: 'Browse Shop' },
+    { title: 'Shop', desc: 'Premium digital products, apps, and subscriptions delivered instantly after purchase.', link: '/shop', icon: 'cart', cta: 'Browse Shop', primary: true },
+    { title: 'Games', desc: 'Spin the wheel, scratch cards, and mystery boxes with every approved order.', link: '/games', icon: 'game', cta: 'Play Games' },
+    { title: 'Plugging', desc: 'Telegram message auto forwarder — automatically relay messages to your groups and channels.', link: '/plugging', icon: 'plug', cta: 'View Plugging' },
     { title: 'Website Making', desc: 'Custom ecommerce sites, auto-order platforms, and ongoing maintenance for your brand.', link: '/website-making', icon: 'web', cta: 'View Packages' }
   ];
   const catRow = db.prepare("SELECT id, content_json FROM cms_sections WHERE section_key = 'service_categories'").get();
@@ -474,10 +477,14 @@ function initPlatformDb(db) {
         links.add(d.link);
       }
     }
-    const plugIdx = items.findIndex((i) => i.link === '/plugging');
-    if (plugIdx > 0) {
-      const [plug] = items.splice(plugIdx, 1);
-      items.unshift(plug);
+    items = items.map((i) => ({
+      ...i,
+      primary: i.link === '/shop'
+    }));
+    const byLink = new Map(items.map((i) => [i.link, i]));
+    items = SERVICE_ORDER.map((link) => byLink.get(link)).filter(Boolean);
+    for (const i of byLink.values()) {
+      if (!SERVICE_ORDER.includes(i.link)) items.push(i);
     }
     content.items = items;
     db.prepare('UPDATE cms_sections SET content_json = ? WHERE id = ?').run(JSON.stringify(content), catRow.id);
@@ -825,8 +832,9 @@ function migrateWebsiteInquiryChat(db) {
         },
         service_categories: {
           items: [
-            { title: 'Plugging', desc: 'Telegram message auto forwarder — automatically relay messages to your groups and channels.', link: '/plugging', icon: 'plug', cta: 'View Plugging', primary: true },
-            { title: 'Shop', desc: 'Premium digital products, apps, and subscriptions delivered after purchase.', link: '/shop', icon: 'cart', cta: 'Browse Shop' },
+            { title: 'Shop', desc: 'Premium digital products, apps, and subscriptions delivered after purchase.', link: '/shop', icon: 'cart', cta: 'Browse Shop', primary: true },
+            { title: 'Games', desc: 'Spin the wheel, scratch cards, and mystery boxes with every approved order.', link: '/games', icon: 'game', cta: 'Play Games' },
+            { title: 'Plugging', desc: 'Telegram message auto forwarder — automatically relay messages to your groups and channels.', link: '/plugging', icon: 'plug', cta: 'View Plugging' },
             { title: 'Website Making', desc: 'Custom ecommerce sites, auto-order platforms, and ongoing maintenance.', link: '/website-making', icon: 'web', cta: 'View Packages' }
           ]
         }

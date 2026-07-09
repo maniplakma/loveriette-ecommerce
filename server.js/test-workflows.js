@@ -14,6 +14,12 @@ let failed = 0;
 function ok(name) { passed++; console.log(`  ✓ ${name}`); }
 function fail(name, err) { failed++; console.log(`  ✗ ${name}: ${err}`); }
 
+function purgeGameRowsForOrder(orderId) {
+  db.prepare('DELETE FROM game_mystery_plays WHERE order_id = ?').run(orderId);
+  db.prepare('DELETE FROM game_scratch_cards WHERE order_id = ?').run(orderId);
+  db.prepare('DELETE FROM game_wheel_slots WHERE order_id = ?').run(orderId);
+}
+
 function request(method, urlPath, body, cookie) {
   return new Promise((resolve, reject) => {
     const data = body ? JSON.stringify(body) : null;
@@ -867,6 +873,7 @@ async function runLoyaltyCheck(adminCookie) {
   else fail('loyalty wallet transaction', tx?.amount || 'missing');
 
   db.prepare('DELETE FROM wallet_transactions WHERE order_number = ?').run(orderNumber);
+  purgeGameRowsForOrder(orderId);
   db.prepare('DELETE FROM order_items WHERE order_id = ?').run(orderId);
   db.prepare('DELETE FROM orders WHERE id = ?').run(orderId);
   db.prepare('UPDATE users SET wallet_balance = ? WHERE id = ?').run(buyer.wallet_balance, buyer.id);
@@ -930,6 +937,22 @@ async function runGamesCheck(adminCookie) {
   const mystery = db.prepare('SELECT id FROM game_mystery_plays WHERE order_id = ?').get(orderId);
   if (mystery?.id) ok('mystery play granted');
   else fail('mystery play granted', 'missing');
+
+  const hub = await request('GET', '/api/games');
+  if (hub.status === 200 && hub.json.wheel && hub.json.scratch && hub.json.mystery) ok('GET /api/games hub');
+  else fail('GET /api/games hub', hub.status);
+
+  const gamesPage = await request('GET', '/games');
+  const pageBody = gamesPage.json?.raw || '';
+  if (gamesPage.status === 200 && pageBody.includes('games-arena')) ok('GET /games page');
+  else fail('GET /games page', gamesPage.status);
+
+  const login = await loginUser(email, 'testpass123');
+  if (login.cookie) {
+    const account = await request('GET', '/account/games', {}, login.cookie);
+    if (account.status === 200 && account.json.wheel?.mySlots?.length) ok('account games hub has wheel slot');
+    else fail('account games hub', account.json?.wheel?.mySlots?.length || account.status);
+  } else fail('games buyer login', login.status);
 
   db.prepare('DELETE FROM game_mystery_plays WHERE order_id = ?').run(orderId);
   db.prepare('DELETE FROM game_scratch_cards WHERE order_id = ?').run(orderId);
