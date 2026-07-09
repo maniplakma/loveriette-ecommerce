@@ -63,7 +63,7 @@ function buildGamesHubState(db, userId = null) {
   const enabled = isGamesEnabled(db);
   const channelUrl = readSetting(db, 'games_channel_url', 'https://t.me/loveriette');
   const now = new Date();
-  const wheelRow = latestWheelCampaign(db);
+  const wheelRow = activeWheelCampaign(db, now) || latestWheelCampaign(db);
   const scratchRow = db.prepare('SELECT * FROM game_scratch_pools ORDER BY id DESC LIMIT 1').get();
   const mysteryRow = db.prepare('SELECT * FROM game_mystery_pools ORDER BY id DESC LIMIT 1').get();
 
@@ -121,10 +121,15 @@ function buildGamesHubState(db, userId = null) {
     ? db.prepare('SELECT COUNT(*) AS c FROM game_wheel_slots WHERE campaign_id = ?').get(wheelRow.id).c
     : 0;
 
+  const dice = buildInstantHubGame(db, 'dice', userId, enabled);
+  const pick = buildInstantHubGame(db, 'pick', userId, enabled);
+  const vault = buildInstantHubGame(db, 'vault', userId, enabled);
+
   return {
     gamesEnabled: enabled,
     channelUrl,
     authenticated: !!userId,
+    previewExamples: true,
     wheel: wheelRow ? {
       id: wheelRow.id,
       title: wheelRow.title,
@@ -160,8 +165,65 @@ function buildGamesHubState(db, userId = null) {
       pending: mysteryPlays.filter((p) => !p.playedAt),
       canPlay: mysteryOpen && mysteryPlays.some((p) => !p.playedAt),
       needsPurchase: mysteryOpen && !mysteryPlays.length
-    } : { open: false, title: 'Mystery Box', prizes: [], needsPurchase: false, canPlay: false }
+    } : { open: false, title: 'Mystery Box', prizes: [], needsPurchase: false, canPlay: false },
+    dice,
+    pick,
+    vault
   };
+}
+
+const INSTANT_DEFAULTS = {
+  dice: 'Lucky Dice',
+  pick: 'Card Flip',
+  vault: 'Treasure Vault'
+};
+
+function buildInstantHubGame(db, gameKey, userId, enabled) {
+  const pool = db.prepare('SELECT * FROM game_instant_pools WHERE game_key = ?').get(gameKey);
+  const fallbackTitle = INSTANT_DEFAULTS[gameKey] || 'Instant Game';
+  if (!pool) {
+    return { gameKey, open: false, title: fallbackTitle, prizes: [], needsPurchase: false, canPlay: false };
+  }
+  const open = enabled && !!pool.is_enabled;
+  const prizes = mapPrizeRows(
+    db.prepare('SELECT * FROM game_instant_prizes WHERE pool_id = ? ORDER BY id').all(pool.id)
+  );
+  let plays = [];
+  if (userId) {
+    plays = db.prepare(`
+      SELECT ip.id, ip.order_number AS orderNumber, ip.played_at AS playedAt, ip.created_at AS createdAt,
+             ip.result_json AS resultJson,
+             pr.label AS prizeLabel, pr.prize_type AS prizeType, pr.tile_style AS tileStyle
+      FROM game_instant_plays ip
+      LEFT JOIN game_instant_prizes pr ON pr.id = ip.prize_id
+      WHERE ip.pool_id = ? AND ip.user_id = ?
+      ORDER BY ip.id DESC LIMIT 20
+    `).all(pool.id, userId).map((p) => {
+      let result = null;
+      if (p.resultJson) {
+        try { result = JSON.parse(p.resultJson); } catch (_) { /* ignore */ }
+      }
+      return { ...p, result };
+    });
+  }
+  return {
+    id: pool.id,
+    gameKey,
+    title: pool.title,
+    open,
+    minOrderTotal: pool.min_order_total,
+    prizes,
+    plays,
+    pending: plays.filter((p) => !p.playedAt),
+    canPlay: open && plays.some((p) => !p.playedAt),
+    needsPurchase: open && !plays.length
+  };
+}
+
+function activeInstantPool(db, gameKey) {
+  return db.prepare(`
+    SELECT * FROM game_instant_pools WHERE game_key = ? AND is_enabled = 1 LIMIT 1
+  `).get(gameKey) || null;
 }
 
 function activeWheelCampaign(db, now = new Date()) {
@@ -306,6 +368,21 @@ function grantGamesForApprovedOrder(db, deps, order) {
       deps?.notify?.(userId, 'promo', 'Mystery box ready!', `Pick a box in Games for order #${orderNumber}.`);
     }
   }
+
+  for (const gameKey of ['dice', 'pick', 'vault']) {
+    const pool = activeInstantPool(db, gameKey);
+    if (pool && total >= Number(pool.min_order_total || 0)) {
+      const exists = db.prepare('SELECT id FROM game_instant_plays WHERE order_id = ? AND pool_id = ?').get(orderId, pool.id);
+      if (!exists) {
+        db.prepare(`
+          INSERT INTO game_instant_plays (pool_id, user_id, order_id, order_number)
+          VALUES (?, ?, ?, ?)
+        `).run(pool.id, userId, orderId, orderNumber);
+        const label = INSTANT_DEFAULTS[gameKey] || 'Game';
+        deps?.notify?.(userId, 'promo', `${label} unlocked!`, `Play in Games for order #${orderNumber}.`);
+      }
+    }
+  }
 }
 
 function runWheelDraw(db, deps, campaignId) {
@@ -436,6 +513,72 @@ function playMysteryBox(db, deps, { playId, userId, boxIndex }) {
   };
 }
 
+function playInstantGame(db, deps, { playId, userId, gameKey, choice }) {
+  const play = db.prepare(`
+    SELECT ip.*, p.game_key AS gameKey FROM game_instant_plays ip
+    JOIN game_instant_pools p ON p.id = ip.pool_id
+    WHERE ip.id = ? AND ip.user_id = ?
+  `).get(playId, userId);
+  if (!play) return { error: 'Game not found' };
+  if (play.played_at) return { error: 'Already played' };
+  if (gameKey && play.gameKey !== gameKey) return { error: 'Invalid game' };
+
+  const prizes = db.prepare('SELECT * FROM game_instant_prizes WHERE pool_id = ?').all(play.pool_id);
+  const prize = pickWeightedPrize(prizes);
+  const now = new Date().toISOString();
+  let result = { choice: Number(choice) || 0 };
+
+  if (play.gameKey === 'dice') {
+    const d1 = Math.floor(Math.random() * 6) + 1;
+    const d2 = Math.floor(Math.random() * 6) + 1;
+    result = { dice: [d1, d2], sum: d1 + d2, choice: Number(choice) || 0 };
+  } else if (play.gameKey === 'pick') {
+    const idx = Math.max(0, Math.min(2, Number(choice) || 0));
+    const suits = ['♠ Ace', '♥ King', '♦ Queen'];
+    result = {
+      pickedCard: idx,
+      cards: [0, 1, 2].map((i) => ({
+        index: i,
+        label: i === idx
+          ? (prize?.label || 'No prize')
+          : suits[i % suits.length],
+        winner: i === idx
+      }))
+    };
+  } else if (play.gameKey === 'vault') {
+    const idx = Math.max(0, Math.min(2, Number(choice) || 0));
+    result = {
+      pickedVault: idx,
+      vaults: [0, 1, 2].map((i) => ({
+        index: i,
+        label: i === idx ? (prize?.label || 'Empty') : ['Bronze', 'Silver', 'Gold'][i],
+        winner: i === idx
+      }))
+    };
+  }
+
+  db.prepare(`
+    UPDATE game_instant_plays SET prize_id = ?, played_at = ?, result_json = ? WHERE id = ? AND played_at IS NULL
+  `).run(prize?.id || null, now, JSON.stringify(result), play.id);
+
+  if (prize) {
+    db.prepare('UPDATE game_instant_prizes SET won_count = won_count + 1 WHERE id = ?').run(prize.id);
+    fulfillPrize(db, deps, { userId, prize, orderRef: play.order_number, source: play.gameKey });
+  }
+
+  return {
+    ok: true,
+    gameKey: play.gameKey,
+    result,
+    prize: prize ? {
+      id: prize.id,
+      label: prize.label,
+      prizeType: prize.prize_type,
+      tileStyle: prize.tile_style
+    } : { label: 'No prize', prizeType: 'none', tileStyle: 'gray' }
+  };
+}
+
 module.exports = {
   PRIZE_TYPES,
   parseDays,
@@ -447,6 +590,9 @@ module.exports = {
   processDueWheelDraws,
   scratchCard,
   playMysteryBox,
+  playInstantGame,
+  activeInstantPool,
+  buildInstantHubGame,
   fulfillPrize,
   pickWeightedPrize,
   displayNameForUser

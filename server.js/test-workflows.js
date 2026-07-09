@@ -15,6 +15,7 @@ function ok(name) { passed++; console.log(`  ✓ ${name}`); }
 function fail(name, err) { failed++; console.log(`  ✗ ${name}: ${err}`); }
 
 function purgeGameRowsForOrder(orderId) {
+  db.prepare('DELETE FROM game_instant_plays WHERE order_id = ?').run(orderId);
   db.prepare('DELETE FROM game_mystery_plays WHERE order_id = ?').run(orderId);
   db.prepare('DELETE FROM game_scratch_cards WHERE order_id = ?').run(orderId);
   db.prepare('DELETE FROM game_wheel_slots WHERE order_id = ?').run(orderId);
@@ -938,8 +939,16 @@ async function runGamesCheck(adminCookie) {
   if (mystery?.id) ok('mystery play granted');
   else fail('mystery play granted', 'missing');
 
+  const dicePlay = db.prepare(`
+    SELECT ip.id FROM game_instant_plays ip
+    JOIN game_instant_pools p ON p.id = ip.pool_id WHERE ip.order_id = ? AND p.game_key = 'dice'
+  `).get(orderId);
+  if (dicePlay?.id) ok('dice play granted');
+  else fail('dice play granted', 'missing');
+
   const hub = await request('GET', '/api/games');
-  if (hub.status === 200 && hub.json.wheel && hub.json.scratch && hub.json.mystery) ok('GET /api/games hub');
+  if (hub.status === 200 && hub.json.wheel && hub.json.scratch && hub.json.mystery
+      && hub.json.dice && hub.json.pick && hub.json.vault) ok('GET /api/games hub (6 games)');
   else fail('GET /api/games hub', hub.status);
 
   const gamesPage = await request('GET', '/games');
@@ -954,9 +963,7 @@ async function runGamesCheck(adminCookie) {
     else fail('account games hub', account.json?.wheel?.mySlots?.length || account.status);
   } else fail('games buyer login', login.status);
 
-  db.prepare('DELETE FROM game_mystery_plays WHERE order_id = ?').run(orderId);
-  db.prepare('DELETE FROM game_scratch_cards WHERE order_id = ?').run(orderId);
-  db.prepare('DELETE FROM game_wheel_slots WHERE order_id = ?').run(orderId);
+  purgeGameRowsForOrder(orderId);
   db.prepare('DELETE FROM order_items WHERE order_id = ?').run(orderId);
   db.prepare('DELETE FROM orders WHERE id = ?').run(orderId);
 }

@@ -1,5 +1,123 @@
 'use strict';
 
+function seedDefaultGames(db) {
+  const drawAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
+
+  if (!db.prepare('SELECT id FROM game_wheel_campaigns LIMIT 1').get()) {
+    const r = db.prepare(`
+      INSERT INTO game_wheel_campaigns (title, is_enabled, available_days, draw_at, min_order_total, status)
+      VALUES ('Weekend Spin Giveaway', 1, '0,1,2,3,4,5,6', ?, 0, 'scheduled')
+    `).run(drawAt);
+    const prizes = [
+      ['Grand Prize — Netflix 1 Month', 'netflix', ''],
+      ['₱500 Wallet Credit', 'wallet', '500'],
+      ['₱100 Loyalty Points', 'loyalty', '100'],
+      ['Plug Access 7 Days', 'plug_access', '7']
+    ];
+    const ins = db.prepare(`
+      INSERT INTO game_wheel_prizes (campaign_id, label, prize_type, prize_value, sort_order)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+    prizes.forEach((p, i) => ins.run(r.lastInsertRowid, p[0], p[1], p[2], i));
+  } else {
+    db.prepare(`
+      UPDATE game_wheel_campaigns
+      SET is_enabled = 1, status = 'scheduled', draw_at = ?
+      WHERE id = (SELECT id FROM game_wheel_campaigns ORDER BY id DESC LIMIT 1)
+    `).run(drawAt);
+  }
+
+  if (!db.prepare('SELECT id FROM game_scratch_pools LIMIT 1').get()) {
+    const r = db.prepare(`
+      INSERT INTO game_scratch_pools (title, is_enabled, min_order_total) VALUES ('Golden Scratch Cards', 1, 0)
+    `).run();
+    const prizes = [
+      ['₱200 Wallet', 'wallet', '200', 'gold'],
+      ['₱50 Credit', 'wallet', '50', 'gold'],
+      ['Free Plug Day', 'plug_access', '1', 'gold'],
+      ['Better luck!', 'none', '', 'gray'],
+      ['Boom!', 'bomb', '', 'gray']
+    ];
+    const ins = db.prepare(`
+      INSERT INTO game_scratch_prizes (pool_id, label, prize_type, prize_value, weight, tile_style)
+      VALUES (?, ?, ?, ?, 1, ?)
+    `);
+    prizes.forEach((p) => ins.run(r.lastInsertRowid, p[0], p[1], p[2], p[3]));
+  } else {
+    db.prepare(`UPDATE game_scratch_pools SET is_enabled = 1 WHERE id = (SELECT id FROM game_scratch_pools ORDER BY id DESC LIMIT 1)`).run();
+  }
+
+  if (!db.prepare('SELECT id FROM game_mystery_pools LIMIT 1').get()) {
+    const r = db.prepare(`
+      INSERT INTO game_mystery_pools (title, is_enabled, min_order_total) VALUES ('Mystery Box', 1, 0)
+    `).run();
+    const prizes = [
+      ['Premium Account', 'account', ''],
+      ['₱300 Wallet', 'wallet', '300'],
+      ['₱75 Loyalty', 'loyalty', '75'],
+      ['Empty box', 'none', '']
+    ];
+    const ins = db.prepare(`
+      INSERT INTO game_mystery_prizes (pool_id, label, prize_type, prize_value, weight)
+      VALUES (?, ?, ?, ?, 1)
+    `);
+    prizes.forEach((p) => ins.run(r.lastInsertRowid, p[0], p[1], p[2]));
+  } else {
+    db.prepare(`UPDATE game_mystery_pools SET is_enabled = 1 WHERE id = (SELECT id FROM game_mystery_pools ORDER BY id DESC LIMIT 1)`).run();
+  }
+
+  const instantDefaults = [
+    {
+      key: 'dice',
+      title: 'Lucky Dice',
+      prizes: [
+        ['Jackpot — ₱1000', 'wallet', '1000', 'gold'],
+        ['Double Six — ₱200', 'wallet', '200', 'gold'],
+        ['₱50 Credit', 'wallet', '50', 'gold'],
+        ['Roll again next order', 'none', '', 'gray']
+      ]
+    },
+    {
+      key: 'pick',
+      title: 'Card Flip',
+      prizes: [
+        ['Ace — ₱500', 'wallet', '500', 'gold'],
+        ['King — ₱150', 'wallet', '150', 'gold'],
+        ['Queen — Plug Access', 'plug_access', '3', 'gold'],
+        ['Joker — No prize', 'none', '', 'gray']
+      ]
+    },
+    {
+      key: 'vault',
+      title: 'Treasure Vault',
+      prizes: [
+        ['Vault Jackpot ₱800', 'wallet', '800', 'gold'],
+        ['Silver Key ₱100', 'wallet', '100', 'gold'],
+        ['Bronze Key ₱25', 'wallet', '25', 'gold'],
+        ['Empty vault', 'none', '', 'gray']
+      ]
+    }
+  ];
+
+  for (const game of instantDefaults) {
+    let pool = db.prepare('SELECT id FROM game_instant_pools WHERE game_key = ?').get(game.key);
+    if (!pool) {
+      const r = db.prepare(`
+        INSERT INTO game_instant_pools (game_key, title, is_enabled, min_order_total)
+        VALUES (?, ?, 1, 0)
+      `).run(game.key, game.title);
+      pool = { id: r.lastInsertRowid };
+      const ins = db.prepare(`
+        INSERT INTO game_instant_prizes (pool_id, label, prize_type, prize_value, weight, tile_style)
+        VALUES (?, ?, ?, ?, 1, ?)
+      `);
+      game.prizes.forEach((p) => ins.run(pool.id, p[0], p[1], p[2], p[3]));
+    } else {
+      db.prepare('UPDATE game_instant_pools SET is_enabled = 1 WHERE id = ?').run(pool.id);
+    }
+  }
+}
+
 function initGamesSchema(db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS game_wheel_campaigns (
@@ -116,9 +234,50 @@ function initGamesSchema(db) {
       FOREIGN KEY (prize_id) REFERENCES game_mystery_prizes(id)
     );
 
+    CREATE TABLE IF NOT EXISTS game_instant_pools (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      game_key TEXT NOT NULL UNIQUE,
+      title TEXT NOT NULL,
+      is_enabled INTEGER NOT NULL DEFAULT 0,
+      min_order_total INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS game_instant_prizes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      pool_id INTEGER NOT NULL,
+      label TEXT NOT NULL,
+      prize_type TEXT NOT NULL DEFAULT 'none',
+      prize_value TEXT NOT NULL DEFAULT '',
+      weight INTEGER NOT NULL DEFAULT 1,
+      quantity INTEGER NOT NULL DEFAULT -1,
+      won_count INTEGER NOT NULL DEFAULT 0,
+      tile_style TEXT NOT NULL DEFAULT 'gold',
+      FOREIGN KEY (pool_id) REFERENCES game_instant_pools(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS game_instant_plays (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      pool_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,
+      order_id INTEGER NOT NULL,
+      order_number TEXT NOT NULL,
+      prize_id INTEGER,
+      played_at TEXT,
+      result_json TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(pool_id, order_id),
+      FOREIGN KEY (pool_id) REFERENCES game_instant_pools(id),
+      FOREIGN KEY (user_id) REFERENCES users(id),
+      FOREIGN KEY (order_id) REFERENCES orders(id),
+      FOREIGN KEY (prize_id) REFERENCES game_instant_prizes(id)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_game_wheel_slots_campaign ON game_wheel_slots(campaign_id);
     CREATE INDEX IF NOT EXISTS idx_game_scratch_cards_user ON game_scratch_cards(user_id);
     CREATE INDEX IF NOT EXISTS idx_game_mystery_plays_user ON game_mystery_plays(user_id);
+    CREATE INDEX IF NOT EXISTS idx_game_instant_plays_user ON game_instant_plays(user_id);
   `);
 
   const settings = db.prepare('SELECT value FROM settings WHERE key = ?').get('games_enabled');
@@ -129,6 +288,10 @@ function initGamesSchema(db) {
   if (!channel) {
     db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('games_channel_url', 'https://t.me/loveriette');
   }
+
+  try { seedDefaultGames(db); } catch (err) {
+    console.error('[games] seed defaults failed:', err.message);
+  }
 }
 
-module.exports = { initGamesSchema };
+module.exports = { initGamesSchema, seedDefaultGames };

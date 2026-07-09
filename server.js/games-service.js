@@ -6,6 +6,7 @@ const {
   processDueWheelDraws,
   scratchCard,
   playMysteryBox,
+  playInstantGame,
   parseDays,
   buildGamesHubState,
   isGamesEnabled
@@ -92,6 +93,23 @@ function mountGamesService(app, db, deps) {
       playId: req.params.id,
       userId: req.session.userId,
       boxIndex: req.body?.boxIndex
+    });
+    if (result.error) return res.status(400).json({ error: result.error });
+    res.json(result);
+  });
+
+  app.post('/account/games/instant/:key/:id/play', requireAuth, (req, res) => {
+    const owned = db.prepare(`
+      SELECT ip.id FROM game_instant_plays ip
+      JOIN game_instant_pools p ON p.id = ip.pool_id
+      WHERE ip.id = ? AND ip.user_id = ? AND ip.played_at IS NULL AND p.game_key = ?
+    `).get(req.params.id, req.session.userId, req.params.key);
+    if (!owned) return res.status(403).json({ error: 'Purchase from the shop first to unlock this game.' });
+    const result = playInstantGame(db, engineDeps, {
+      playId: req.params.id,
+      userId: req.session.userId,
+      gameKey: req.params.key,
+      choice: req.body?.choice
     });
     if (result.error) return res.status(400).json({ error: result.error });
     res.json(result);
