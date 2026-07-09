@@ -65,6 +65,7 @@
   <link rel="stylesheet" href="performance-mobile.css?v=20260708b">
   <link rel="stylesheet" href="theme.css?v=20260708b">
   <link rel="stylesheet" href="email-inbox.css?v=20260707live">
+  <link rel="stylesheet" href="games.css?v=20260709games">
   <script src="theme.js?v=20260708b" defer></script>
   <script src="theme-colors.js?v=20260708b" defer></script>
 </head>
@@ -104,6 +105,10 @@
         <button type="button" class="buyer-dash-nav-btn" data-panel="webtech">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
           Webtech
+        </button>
+        <button type="button" class="buyer-dash-nav-btn" data-panel="games">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="2" y="6" width="20" height="12" rx="2"/><line x1="6" y1="12" x2="10" y2="12"/><line x1="8" y1="10" x2="8" y2="14"/><circle cx="17" cy="10" r="1" fill="currentColor"/><circle cx="15" cy="13" r="1" fill="currentColor"/></svg>
+          My Services
         </button>
         <button type="button" class="buyer-dash-nav-btn" data-panel="wallet">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1" fill="currentColor" stroke="none"/></svg>
@@ -205,6 +210,25 @@
         </div>
         <div class="buyer-service-list" id="webtech-service-list"></div>
         <p class="dashboard-empty" id="webtech-service-empty" hidden>No website inquiries yet. <a href="/website-making">Browse packages</a>.</p>
+      </section>
+
+      <section class="buyer-dash-panel" id="panel-games" hidden>
+        <header class="buyer-dash-panel-head">
+          <h1>My Services — Games</h1>
+          <p class="games-panel-intro">Shop games unlock when your order is approved. One order = one spin slot, scratch card, or mystery box pick.</p>
+        </header>
+        <section class="games-section">
+          <h2 class="games-section-title"><span>🎡</span> Spin the Wheel</h2>
+          <div id="games-wheel-list" class="games-section-body"></div>
+        </section>
+        <section class="games-section">
+          <h2 class="games-section-title"><span>🎫</span> Scratch Cards</h2>
+          <div id="games-scratch-list" class="games-section-body"></div>
+        </section>
+        <section class="games-section">
+          <h2 class="games-section-title"><span>🎁</span> Mystery Box</h2>
+          <div id="games-mystery-list" class="games-section-body"></div>
+        </section>
       </section>
 
       <section class="buyer-dash-panel" id="panel-wallet" hidden>
@@ -563,7 +587,8 @@
   <script src="toast.js"></script>
   <script src="branding.js?v=20260703audit" defer></script>
   <script src="badges.js"></script>
-  <script src="dashboard.js?v=20260707live"></script>
+  <script src="dashboard.js?v=20260709games"></script>
+  <script src="dashboard-games.js?v=20260709games"></script>
   <script src="mobile.js?v=20260615vouch"></script>
   <script src="settings.js"></script>
 </body>

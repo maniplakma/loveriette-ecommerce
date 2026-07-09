@@ -271,6 +271,8 @@ const TAB_TITLES = {
   theme: 'Site Theme',
   cms: 'Content Management',
   'website-making': 'Website Making',
+  plugging: 'Plugging',
+  games: 'Shop Games',
   'platform-analytics': 'Platform Analytics'
 };
 
@@ -300,6 +302,7 @@ function switchTab(tab, force = false) {
     cms: () => window.loadPlatformCms?.(),
     'website-making': () => window.loadPlatformWebsite?.(),
     plugging: () => window.loadPlatformPlugging?.(),
+    games: () => window.loadPlatformGames?.(),
     'platform-analytics': () => window.loadPlatformAnalytics?.()
   };
 

@@ -1029,6 +1029,13 @@ function mountPlatformRoutes(app, db, deps) {
     getSessionUserId: (req) => req.session?.userId || null
   });
 
+  const { mountGamesService } = require('./games-service');
+  mountGamesService(app, db, {
+    requireAdmin,
+    requireAuth,
+    createUserNotification: deps.createUserNotification
+  });
+
   return { logActivity };
 }
 
