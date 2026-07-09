@@ -7,9 +7,10 @@ window.domReady = window.onPageReady = function domReady(fn) {
   }
 };
 
-/** Lightweight in-memory API cache with TTL */
+/** Lightweight in-memory API cache with TTL and in-flight deduplication */
 const ApiCache = (() => {
   const store = new Map();
+  const inflight = new Map();
   const DEFAULT_TTL = 45000;
 
   function get(key) {
@@ -28,17 +29,36 @@ const ApiCache = (() => {
     if (!options.method || options.method === 'GET') {
       const cached = get(cacheKey);
       if (cached) return cached;
+      const pending = inflight.get(cacheKey);
+      if (pending) return pending;
     }
-    const res = await fetch(url, { credentials: 'include', ...options });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || 'Request failed');
-    if (!options.method || options.method === 'GET') set(cacheKey, data, ttl);
-    return data;
+
+    const request = (async () => {
+      const res = await fetch(url, { credentials: 'include', ...options });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Request failed');
+      if (!options.method || options.method === 'GET') set(cacheKey, data, ttl);
+      return data;
+    })();
+
+    if (!options.method || options.method === 'GET') {
+      inflight.set(cacheKey, request);
+      try {
+        return await request;
+      } finally {
+        inflight.delete(cacheKey);
+      }
+    }
+
+    return request;
   }
 
   function invalidate(prefix) {
     for (const key of store.keys()) {
       if (key.includes(prefix)) store.delete(key);
+    }
+    for (const key of inflight.keys()) {
+      if (key.includes(prefix)) inflight.delete(key);
     }
   }
 

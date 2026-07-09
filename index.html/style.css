@@ -3455,10 +3455,14 @@ button.btn-view {
   opacity: 0.72;
 }
 
-.plan-badge {
+.plan-purchase-card .plan-badge {
   position: absolute;
   top: 0.85rem;
   right: 0.85rem;
+}
+
+.plan-badge {
+  flex-shrink: 0;
   font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.03em;
@@ -3690,6 +3694,24 @@ button.btn-view {
   color: #fff;
   box-shadow: 0 8px 32px var(--shadow-color);
   overflow: hidden;
+}
+
+.product-logo--loading {
+  background: linear-gradient(145deg, rgba(58, 10, 18, 0.95), rgba(18, 2, 4, 0.98));
+  box-shadow: none;
+  animation: productLogoPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes productLogoPulse {
+  0%, 100% { opacity: 0.72; }
+  50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .product-logo--loading {
+    animation: none;
+    opacity: 0.85;
+  }
 }
 
 .product-logo.has-icon {
