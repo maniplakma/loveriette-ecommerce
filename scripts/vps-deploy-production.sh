@@ -35,8 +35,6 @@ if [[ -d .git ]]; then
   git checkout "$BRANCH" 2>/dev/null || git checkout -b "$BRANCH" "origin/$BRANCH"
   git reset --hard "origin/$BRANCH"
   echo "    Commit: $(git rev-parse --short HEAD)"
-  echo "    Games features need PR #14/#15 merged into main, or deploy with:"
-  echo "    BRANCH=cursor/games-timer-winners-expand-ec32 curl -fsSL .../vps-deploy-production.sh | bash"
 else
   echo "    No .git — cloning into temp and syncing..."
   TMP="$(mktemp -d)"
@@ -78,8 +76,11 @@ HOME_CODE="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${PORT}/" 
 MOD_CODE="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${PORT}/api/modules" || echo 000)"
 LEND_REDIRECT="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${PORT}/lending" || echo 000)"
 
+GAMES_CODE="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${PORT}/games" || echo 000)"
+
 echo "    GET /           => $HOME_CODE"
 echo "    GET /api/modules => $MOD_CODE"
+echo "    GET /games      => $GAMES_CODE"
 echo "    GET /lending    => $LEND_REDIRECT (expect 301)"
 
 if [[ "$HOME_CODE" != "200" && "$HOME_CODE" != "304" ]]; then
@@ -93,5 +94,6 @@ fi
 
 echo ""
 echo "==> Deploy complete. Hard refresh browser: Ctrl+Shift+R"
-echo "    Live: https://loveriette.shop"
+echo "    Games page should load games-page.js?v=20260710lux"
+echo "    Live: https://loveriette.shop/games"
 pm2 list
