@@ -113,6 +113,15 @@ function renderActivityFeed(items) {
   const el = document.getElementById('activity-feed-list');
   const filtered = filterActivityItems(items);
   if (!el) return;
+  const sig = filtered.map((a) => `${a.id || ''}:${formatActivityMessage(a)}`).join('|');
+  if (el.dataset.feedSig === sig) {
+    el.querySelectorAll('.activity-feed-item').forEach((node, i) => {
+      const timeEl = node.querySelector('.activity-feed-time');
+      if (timeEl && filtered[i]) timeEl.textContent = timeAgo(filtered[i].createdAt);
+    });
+    return;
+  }
+  el.dataset.feedSig = sig;
   if (!filtered.length) {
     el.innerHTML = '<li class="activity-feed-item"><span class="activity-feed-dot"></span><div>No recent order activity yet.</div></li>';
     return;
@@ -368,8 +377,3 @@ setInterval(async () => {
 }, 30000);
 
 domReady(bootHomepage);
-
-// Paint immediately when script runs at end of body (before deferred head scripts)
-if (document.getElementById('service-categories-grid')) {
-  renderDefaults();
-}

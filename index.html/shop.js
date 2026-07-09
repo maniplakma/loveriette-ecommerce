@@ -1,6 +1,7 @@
 /** Shop page — product catalog */
 let activeCategory = 'All';
 let searchTimer = null;
+let productsLoadSeq = 0;
 
 const domReady = window.domReady || window.onPageReady || function (fn) {
   if (document.readyState === 'loading') {
@@ -37,10 +38,12 @@ function productHref(p) {
 }
 
 function renderProducts(products) {
-  productsEl.innerHTML = '';
-  if (!products.length) { emptyStateEl.hidden = false; return; }
+  if (!products.length) {
+    productsEl.innerHTML = '';
+    emptyStateEl.hidden = false;
+    return;
+  }
   emptyStateEl.hidden = true;
-
   productsEl.innerHTML = products.map((product) => renderCatalogProductCard({
     href: productHref(product),
     name: product.name,
@@ -52,14 +55,20 @@ function renderProducts(products) {
 }
 
 async function loadProducts() {
+  const seq = ++productsLoadSeq;
   const params = new URLSearchParams();
   if (activeCategory !== 'All') params.set('category', activeCategory);
   const q = searchInput?.value?.trim();
   if (q) params.set('search', q);
   try {
     const products = await api(`/products?${params}`);
+    if (seq !== productsLoadSeq) return;
     renderProducts(products);
-  } catch { emptyStateEl.hidden = false; }
+  } catch {
+    if (seq !== productsLoadSeq) return;
+    productsEl.innerHTML = '';
+    emptyStateEl.hidden = false;
+  }
 }
 
 async function loadCategories() {

@@ -109,19 +109,19 @@
   }
 
   async function loadWebsiteMaking() {
+    applyPageMeta();
+    renderPackages(DEFAULT_PACKAGES, { fromApi: false });
+    renderFaqs(DEFAULT_FAQS);
+
     let data;
     try {
       data = await fetchWebsiteData();
     } catch (e) {
       console.warn('Website making API failed — using defaults', e);
-      applyPageMeta();
-      renderPackages(DEFAULT_PACKAGES, { fromApi: false });
-      renderFaqs(DEFAULT_FAQS);
       renderPortfolio([]);
       return;
     }
 
-    applyPageMeta();
     if (data.enabled === false) {
       renderPackages([], { fromApi: true });
       renderFaqs([]);

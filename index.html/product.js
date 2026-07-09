@@ -174,7 +174,7 @@ function renderRelated(related) {
       <div class="related-product-icon logo${p.icon ? ' has-icon' : ''}">
         ${window.renderProductIcon ? window.renderProductIcon(p.icon, p.name, 'logo-img') : getLogoLetter(p.name)}
       </div>
-      <strong>${escapeHtml(p.name)}</strong>
+      <strong class="related-product-name">${escapeHtml(p.name)}</strong>
       <div class="related-product-price">From ${formatMoney(p.startingPrice || p.price || p.displayPrice)}</div>
     </a>`).join('');
 }
@@ -197,6 +197,8 @@ function renderProduct(product) {
   }
 
   const logoEl = document.getElementById('product-logo');
+  logoEl.classList.remove('product-logo--loading');
+  logoEl.removeAttribute('aria-hidden');
   logoEl.innerHTML = window.renderProductIcon
     ? window.renderProductIcon(product.icon, product.name, 'product-logo-img')
     : getLogoLetter(product.name);
@@ -210,7 +212,9 @@ function renderProduct(product) {
   plansGrid.innerHTML = plans.map((plan) => renderPlanCard(product, plan)).join('');
 
   renderReviews(product.reviews);
-  renderRelated(product.relatedProducts);
+  if (product.relatedProducts?.length) {
+    renderRelated(product.relatedProducts);
+  }
 
   heroEl.hidden = false;
   aboutEl.hidden = false;
