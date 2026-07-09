@@ -1025,7 +1025,8 @@ function mountPlatformRoutes(app, db, deps) {
     requireAdmin,
     frontendDir,
     getPluggingSettings,
-    trackVisit: (req) => trackVisit({ path: req.path, get: (h) => req.get(h) })
+    trackVisit: (req) => trackVisit({ path: req.path, get: (h) => req.get(h) }),
+    getSessionUserId: (req) => req.session?.userId || null
   });
 
   return { logActivity };

@@ -278,8 +278,8 @@ try {
 // Default key-value settings (loyalty, theme, store profile)
 const defaultSettings = {
   loyalty_enabled: '1',
-  loyalty_earn_rate: '0.25',
-  loyalty_redeem_rate: '100',
+  loyalty_earn_rate: '0.005',
+  loyalty_redeem_rate: '1',
   theme_light_primary: '#e50914',
   theme_dark_primary: '#ff3b3b',
   theme_force_mode: 'light',

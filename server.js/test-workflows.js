@@ -112,8 +112,8 @@ async function runApiChecks(adminCookie) {
   else fail('Live Chat route removed', `status ${chat.status}`);
 
   const loyalty = await request('GET', '/admin/loyalty', null, adminCookie);
-  if (loyalty.status === 404) ok('Loyalty route removed');
-  else fail('Loyalty route removed', `status ${loyalty.status}`);
+  if (loyalty.status === 404) ok('Legacy admin loyalty route removed');
+  else fail('Legacy admin loyalty route removed', `status ${loyalty.status}`);
 
   const guide = await request('GET', '/guide', null, adminCookie);
   if (guide.status === 200 && Array.isArray(guide.json) && guide.json.length >= 3) {
@@ -824,6 +824,54 @@ async function runStoreUpdatesCheck(adminCookie) {
   }
 }
 
+async function runLoyaltyCheck(adminCookie) {
+  console.log('\nLoyalty points (₱1 per ₱200 spent)');
+  const email = `loyalty-${Date.now()}@test.local`;
+  const reg = await request('POST', '/auth/register', { email, password: 'testpass123', name: 'Loyalty QA' });
+  if (reg.status !== 201 && reg.status !== 200) { fail('loyalty buyer register', reg.status); return; }
+  ok('loyalty buyer registered');
+
+  const buyer = db.prepare('SELECT id, wallet_balance FROM users WHERE LOWER(email) = ?').get(email.toLowerCase());
+  const pm = db.prepare('SELECT id FROM payment_methods WHERE is_active = 1 LIMIT 1').get();
+  const product = db.prepare('SELECT id FROM products ORDER BY id LIMIT 1').get();
+  if (!buyer?.id || !pm || !product) { fail('loyalty seed data', 'missing'); return; }
+
+  const seq = db.prepare('SELECT COALESCE(MAX(order_seq), 0) + 1 AS n FROM orders').get().n;
+  const orderNumber = String(seq);
+  const total = 400;
+  const TINY_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z5+BQwAHZwZ2hFBOwAAAABJRU5ErkJggg==';
+  const ins = db.prepare(`
+    INSERT INTO orders (
+      order_number, order_seq, email, user_id, payment_method_id,
+      subtotal, discount, total, status, tingi_drop_enabled, fulfillment_mode, receipt_url
+    ) VALUES (?, ?, ?, ?, ?, ?, 0, ?, 'pending', 0, 'auto', '/uploads/receipts/test.png')
+  `).run(orderNumber, seq, email, buyer.id, pm.id, total, total);
+  const orderId = ins.lastInsertRowid;
+  db.prepare(`
+    INSERT INTO order_items (order_id, product_id, product_name, quantity, price)
+    VALUES (?, ?, 'Loyalty Test', 1, ?)
+  `).run(orderId, product.id, total);
+
+  const approveRes = await request('POST', `/admin/orders/${orderNumber}/approve`, {}, adminCookie);
+  if (approveRes.status !== 200) { fail('loyalty order approve', approveRes.json?.error || approveRes.status); return; }
+
+  const after = db.prepare('SELECT wallet_balance FROM users WHERE id = ?').get(buyer.id);
+  const gained = (after?.wallet_balance || 0) - (buyer.wallet_balance || 0);
+  if (gained === 2) ok('loyalty credit ₱2 for ₱400 shop order');
+  else fail('loyalty credit amount', `expected +2, got +${gained}`);
+
+  const tx = db.prepare(`
+    SELECT amount FROM wallet_transactions WHERE user_id = ? AND type = 'loyalty' AND order_number = ?
+  `).get(buyer.id, orderNumber);
+  if (tx?.amount === 2) ok('loyalty wallet transaction logged');
+  else fail('loyalty wallet transaction', tx?.amount || 'missing');
+
+  db.prepare('DELETE FROM wallet_transactions WHERE order_number = ?').run(orderNumber);
+  db.prepare('DELETE FROM order_items WHERE order_id = ?').run(orderId);
+  db.prepare('DELETE FROM orders WHERE id = ?').run(orderId);
+  db.prepare('UPDATE users SET wallet_balance = ? WHERE id = ?').run(buyer.wallet_balance, buyer.id);
+}
+
 async function main() {
   console.log('Ecom workflow smoke tests');
   try {
@@ -833,6 +881,7 @@ async function main() {
     else fail('admin login', 'no cookie');
     await runApiChecks(adminCookie);
     await runOrderFlowCheck(adminCookie);
+    await runLoyaltyCheck(adminCookie);
     await runVariantDescriptionCheck(adminCookie);
     await runUserAdminCheck(adminCookie);
     await runRefundReportCheck(adminCookie);
