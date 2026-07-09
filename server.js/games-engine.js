@@ -50,9 +50,25 @@ function latestWheelCampaign(db) {
   return db.prepare(`
     SELECT * FROM game_wheel_campaigns
     WHERE is_enabled = 1
-    ORDER BY datetime(draw_at) DESC, id DESC
+    ORDER BY datetime(COALESCE(drawn_at, draw_at)) DESC, id DESC
     LIMIT 1
   `).get() || null;
+}
+
+function resolveWheelCampaign(db, now = new Date()) {
+  const active = activeWheelCampaign(db, now);
+  if (active) {
+    const entries = db.prepare('SELECT COUNT(*) AS c FROM game_wheel_slots WHERE campaign_id = ?').get(active.id).c;
+    if (entries > 0) return active;
+  }
+  const drawn = db.prepare(`
+    SELECT * FROM game_wheel_campaigns
+    WHERE is_enabled = 1 AND status = 'drawn'
+    ORDER BY datetime(drawn_at) DESC, id DESC
+    LIMIT 1
+  `).get();
+  if (drawn) return drawn;
+  return active || latestWheelCampaign(db);
 }
 
 function mapPrizeRows(rows) {
@@ -62,7 +78,57 @@ function mapPrizeRows(rows) {
     prizeType: p.prize_type,
     prizeValue: p.prize_value,
     weight: p.weight,
-    tileStyle: p.tile_style
+    tileStyle: p.tile_style,
+    quantity: p.quantity != null ? Number(p.quantity) : -1,
+    wonCount: Number(p.won_count || 0),
+    remaining: p.quantity != null && Number(p.quantity) >= 0
+      ? Math.max(0, Number(p.quantity) - Number(p.won_count || 0))
+      : null
+  }));
+}
+
+function isPoolInSeason(pool, now = new Date()) {
+  if (!pool) return false;
+  return inDateRange(pool.starts_at, pool.ends_at, now);
+}
+
+function isScratchPoolOpen(pool, enabled, now = new Date()) {
+  return enabled && !!pool?.is_enabled && isPoolInSeason(pool, now);
+}
+
+function isMysteryPoolOpen(pool, enabled, now = new Date()) {
+  return enabled && !!pool?.is_enabled && isPoolInSeason(pool, now);
+}
+
+function isInstantPoolOpen(pool, enabled, now = new Date()) {
+  return enabled && !!pool?.is_enabled && isPoolInSeason(pool, now);
+}
+
+function getWheelWinners(db, campaignId) {
+  return db.prepare(`
+    SELECT w.display_name AS displayName, w.order_number AS orderNumber,
+           p.label AS prizeLabel, p.prize_type AS prizeType, w.created_at AS wonAt
+    FROM game_wheel_winners w
+    JOIN game_wheel_prizes p ON p.id = w.prize_id
+    WHERE w.campaign_id = ?
+    ORDER BY w.id ASC
+  `).all(campaignId);
+}
+
+function getRecentPrizeWinners(db, limit = 10) {
+  return db.prepare(`
+    SELECT pa.prize_label AS label, pa.source,
+           u.name AS displayName, pa.created_at AS wonAt
+    FROM game_prize_awards pa
+    LEFT JOIN users u ON u.id = pa.user_id
+    WHERE pa.prize_type NOT IN ('none', 'bomb')
+    ORDER BY pa.id DESC
+    LIMIT ?
+  `).all(limit).map((r) => ({
+    label: r.label,
+    source: r.source,
+    displayName: String(r.displayName || '').trim() || 'Winner',
+    wonAt: r.wonAt
   }));
 }
 
@@ -70,13 +136,15 @@ function buildGamesHubState(db, userId = null) {
   const enabled = isGamesEnabled(db);
   const channelUrl = readSetting(db, 'games_channel_url', 'https://t.me/loveriette');
   const now = new Date();
-  const wheelRow = activeWheelCampaign(db, now) || latestWheelCampaign(db);
+  const wheelRow = resolveWheelCampaign(db, now);
   const scratchRow = db.prepare('SELECT * FROM game_scratch_pools ORDER BY id DESC LIMIT 1').get();
   const mysteryRow = db.prepare('SELECT * FROM game_mystery_pools ORDER BY id DESC LIMIT 1').get();
 
   const wheelOpen = enabled && isWheelCampaignOpen(wheelRow, now);
-  const scratchOpen = enabled && !!scratchRow?.is_enabled;
-  const mysteryOpen = enabled && !!mysteryRow?.is_enabled;
+  const wheelDrawn = wheelRow?.status === 'drawn';
+  const wheelVisible = enabled && wheelRow?.is_enabled && (wheelOpen || wheelDrawn);
+  const scratchOpen = isScratchPoolOpen(scratchRow, enabled, now);
+  const mysteryOpen = isMysteryPoolOpen(mysteryRow, enabled, now);
 
   const wheelPrizes = wheelRow
     ? mapPrizeRows(db.prepare('SELECT * FROM game_wheel_prizes WHERE campaign_id = ? ORDER BY sort_order, id').all(wheelRow.id))
@@ -117,14 +185,32 @@ function buildGamesHubState(db, userId = null) {
   }
 
   let wheelWinner = null;
-  if (wheelRow?.winner_slot_id) {
-    wheelWinner = db.prepare(`
-      SELECT display_name AS displayName, order_number AS orderNumber
-      FROM game_wheel_slots WHERE id = ?
-    `).get(wheelRow.winner_slot_id);
+  let wheelWinners = [];
+  if (wheelRow) {
+    wheelWinners = getWheelWinners(db, wheelRow.id);
+    if (wheelWinners.length) wheelWinner = wheelWinners[0];
+    else if (wheelRow.winner_slot_id) {
+      wheelWinner = db.prepare(`
+        SELECT display_name AS displayName, order_number AS orderNumber
+        FROM game_wheel_slots WHERE id = ?
+      `).get(wheelRow.winner_slot_id);
+      if (wheelWinner) {
+        const prize = wheelRow.winner_prize_id
+          ? db.prepare('SELECT label AS prizeLabel FROM game_wheel_prizes WHERE id = ?').get(wheelRow.winner_prize_id)
+          : null;
+        wheelWinners = [{ ...wheelWinner, prizeLabel: prize?.prizeLabel || 'Prize' }];
+      }
+    }
   }
 
   const wheelEntries = wheelRow
+    ? db.prepare(`
+      SELECT display_name AS displayName, order_number AS orderNumber
+      FROM game_wheel_slots WHERE campaign_id = ?
+      ORDER BY id ASC LIMIT 100
+    `).all(wheelRow.id)
+    : [];
+  const wheelEntryCount = wheelRow
     ? db.prepare('SELECT COUNT(*) AS c FROM game_wheel_slots WHERE campaign_id = ?').get(wheelRow.id).c
     : 0;
 
@@ -132,30 +218,40 @@ function buildGamesHubState(db, userId = null) {
   const pick = buildInstantHubGame(db, 'pick', userId, enabled);
   const vault = buildInstantHubGame(db, 'vault', userId, enabled);
 
+  const recentWinners = getRecentPrizeWinners(db, 8);
+
   return {
     gamesEnabled: enabled,
     channelUrl,
     authenticated: !!userId,
     previewExamples: true,
     eligibility: buildEligibilityHub(db),
+    recentWinners,
     wheel: wheelRow ? {
       id: wheelRow.id,
       title: wheelRow.title,
       open: wheelOpen,
+      visible: wheelVisible,
       status: wheelRow.status,
       drawAt: wheelRow.draw_at,
+      drawnAt: wheelRow.drawn_at,
+      endsAt: wheelRow.ends_at,
       minOrderTotal: wheelRow.min_order_total,
       prizes: wheelPrizes,
-      entryCount: wheelEntries,
+      entryCount: wheelEntryCount,
+      entries: wheelEntries,
       winner: wheelWinner,
+      winners: wheelWinners,
       mySlots: wheelSlots,
       canPlay: wheelOpen && wheelSlots.length > 0,
       needsPurchase: wheelOpen && !wheelSlots.length
-    } : { open: false, title: 'Spin the Wheel', prizes: [], needsPurchase: false, canPlay: false },
+    } : { open: false, visible: false, title: 'Spin the Wheel', prizes: [], needsPurchase: false, canPlay: false },
     scratch: scratchRow ? {
       id: scratchRow.id,
       title: scratchRow.title,
       open: scratchOpen,
+      endsAt: scratchRow.ends_at,
+      startsAt: scratchRow.starts_at,
       minOrderTotal: scratchRow.min_order_total,
       prizes: scratchPrizes,
       cards: scratchCards,
@@ -167,6 +263,8 @@ function buildGamesHubState(db, userId = null) {
       id: mysteryRow.id,
       title: mysteryRow.title,
       open: mysteryOpen,
+      endsAt: mysteryRow.ends_at,
+      startsAt: mysteryRow.starts_at,
       minOrderTotal: mysteryRow.min_order_total,
       prizes: mysteryPrizes,
       plays: mysteryPlays,
@@ -192,7 +290,7 @@ function buildInstantHubGame(db, gameKey, userId, enabled) {
   if (!pool) {
     return { gameKey, open: false, title: fallbackTitle, prizes: [], needsPurchase: false, canPlay: false };
   }
-  const open = enabled && !!pool.is_enabled;
+  const open = isInstantPoolOpen(pool, enabled, new Date());
   const prizes = mapPrizeRows(
     db.prepare('SELECT * FROM game_instant_prizes WHERE pool_id = ? ORDER BY id').all(pool.id)
   );
@@ -219,6 +317,8 @@ function buildInstantHubGame(db, gameKey, userId, enabled) {
     gameKey,
     title: pool.title,
     open,
+    endsAt: pool.ends_at,
+    startsAt: pool.starts_at,
     minOrderTotal: pool.min_order_total,
     prizes,
     plays,
@@ -229,9 +329,11 @@ function buildInstantHubGame(db, gameKey, userId, enabled) {
 }
 
 function activeInstantPool(db, gameKey) {
-  return db.prepare(`
+  const pool = db.prepare(`
     SELECT * FROM game_instant_pools WHERE game_key = ? AND is_enabled = 1 LIMIT 1
   `).get(gameKey) || null;
+  if (pool && !isPoolInSeason(pool)) return null;
+  return pool;
 }
 
 function activeWheelCampaign(db, now = new Date()) {
@@ -244,15 +346,19 @@ function activeWheelCampaign(db, now = new Date()) {
 }
 
 function activeScratchPool(db) {
-  return db.prepare(`
+  const pool = db.prepare(`
     SELECT * FROM game_scratch_pools WHERE is_enabled = 1 ORDER BY id DESC LIMIT 1
   `).get() || null;
+  if (pool && !isPoolInSeason(pool)) return null;
+  return pool;
 }
 
 function activeMysteryPool(db) {
-  return db.prepare(`
+  const pool = db.prepare(`
     SELECT * FROM game_mystery_pools WHERE is_enabled = 1 ORDER BY id DESC LIMIT 1
   `).get() || null;
+  if (pool && !isPoolInSeason(pool)) return null;
+  return pool;
 }
 
 function resolveUserId(db, { userId, email }) {
@@ -508,38 +614,68 @@ function runWheelDraw(db, deps, campaignId) {
   `).all(campaignId);
   if (!slots.length) return { error: 'No entries yet' };
 
-  const prize = db.prepare(`
-    SELECT * FROM game_wheel_prizes WHERE campaign_id = ? ORDER BY sort_order ASC, id ASC LIMIT 1
-  `).get(campaignId);
-  if (!prize) return { error: 'Add a prize to this campaign first' };
+  const prizes = db.prepare(`
+    SELECT * FROM game_wheel_prizes WHERE campaign_id = ? ORDER BY sort_order ASC, id ASC
+  `).all(campaignId);
+  if (!prizes.length) return { error: 'Add a prize to this campaign first' };
 
-  const winner = slots[Math.floor(Math.random() * slots.length)];
+  const remaining = [...slots];
+  const winners = [];
   const now = new Date().toISOString();
 
+  for (const prize of prizes) {
+    const qty = Math.max(1, Number(prize.quantity) || 1);
+    const alreadyWon = Number(prize.won_count || 0);
+    const need = Math.max(0, qty - alreadyWon);
+    for (let n = 0; n < need && remaining.length; n++) {
+      const idx = Math.floor(Math.random() * remaining.length);
+      const winner = remaining.splice(idx, 1)[0];
+      db.prepare(`
+        INSERT INTO game_wheel_winners (campaign_id, slot_id, prize_id, user_id, display_name, order_number, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(campaignId, winner.id, prize.id, winner.user_id, winner.display_name, winner.order_number, now);
+      db.prepare('UPDATE game_wheel_prizes SET won_count = won_count + 1 WHERE id = ?').run(prize.id);
+
+      const fulfilled = fulfillPrize(db, deps, {
+        userId: winner.user_id,
+        prize,
+        orderRef: winner.order_number,
+        source: 'wheel'
+      });
+
+      winners.push({
+        slotId: winner.id,
+        displayName: winner.display_name,
+        orderNumber: winner.order_number,
+        userId: winner.user_id,
+        email: winner.email,
+        prize: { id: prize.id, label: prize.label, prizeType: prize.prize_type },
+        fulfillment: fulfilled.fulfillment
+      });
+    }
+  }
+
+  if (!winners.length) return { error: 'No winners could be drawn — check prize winner counts' };
+
+  const first = winners[0];
   db.prepare(`
     UPDATE game_wheel_campaigns
     SET status = 'drawn', winner_slot_id = ?, winner_prize_id = ?, drawn_at = ?, updated_at = datetime('now')
     WHERE id = ?
-  `).run(winner.id, prize.id, now, campaignId);
-
-  const fulfilled = fulfillPrize(db, deps, {
-    userId: winner.user_id,
-    prize,
-    orderRef: winner.order_number,
-    source: 'wheel'
-  });
+  `).run(first.slotId, first.prize.id, now, campaignId);
 
   return {
     ok: true,
     winner: {
-      slotId: winner.id,
-      displayName: winner.display_name,
-      orderNumber: winner.order_number,
-      userId: winner.user_id,
-      email: winner.email
+      slotId: first.slotId,
+      displayName: first.displayName,
+      orderNumber: first.orderNumber,
+      userId: first.userId,
+      email: first.email
     },
-    prize: { id: prize.id, label: prize.label, prizeType: prize.prize_type },
-    fulfillment: fulfilled.fulfillment,
+    winners,
+    prize: first.prize,
+    fulfillment: first.fulfillment,
     entryCount: slots.length
   };
 }

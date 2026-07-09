@@ -27,30 +27,96 @@
     return data;
   }
 
-  function prizeChips(prizes) {
-    if (!prizes?.length) return '<p class="games-meta">Prizes coming soon</p>';
-    return `<div class="games-prize-chips">${prizes.map((p) =>
-      `<span class="games-prize-chip games-prize-chip--${esc(p.tileStyle || 'gold')}">${esc(p.label)}</span>`
-    ).join('')}</div>`;
+  function fmtCountdown(ms) {
+    if (ms <= 0) return 'Now';
+    const s = Math.floor(ms / 1000);
+    const d = Math.floor(s / 86400);
+    const h = Math.floor((s % 86400) / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    if (d > 0) return `${d}d ${h}h ${m}m`;
+    if (h > 0) return `${h}h ${m}m ${sec}s`;
+    return `${m}m ${String(sec).padStart(2, '0')}s`;
   }
 
-  function arenaShell({ type, title, open, statusLabel, body, prizesHtml, guideUrl }) {
-    const state = open ? 'open' : 'closed';
-    const status = open ? (statusLabel || 'Open') : 'Closed';
+  function countdownHtml(iso, label) {
+    if (!iso) return '';
+    return `<div class="games-countdown">
+      <span class="games-countdown-label">${esc(label)}</span>
+      <strong class="games-countdown-value" data-countdown="${esc(iso)}">—</strong>
+    </div>`;
+  }
+
+  function endsMetaHtml(endsAt) {
+    if (!endsAt) return '';
+    return `<p class="games-meta games-meta--timer">Ends: <span data-end-countdown="${esc(endsAt)}">${esc(fmtDate(endsAt))}</span></p>`;
+  }
+
+  function prizeChips(prizes) {
+    if (!prizes?.length) return '<p class="games-meta">Prizes coming soon</p>';
+    return `<div class="games-prize-chips">${prizes.map((p) => {
+      const qty = p.quantity != null && p.quantity >= 0 ? ` · ${p.remaining != null ? p.remaining : p.quantity} left` : '';
+      return `<span class="games-prize-chip games-prize-chip--${esc(p.tileStyle || 'gold')}">${esc(p.label)}${qty ? `<small>${qty}</small>` : ''}</span>`;
+    }).join('')}</div>`;
+  }
+
+  function wheelVisualHtml(extraClass) {
+    return `
+      <div class="games-wheel-visual games-wheel-visual--lg${extraClass ? ` ${extraClass}` : ''}">
+        <div class="games-wheel-segments" aria-hidden="true"></div>
+        <div class="games-wheel-ring"></div>
+        <div class="games-wheel-center">${icon('wheel', 'games-icon--wheel')}</div>
+      </div>`;
+  }
+
+  function entriesWall(entries, winners, mySlots) {
+    const list = entries?.length ? entries : [];
+    const winOrders = new Set((winners || []).map((w) => w.orderNumber));
+    const mine = new Set((mySlots || []).map((s) => s.orderNumber));
+    if (!list.length) return '<p class="games-meta">No entries yet — be the first!</p>';
+    return `
+      <div class="games-entries-wall">
+        <h4 class="games-arena-sub">Players (${list.length})</h4>
+        <div class="games-slot-wall">${list.map((e) =>
+    `<span class="games-slot-chip${winOrders.has(e.orderNumber) ? ' is-winner' : ''}${mine.has(e.orderNumber) ? ' is-mine' : ''}">${esc(e.displayName)}</span>`
+  ).join('')}</div>
+      </div>`;
+  }
+
+  function winnersPanel(winners) {
+    if (!winners?.length) return '';
+    return `
+      <div class="games-winners-panel">
+        <h4 class="games-arena-sub">Winners</h4>
+        <ul class="games-winners-list">${winners.map((w) =>
+    `<li><strong>${esc(w.displayName)}</strong><span>${esc(w.prizeLabel || 'Prize')}</span></li>`
+  ).join('')}</ul>
+      </div>`;
+  }
+
+  function arenaShell({ type, title, open, visible, statusLabel, body, prizesHtml, guideUrl, metaHtml, expandable }) {
+    const isVisible = visible !== false;
+    const state = !isVisible ? 'closed' : (open ? 'open' : 'results');
+    const status = !isVisible ? 'Closed' : (statusLabel || (open ? 'Open' : 'Results'));
     const guide = guideUrl
-      ? `<a href="${esc(guideUrl)}" class="games-guide-link" target="_blank" rel="noopener noreferrer">How to play</a>`
+      ? `<a href="${esc(guideUrl)}" class="games-guide-link" target="_blank" rel="noopener noreferrer" data-no-expand>How to play</a>`
+      : '';
+    const expandHint = expandable !== false
+      ? '<span class="games-expand-hint" aria-hidden="true">Tap to expand</span>'
       : '';
     return `
-      <article class="games-arena games-arena--${state} games-arena--${type}">
+      <article class="games-arena games-arena--${state} games-arena--${type}" data-game-type="${esc(type)}" data-expandable="${expandable !== false ? '1' : '0'}" tabindex="0" role="button" aria-label="Open ${esc(title)} full view">
         <div class="games-arena-glow" aria-hidden="true"></div>
         <header class="games-arena-head">
           ${icon(type, 'games-icon--head')}
           <h2>${esc(title)}</h2>
           ${guide}
-          <span class="games-arena-status games-arena-status--${state}">${esc(status)}</span>
+          <span class="games-arena-status games-arena-status--${isVisible && open ? 'open' : 'closed'}">${esc(status)}</span>
         </header>
-        ${open && prizesHtml ? `<div class="games-arena-prizes"><h3 class="games-arena-sub">Prizes</h3>${prizesHtml}</div>` : ''}
+        ${metaHtml || ''}
+        ${isVisible && prizesHtml ? `<div class="games-arena-prizes"><h3 class="games-arena-sub">Prizes</h3>${prizesHtml}</div>` : ''}
         <div class="games-arena-body">${body}</div>
+        ${expandHint}
       </article>`;
   }
 
@@ -213,8 +279,13 @@
   }
 
   function wrapPlay(game, state, type, demoFn, playHtml) {
+    if (game.open === false && game.status !== 'drawn') {
+      if (game.endsAt && new Date(game.endsAt).getTime() < Date.now()) {
+        return `<div class="games-arena-ended"><p>This game has ended.</p>${endsMetaHtml(game.endsAt)}</div>`;
+      }
+      return closedBody(state.channelUrl);
+    }
     const gate = resolveGate(game, state);
-    if (!game.open) return closedBody(state.channelUrl);
     const parts = [];
     if (gate) parts.push(gateBanner(gate, state.channelUrl, game.minOrderTotal, state.eligibility));
     if (game.canPlay && playHtml) parts.push(playHtml);
@@ -224,33 +295,47 @@
 
   function renderWheel(game, state) {
     const drawn = game.status === 'drawn';
-    let play = '';
-    if (game.canPlay) {
+    const visible = game.visible !== false;
+    const live = !!game.open && !drawn;
+    let body = '';
+    let metaHtml = '';
+
+    if (!visible) {
+      body = closedBody(state.channelUrl);
+    } else if (drawn) {
+      metaHtml = `<div class="games-arena-meta">${countdownHtml(game.drawnAt || game.drawAt, 'Drawn')}</div>`;
+      body = `
+        <div class="games-play-stage games-play-stage--results">
+          ${wheelVisualHtml('is-spin-result')}
+          ${winnersPanel(game.winners)}
+          ${entriesWall(game.entries, game.winners, game.mySlots)}
+          <p class="games-meta">${game.entryCount || 0} total entries</p>
+        </div>`;
+    } else {
+      metaHtml = `<div class="games-arena-meta">${countdownHtml(game.drawAt, 'Results in')}</div>`;
       const slots = (game.mySlots || []).map((s) =>
         `<span class="games-slot-chip is-mine">#${esc(s.orderNumber)}</span>`
       ).join('');
-      play = `
+      const play = `
         <div class="games-play-stage">
-          <div class="games-wheel-visual games-wheel-visual--lg">
-            <div class="games-wheel-segments" aria-hidden="true"></div>
-            <div class="games-wheel-ring"></div>
-            <div class="games-wheel-center">${icon('wheel', 'games-icon--wheel')}</div>
-          </div>
-          <p class="games-meta">Draw: ${esc(fmtDate(game.drawAt))} · ${game.entryCount || 0} entries</p>
-          <p class="games-meta">Your slots: <strong>${(game.mySlots || []).length}</strong></p>
-          <div class="games-slot-wall">${slots}</div>
+          ${wheelVisualHtml(live ? '' : '')}
+          <p class="games-meta">${game.entryCount || 0} entries · Draw ${esc(fmtDate(game.drawAt))}</p>
+          ${game.mySlots?.length ? `<p class="games-meta">Your slots: <strong>${game.mySlots.length}</strong></p><div class="games-slot-wall">${slots}</div>` : ''}
+          ${entriesWall(game.entries, [], game.mySlots)}
         </div>`;
-    } else if (drawn && game.winner) {
-      play = `<div class="games-win-banner">Winner: <strong>${esc(game.winner.displayName)}</strong></div>`;
+      body = wrapPlay({ ...game, open: live || visible }, state, 'wheel', demoWheel, play);
     }
+
     return arenaShell({
       type: 'wheel',
       title: game.title || 'Spin the Wheel',
-      open: game.open,
-      statusLabel: drawn ? 'Drawn' : 'Open',
+      open: live,
+      visible,
+      statusLabel: drawn ? 'Drawn' : (live ? 'Live' : 'Scheduled'),
       prizesHtml: prizeChips(game.prizes),
       guideUrl: guideFor(state, 'wheel'),
-      body: game.open ? wrapPlay(game, state, 'wheel', demoWheel, play) : closedBody(state.channelUrl)
+      metaHtml,
+      body
     });
   }
 
@@ -274,12 +359,15 @@
   function renderScratch(game, state) {
     const pending = (game.cards || []).filter((c) => !c.scratchedAt);
     const play = pending.length ? pending.map(scratchPlay).join('') : '';
+    const metaHtml = game.endsAt ? `<div class="games-arena-meta">${countdownHtml(game.endsAt, 'Ends in')}</div>` : '';
     return arenaShell({
       type: 'scratch',
       title: game.title || 'Scratch Cards',
       open: game.open,
+      visible: game.open || !!(game.endsAt && new Date(game.endsAt) > Date.now()),
       prizesHtml: prizeChips(game.prizes),
       guideUrl: guideFor(state, 'scratch'),
+      metaHtml,
       body: wrapPlay(game, state, 'scratch', demoScratch, play)
     });
   }
@@ -303,12 +391,15 @@
 
   function renderMystery(game, state) {
     const pending = (game.plays || []).filter((p) => !p.playedAt);
+    const metaHtml = game.endsAt ? `<div class="games-arena-meta">${countdownHtml(game.endsAt, 'Ends in')}</div>` : '';
     return arenaShell({
       type: 'mystery',
       title: game.title || 'Mystery Box',
       open: game.open,
+      visible: game.open || !!(game.endsAt && new Date(game.endsAt) > Date.now()),
       prizesHtml: prizeChips(game.prizes),
       guideUrl: guideFor(state, 'mystery'),
+      metaHtml,
       body: wrapPlay(game, state, 'mystery', demoMystery, pending.map(mysteryPlay).join(''))
     });
   }
@@ -354,12 +445,15 @@
   }
 
   function renderInstant(game, state, type, demoFn) {
+    const metaHtml = game.endsAt ? `<div class="games-arena-meta">${countdownHtml(game.endsAt, 'Ends in')}</div>` : '';
     return arenaShell({
       type,
       title: game.title || INSTANT_TITLES[type],
       open: game.open,
+      visible: game.open || !!(game.endsAt && new Date(game.endsAt) > Date.now()),
       prizesHtml: prizeChips(game.prizes),
       guideUrl: guideFor(state, type),
+      metaHtml,
       body: wrapPlay(game, state, type, demoFn, instantPlay(game, state))
     });
   }
@@ -513,12 +607,115 @@
     });
   }
 
+  let countdownTimer = null;
+  let hubRefreshPending = false;
+
+  function tickCountdowns() {
+    document.querySelectorAll('[data-countdown]').forEach((el) => {
+      const target = el.dataset.countdown;
+      if (!target) return;
+      const ms = new Date(target.includes('T') ? target : `${target.replace(' ', 'T')}Z`).getTime() - Date.now();
+      if (Number.isNaN(ms)) return;
+      if (ms <= 0) {
+        el.textContent = 'Drawing now…';
+        el.classList.add('is-due');
+        if (!hubRefreshPending && el.closest('[data-game-type="wheel"]')) {
+          hubRefreshPending = true;
+          setTimeout(() => { hubRefreshPending = false; loadGamesHub(); }, 2000);
+        }
+      } else {
+        el.textContent = fmtCountdown(ms);
+      }
+    });
+    document.querySelectorAll('[data-end-countdown]').forEach((el) => {
+      const target = el.dataset.endCountdown;
+      const ms = new Date(target.includes('T') ? target : `${target.replace(' ', 'T')}Z`).getTime() - Date.now();
+      if (ms <= 0) el.textContent = 'Ended';
+      else el.textContent = fmtCountdown(ms);
+    });
+  }
+
+  function startCountdowns() {
+    tickCountdowns();
+    if (countdownTimer) clearInterval(countdownTimer);
+    countdownTimer = setInterval(tickCountdowns, 1000);
+  }
+
+  function ensureExpandModal() {
+    let modal = document.getElementById('games-expand-modal');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'games-expand-modal';
+    modal.className = 'games-expand-modal';
+    modal.hidden = true;
+    modal.innerHTML = `
+      <div class="games-expand-panel" role="dialog" aria-modal="true">
+        <header class="games-expand-head">
+          <h2 id="games-expand-title"></h2>
+          <button type="button" class="games-expand-close" aria-label="Close">&times;</button>
+        </header>
+        <div class="games-expand-body" id="games-expand-body"></div>
+      </div>`;
+    document.body.appendChild(modal);
+    const close = () => { modal.hidden = true; document.body.classList.remove('games-expand-open'); };
+    modal.querySelector('.games-expand-close').addEventListener('click', close);
+    modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !modal.hidden) close();
+    });
+    return modal;
+  }
+
+  function openArenaExpand(arena) {
+    if (!arena || arena.dataset.expandable === '0') return;
+    const modal = ensureExpandModal();
+    const title = arena.querySelector('.games-arena-head h2')?.textContent || 'Game';
+    const body = arena.querySelector('.games-arena-body')?.innerHTML || '';
+    const meta = arena.querySelector('.games-arena-meta')?.outerHTML || '';
+    const prizes = arena.querySelector('.games-arena-prizes')?.outerHTML || '';
+    modal.querySelector('#games-expand-title').textContent = title;
+    modal.querySelector('#games-expand-body').innerHTML = `${meta}${prizes}<div class="games-expand-play">${body}</div>`;
+    modal.hidden = false;
+    document.body.classList.add('games-expand-open');
+    bindScratch();
+    bindMystery();
+    bindInstant();
+    tickCountdowns();
+  }
+
+  function bindExpand() {
+    document.querySelectorAll('.games-arena[data-expandable="1"]').forEach((arena) => {
+      if (arena.dataset.expandBound) return;
+      arena.dataset.expandBound = '1';
+      const open = (e) => {
+        if (e.target.closest('[data-no-expand], a, button, input, .games-scratch-tile, .games-mystery-box, .games-pick-card, .games-vault-door, .games-action-btn')) return;
+        openArenaExpand(arena);
+      };
+      arena.addEventListener('click', open);
+      arena.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openArenaExpand(arena); }
+      });
+    });
+  }
+
+  function renderRecentWinners(list) {
+    const el = document.getElementById('games-recent-winners');
+    if (!el || !list?.length) return;
+    el.hidden = false;
+    el.innerHTML = `
+      <span class="games-recent-label">Recent wins</span>
+      <div class="games-recent-track">${list.map((w) =>
+    `<span class="games-recent-item"><strong>${esc(w.displayName)}</strong> won ${esc(w.label)}</span>`
+  ).join('')}</div>`;
+  }
+
   function renderHub(data) {
     hubEligibility = data.eligibility || null;
     const intro = document.getElementById('games-hub-intro');
     if (intro && data.eligibility?.message) {
       intro.querySelector('p').textContent = data.eligibility.message;
     }
+    renderRecentWinners(data.recentWinners);
     const grid = document.getElementById('games-arena-grid');
     if (!grid) return;
     grid.innerHTML = [
@@ -532,6 +729,8 @@
     bindScratch();
     bindMystery();
     bindInstant();
+    bindExpand();
+    startCountdowns();
   }
 
   async function loadGamesHub() {

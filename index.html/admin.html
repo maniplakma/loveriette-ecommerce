@@ -689,6 +689,7 @@
             <button type="button" class="admin-games-subtab active" data-games-tab="wheel">Spin Wheel</button>
             <button type="button" class="admin-games-subtab" data-games-tab="scratch">Scratch Cards</button>
             <button type="button" class="admin-games-subtab" data-games-tab="mystery">Mystery Box</button>
+            <button type="button" class="admin-games-subtab" data-games-tab="instant">Instant Games</button>
           </div>
         </div>
 
@@ -729,10 +730,11 @@
             <form id="admin-scratch-create-form" class="admin-modal-body" style="padding:0">
               <div class="admin-field"><label>Title</label><input name="title" value="Order Scratch Cards"></div>
               <div class="admin-field"><label>Min order (₱)</label><input type="number" name="minOrderTotal" min="0" value="0"></div>
+              <div class="admin-field"><label>Ends (optional)</label><input type="datetime-local" name="endsAt"></div>
               <label class="admin-toggle"><input type="checkbox" name="isEnabled" checked> <span>Enabled</span></label>
               <button type="submit" class="admin-btn admin-btn-primary">Create / enable pool</button>
             </form>
-            <p class="admin-card-meta" style="margin-top:0.75rem">Add prizes: bomb, no prize, ₱100 wallet, Netflix solo, loyalty ₱400, etc. Weights control luck.</p>
+            <p class="admin-card-meta" style="margin-top:0.75rem">Add prizes with winner count (quantity). Set end date so buyers see a countdown.</p>
           </div>
           <div id="admin-games-scratch-list" style="margin-top:1rem"></div>
         </div>
@@ -743,11 +745,20 @@
             <form id="admin-mystery-create-form" class="admin-modal-body" style="padding:0">
               <div class="admin-field"><label>Title</label><input name="title" value="Pick a Box"></div>
               <div class="admin-field"><label>Min order (₱)</label><input type="number" name="minOrderTotal" min="0" value="0"></div>
+              <div class="admin-field"><label>Ends (optional)</label><input type="datetime-local" name="endsAt"></div>
               <label class="admin-toggle"><input type="checkbox" name="isEnabled" checked> <span>Enabled</span></label>
               <button type="submit" class="admin-btn admin-btn-primary">Create / enable pool</button>
             </form>
           </div>
           <div id="admin-games-mystery-list" style="margin-top:1rem"></div>
+        </div>
+
+        <div class="admin-games-pane" id="admin-games-pane-instant" hidden>
+          <div class="admin-panel" style="margin-top:1rem">
+            <div class="admin-panel-head"><h3>Instant Games (Dice, Card Flip, Vault)</h3></div>
+            <p class="admin-card-meta">Set end dates and prizes per game. Quantity = how many can win that prize.</p>
+          </div>
+          <div id="admin-games-instant-list" style="margin-top:1rem"></div>
         </div>
       </section>
 
@@ -900,7 +911,7 @@
   <script src="badges.js?v=20260614tabs"></script>
   <script src="admin.js?v=20260707perf"></script>
   <script src="admin-platform.js?v=20260707deploy"></script>
-  <script src="admin-games.js?v=20260709games"></script>
+  <script src="admin-games.js?v=20260710timer"></script>
   <script src="mobile.js?v=20260614mobile"></script>
 </body>
 </html>

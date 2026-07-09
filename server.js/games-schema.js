@@ -279,6 +279,23 @@ function initGamesSchema(db) {
     CREATE INDEX IF NOT EXISTS idx_game_mystery_plays_user ON game_mystery_plays(user_id);
     CREATE INDEX IF NOT EXISTS idx_game_instant_plays_user ON game_instant_plays(user_id);
 
+    CREATE TABLE IF NOT EXISTS game_wheel_winners (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      campaign_id INTEGER NOT NULL,
+      slot_id INTEGER NOT NULL,
+      prize_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,
+      display_name TEXT NOT NULL DEFAULT '',
+      order_number TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (campaign_id) REFERENCES game_wheel_campaigns(id) ON DELETE CASCADE,
+      FOREIGN KEY (slot_id) REFERENCES game_wheel_slots(id),
+      FOREIGN KEY (prize_id) REFERENCES game_wheel_prizes(id),
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_game_wheel_winners_campaign ON game_wheel_winners(campaign_id);
+
     CREATE TABLE IF NOT EXISTS game_prize_awards (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL,
@@ -314,8 +331,26 @@ function initGamesSchema(db) {
     db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('games_strict_eligibility', '1');
   }
 
+  migrateGamesSchema(db);
+
   try { seedDefaultGames(db); } catch (err) {
     console.error('[games] seed defaults failed:', err.message);
+  }
+}
+
+function migrateGamesSchema(db) {
+  const alters = [
+    'ALTER TABLE game_wheel_prizes ADD COLUMN quantity INTEGER NOT NULL DEFAULT 1',
+    'ALTER TABLE game_wheel_prizes ADD COLUMN won_count INTEGER NOT NULL DEFAULT 0',
+    'ALTER TABLE game_scratch_pools ADD COLUMN starts_at TEXT',
+    'ALTER TABLE game_scratch_pools ADD COLUMN ends_at TEXT',
+    'ALTER TABLE game_mystery_pools ADD COLUMN starts_at TEXT',
+    'ALTER TABLE game_mystery_pools ADD COLUMN ends_at TEXT',
+    'ALTER TABLE game_instant_pools ADD COLUMN starts_at TEXT',
+    'ALTER TABLE game_instant_pools ADD COLUMN ends_at TEXT'
+  ];
+  for (const sql of alters) {
+    try { db.exec(sql); } catch (_) { /* column exists */ }
   }
 }
 

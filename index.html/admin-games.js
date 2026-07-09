@@ -120,7 +120,8 @@
         </div>
         <p class="admin-muted">Draw: ${esc(c.drawAt)} · Entries: ${c.entryCount || 0} · Min order: ₱${c.minOrderTotal || 0}</p>
         ${c.winner ? `<p class="admin-success-text">Winner: ${esc(c.winner.displayName)} (#${esc(c.winner.orderNumber)})</p>` : ''}
-        <p><strong>Prizes:</strong> ${(c.prizes || []).map((p) => esc(p.label)).join(', ') || '—'}</p>
+        ${(c.winners || []).length > 1 ? `<p class="admin-muted">All winners: ${c.winners.map((w) => `${esc(w.displayName)} (${esc(w.prizeLabel)})`).join(', ')}</p>` : ''}
+        <p><strong>Prizes:</strong> ${(c.prizes || []).map((p) => `${esc(p.label)} <small>×${p.quantity || 1} (${p.wonCount || 0} won)</small>`).join(', ') || '—'}</p>
         <div class="admin-inline-actions">
           ${c.status === 'scheduled' ? `<button type="button" class="admin-btn admin-btn-primary admin-wheel-draw" data-id="${c.id}">Run draw now</button>` : ''}
           <button type="button" class="admin-btn admin-btn-outline admin-wheel-add-prize" data-id="${c.id}">Add prize</button>
@@ -138,7 +139,8 @@
         if (!confirm('Run the wheel draw now? This picks a random winner.')) return;
         try {
           const r = await api(`/admin/games/wheel/${btn.dataset.id}/draw`, { method: 'POST', body: '{}' });
-          alert(`Winner: ${r.winner?.displayName || '?'} — Prize: ${r.prize?.label || '?'}`);
+          const names = (r.winners || []).map((w) => `${w.displayName} (${w.prize?.label || 'prize'})`).join(', ');
+          alert(names ? `Winners: ${names}` : `Winner: ${r.winner?.displayName || '?'} — Prize: ${r.prize?.label || '?'}`);
           loadWheelAdmin();
         } catch (e) { alert(e.message); }
       });
@@ -154,19 +156,26 @@
     if (!label) return;
     const type = prompt('Type: loyalty, redeem, product, wallet, account, netflix, plug_access, custom, none, bomb', 'loyalty');
     const value = prompt('Value: amount for loyalty/wallet; {"discountValue":50} for voucher; empty for product', '');
+    const qtyRaw = prompt('How many winners for this prize? (1 = one winner only)', kind === 'wheel' ? '1' : '-1');
+    const quantity = qtyRaw != null && qtyRaw !== '' ? Number(qtyRaw) : (kind === 'wheel' ? 1 : -1);
     const url = kind === 'wheel'
       ? `/admin/games/wheel/${parentId}/prizes`
       : kind === 'scratch'
         ? `/admin/games/scratch/${parentId}/prizes`
-        : `/admin/games/mystery/${parentId}/prizes`;
+        : kind === 'mystery'
+          ? `/admin/games/mystery/${parentId}/prizes`
+          : `/admin/games/instant/${parentId}/prizes`;
     const body = kind === 'wheel'
-      ? { label, prizeType: type || 'custom', prizeValue: value || '' }
-      : { label, prizeType: type || 'none', prizeValue: value || '', weight: 10, quantity: -1 };
+      ? { label, prizeType: type || 'custom', prizeValue: value || '', quantity: Math.max(1, quantity || 1) }
+      : kind === 'instant'
+        ? { label, prizeType: type || 'none', prizeValue: value || '', weight: 10, quantity, tileStyle: 'gold' }
+        : { label, prizeType: type || 'none', prizeValue: value || '', weight: 10, quantity };
     api(url, { method: 'POST', body: JSON.stringify(body) })
       .then(() => {
         if (kind === 'wheel') loadWheelAdmin();
         else if (kind === 'scratch') loadScratchAdmin();
-        else loadMysteryAdmin();
+        else if (kind === 'mystery') loadMysteryAdmin();
+        else loadInstantAdmin();
       })
       .catch((e) => alert(e.message));
   }
@@ -185,14 +194,18 @@
           <strong>${esc(p.title)}</strong>
           <span class="admin-badge">${p.isEnabled ? 'ON' : 'OFF'}</span>
         </div>
-        <p class="admin-muted">Min order: ₱${p.min_order_total || p.minOrderTotal || 0}</p>
+        <p class="admin-muted">Min order: ₱${p.min_order_total || p.minOrderTotal || 0}${p.endsAt ? ` · Ends: ${esc(p.endsAt)}` : ''}</p>
+        <button type="button" class="admin-btn admin-btn-outline admin-btn-sm admin-pool-ends" data-kind="scratch" data-id="${p.id}">Set end date</button>
         <ul>${(p.prizes || []).map((pr) =>
-    `<li>${esc(pr.label)} <small>(${esc(pr.prizeType)} · weight ${pr.weight})</small></li>`
+    `<li>${esc(pr.label)} <small>(${esc(pr.prizeType)} · weight ${pr.weight} · qty ${pr.quantity < 0 ? '∞' : pr.quantity} · won ${pr.wonCount || 0})</small></li>`
   ).join('') || '<li>None — add prizes</li>'}</ul>
         <button type="button" class="admin-btn admin-btn-outline admin-scratch-add-prize" data-id="${p.id}">Add scratch prize</button>
       </div>`).join('');
     list.querySelectorAll('.admin-scratch-add-prize').forEach((btn) => {
       btn.addEventListener('click', () => openPrizeModal('scratch', btn.dataset.id));
+    });
+    list.querySelectorAll('.admin-pool-ends').forEach((btn) => {
+      btn.addEventListener('click', () => setPoolEndDate(btn.dataset.kind, btn.dataset.id));
     });
   }
 
@@ -210,14 +223,63 @@
           <strong>${esc(p.title)}</strong>
           <span class="admin-badge">${p.isEnabled ? 'ON' : 'OFF'}</span>
         </div>
-        <p class="admin-muted">Min order: ₱${p.min_order_total || p.minOrderTotal || 0}</p>
+        <p class="admin-muted">Min order: ₱${p.min_order_total || p.minOrderTotal || 0}${p.endsAt ? ` · Ends: ${esc(p.endsAt)}` : ''}</p>
+        <button type="button" class="admin-btn admin-btn-outline admin-btn-sm admin-pool-ends" data-kind="mystery" data-id="${p.id}">Set end date</button>
         <ul>${(p.prizes || []).map((pr) =>
-    `<li>${esc(pr.label)} <small>(${esc(pr.prizeType)} · weight ${pr.weight})</small></li>`
+    `<li>${esc(pr.label)} <small>(${esc(pr.prizeType)} · weight ${pr.weight} · qty ${pr.quantity < 0 ? '∞' : pr.quantity} · won ${pr.wonCount || 0})</small></li>`
   ).join('') || '<li>None</li>'}</ul>
         <button type="button" class="admin-btn admin-btn-outline admin-mystery-add-prize" data-id="${p.id}">Add box prize</button>
       </div>`).join('');
     list.querySelectorAll('.admin-mystery-add-prize').forEach((btn) => {
       btn.addEventListener('click', () => openPrizeModal('mystery', btn.dataset.id));
+    });
+    list.querySelectorAll('.admin-pool-ends').forEach((btn) => {
+      btn.addEventListener('click', () => setPoolEndDate(btn.dataset.kind, btn.dataset.id));
+    });
+  }
+
+  async function setPoolEndDate(kind, id) {
+    const raw = prompt('End date & time (YYYY-MM-DDTHH:mm) — leave empty to clear');
+    if (raw === null) return;
+    const endsAt = raw.trim() ? new Date(raw.trim()).toISOString() : null;
+    const path = kind === 'instant'
+      ? `/admin/games/instant/${id}`
+      : `/admin/games/${kind}/${id}`;
+    const body = kind === 'instant' ? { endsAt } : { endsAt };
+    try {
+      await api(path, { method: 'PUT', body: JSON.stringify(body) });
+      if (kind === 'scratch') loadScratchAdmin();
+      else if (kind === 'mystery') loadMysteryAdmin();
+      else loadInstantAdmin();
+    } catch (e) { alert(e.message); }
+  }
+
+  async function loadInstantAdmin() {
+    const list = document.getElementById('admin-games-instant-list');
+    if (!list) return;
+    const pools = await api('/admin/games/instant');
+    if (!pools.length) {
+      list.innerHTML = '<p class="admin-muted">No instant games found.</p>';
+      return;
+    }
+    list.innerHTML = pools.map((p) => `
+      <div class="admin-card">
+        <div class="admin-card-head">
+          <strong>${esc(p.title)}</strong>
+          <span class="admin-badge">${p.isEnabled ? 'ON' : 'OFF'} · ${esc(p.gameKey)}</span>
+        </div>
+        <p class="admin-muted">Min order: ₱${p.minOrderTotal || 0}${p.endsAt ? ` · Ends: ${esc(p.endsAt)}` : ''}</p>
+        <button type="button" class="admin-btn admin-btn-outline admin-btn-sm admin-pool-ends" data-kind="instant" data-id="${p.gameKey}">Set end date</button>
+        <ul>${(p.prizes || []).map((pr) =>
+    `<li>${esc(pr.label)} <small>(${esc(pr.prizeType)} · qty ${pr.quantity < 0 ? '∞' : pr.quantity} · won ${pr.wonCount || 0})</small></li>`
+  ).join('') || '<li>None</li>'}</ul>
+        <button type="button" class="admin-btn admin-btn-outline admin-instant-add-prize" data-key="${p.gameKey}">Add prize</button>
+      </div>`).join('');
+    list.querySelectorAll('.admin-instant-add-prize').forEach((btn) => {
+      btn.addEventListener('click', () => openPrizeModal('instant', btn.dataset.key));
+    });
+    list.querySelectorAll('.admin-pool-ends').forEach((btn) => {
+      btn.addEventListener('click', () => setPoolEndDate(btn.dataset.kind, btn.dataset.id));
     });
   }
 
@@ -263,7 +325,8 @@
           body: JSON.stringify({
             title: fd.get('title'),
             minOrderTotal: Number(fd.get('minOrderTotal') || 0),
-            isEnabled: fd.get('isEnabled') === 'on'
+            isEnabled: fd.get('isEnabled') === 'on',
+            endsAt: fd.get('endsAt') ? new Date(fd.get('endsAt')).toISOString() : null
           })
         });
         e.target.reset();
@@ -280,7 +343,8 @@
           body: JSON.stringify({
             title: fd.get('title'),
             minOrderTotal: Number(fd.get('minOrderTotal') || 0),
-            isEnabled: fd.get('isEnabled') === 'on'
+            isEnabled: fd.get('isEnabled') === 'on',
+            endsAt: fd.get('endsAt') ? new Date(fd.get('endsAt')).toISOString() : null
           })
         });
         e.target.reset();
@@ -310,7 +374,7 @@
       catalogProducts = [];
     }
     await loadGamesSettings();
-    await Promise.all([loadWheelAdmin(), loadScratchAdmin(), loadMysteryAdmin()]);
+    await Promise.all([loadWheelAdmin(), loadScratchAdmin(), loadMysteryAdmin(), loadInstantAdmin()]);
     gamesLoaded = true;
   }
 

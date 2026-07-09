@@ -31,7 +31,19 @@ function mapWheelCampaign(row, db) {
     FROM game_wheel_slots WHERE campaign_id = ? ORDER BY id ASC
   `).all(row.id);
   let winner = null;
-  if (row.winner_slot_id) {
+  let winners = [];
+  if (row.status === 'drawn') {
+    winners = db.prepare(`
+      SELECT w.display_name AS displayName, w.order_number AS orderNumber,
+             p.label AS prizeLabel, p.prize_type AS prizeType
+      FROM game_wheel_winners w
+      JOIN game_wheel_prizes p ON p.id = w.prize_id
+      WHERE w.campaign_id = ?
+      ORDER BY w.id ASC
+    `).all(row.id);
+    if (winners.length) winner = winners[0];
+  }
+  if (!winner && row.winner_slot_id) {
     winner = db.prepare(`
       SELECT display_name AS displayName, order_number AS orderNumber FROM game_wheel_slots WHERE id = ?
     `).get(row.winner_slot_id);
@@ -48,12 +60,15 @@ function mapWheelCampaign(row, db) {
     status: row.status,
     drawnAt: row.drawn_at,
     winner,
+    winners,
     prizes: prizes.map((p) => ({
       id: p.id,
       label: p.label,
       prizeType: p.prize_type,
       prizeValue: p.prize_value,
-      sortOrder: p.sort_order
+      sortOrder: p.sort_order,
+      quantity: Number(p.quantity) || 1,
+      wonCount: Number(p.won_count || 0)
     })),
     slots,
     entryCount: slots.length
@@ -68,7 +83,7 @@ function mountGamesService(app, db, deps) {
     }
   };
 
-  setInterval(() => processDueWheelDraws(db, engineDeps), 60 * 1000);
+  setInterval(() => processDueWheelDraws(db, engineDeps), 15 * 1000);
 
   app.get('/games', (req, res) => {
     if (!isGamesEnabled(db)) return res.redirect(302, '/shop');
@@ -238,14 +253,15 @@ function mountGamesService(app, db, deps) {
     const label = String(b.label || '').trim();
     if (!label) return res.status(400).json({ error: 'Prize label required' });
     const r = db.prepare(`
-      INSERT INTO game_wheel_prizes (campaign_id, label, prize_type, prize_value, sort_order)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO game_wheel_prizes (campaign_id, label, prize_type, prize_value, sort_order, quantity)
+      VALUES (?, ?, ?, ?, ?, ?)
     `).run(
       campaign.id,
       label,
       String(b.prizeType || 'custom'),
       String(b.prizeValue || ''),
-      Number(b.sortOrder) || 0
+      Number(b.sortOrder) || 0,
+      Math.max(1, Number(b.quantity) || 1)
     );
     res.status(201).json({ id: r.lastInsertRowid });
   });
@@ -268,6 +284,8 @@ function mountGamesService(app, db, deps) {
       ...p,
       isEnabled: !!p.is_enabled,
       minOrderTotal: p.min_order_total,
+      startsAt: p.starts_at,
+      endsAt: p.ends_at,
       prizes: db.prepare('SELECT * FROM game_scratch_prizes WHERE pool_id = ? ORDER BY id').all(p.id).map((pr) => ({
         id: pr.id,
         label: pr.label,
@@ -285,8 +303,15 @@ function mountGamesService(app, db, deps) {
     const b = req.body || {};
     const title = String(b.title || 'Scratch Cards').trim();
     const r = db.prepare(`
-      INSERT INTO game_scratch_pools (title, is_enabled, min_order_total) VALUES (?, ?, ?)
-    `).run(title, b.isEnabled ? 1 : 0, Math.max(0, Number(b.minOrderTotal) || 0));
+      INSERT INTO game_scratch_pools (title, is_enabled, min_order_total, starts_at, ends_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(
+      title,
+      b.isEnabled ? 1 : 0,
+      Math.max(0, Number(b.minOrderTotal) || 0),
+      b.startsAt || null,
+      b.endsAt || null
+    );
     res.status(201).json({ id: r.lastInsertRowid });
   });
 
@@ -297,12 +322,16 @@ function mountGamesService(app, db, deps) {
         title = COALESCE(?, title),
         is_enabled = COALESCE(?, is_enabled),
         min_order_total = COALESCE(?, min_order_total),
+        starts_at = COALESCE(?, starts_at),
+        ends_at = COALESCE(?, ends_at),
         updated_at = datetime('now')
       WHERE id = ?
     `).run(
       b.title != null ? String(b.title).trim() : null,
       b.isEnabled != null ? (b.isEnabled ? 1 : 0) : null,
       b.minOrderTotal != null ? Math.max(0, Number(b.minOrderTotal) || 0) : null,
+      b.startsAt,
+      b.endsAt,
       req.params.id
     );
     res.json({ ok: true });
@@ -341,6 +370,8 @@ function mountGamesService(app, db, deps) {
       ...p,
       isEnabled: !!p.is_enabled,
       minOrderTotal: p.min_order_total,
+      startsAt: p.starts_at,
+      endsAt: p.ends_at,
       prizes: db.prepare('SELECT * FROM game_mystery_prizes WHERE pool_id = ? ORDER BY id').all(p.id).map((pr) => ({
         id: pr.id,
         label: pr.label,
@@ -357,8 +388,15 @@ function mountGamesService(app, db, deps) {
     const b = req.body || {};
     const title = String(b.title || 'Mystery Box').trim();
     const r = db.prepare(`
-      INSERT INTO game_mystery_pools (title, is_enabled, min_order_total) VALUES (?, ?, ?)
-    `).run(title, b.isEnabled ? 1 : 0, Math.max(0, Number(b.minOrderTotal) || 0));
+      INSERT INTO game_mystery_pools (title, is_enabled, min_order_total, starts_at, ends_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(
+      title,
+      b.isEnabled ? 1 : 0,
+      Math.max(0, Number(b.minOrderTotal) || 0),
+      b.startsAt || null,
+      b.endsAt || null
+    );
     res.status(201).json({ id: r.lastInsertRowid });
   });
 
@@ -369,12 +407,16 @@ function mountGamesService(app, db, deps) {
         title = COALESCE(?, title),
         is_enabled = COALESCE(?, is_enabled),
         min_order_total = COALESCE(?, min_order_total),
+        starts_at = COALESCE(?, starts_at),
+        ends_at = COALESCE(?, ends_at),
         updated_at = datetime('now')
       WHERE id = ?
     `).run(
       b.title != null ? String(b.title).trim() : null,
       b.isEnabled != null ? (b.isEnabled ? 1 : 0) : null,
       b.minOrderTotal != null ? Math.max(0, Number(b.minOrderTotal) || 0) : null,
+      b.startsAt,
+      b.endsAt,
       req.params.id
     );
     res.json({ ok: true });
@@ -402,6 +444,80 @@ function mountGamesService(app, db, deps) {
 
   app.delete('/admin/games/mystery/prizes/:id', requireAdmin, (req, res) => {
     db.prepare('DELETE FROM game_mystery_prizes WHERE id = ?').run(req.params.id);
+    res.json({ ok: true });
+  });
+
+  // ── Instant games (dice, pick, vault) ──
+  app.get('/admin/games/instant', requireAdmin, (req, res) => {
+    const pools = db.prepare('SELECT * FROM game_instant_pools ORDER BY game_key ASC').all();
+    res.json(pools.map((p) => ({
+      id: p.id,
+      gameKey: p.game_key,
+      title: p.title,
+      isEnabled: !!p.is_enabled,
+      minOrderTotal: p.min_order_total,
+      startsAt: p.starts_at,
+      endsAt: p.ends_at,
+      prizes: db.prepare('SELECT * FROM game_instant_prizes WHERE pool_id = ? ORDER BY id').all(p.id).map((pr) => ({
+        id: pr.id,
+        label: pr.label,
+        prizeType: pr.prize_type,
+        prizeValue: pr.prize_value,
+        weight: pr.weight,
+        quantity: pr.quantity,
+        wonCount: pr.won_count,
+        tileStyle: pr.tile_style
+      }))
+    })));
+  });
+
+  app.put('/admin/games/instant/:key', requireAdmin, (req, res) => {
+    const pool = db.prepare('SELECT * FROM game_instant_pools WHERE game_key = ?').get(req.params.key);
+    if (!pool) return res.status(404).json({ error: 'Game not found' });
+    const b = req.body || {};
+    db.prepare(`
+      UPDATE game_instant_pools SET
+        title = COALESCE(?, title),
+        is_enabled = COALESCE(?, is_enabled),
+        min_order_total = COALESCE(?, min_order_total),
+        starts_at = COALESCE(?, starts_at),
+        ends_at = COALESCE(?, ends_at),
+        updated_at = datetime('now')
+      WHERE id = ?
+    `).run(
+      b.title != null ? String(b.title).trim() : null,
+      b.isEnabled != null ? (b.isEnabled ? 1 : 0) : null,
+      b.minOrderTotal != null ? Math.max(0, Number(b.minOrderTotal) || 0) : null,
+      b.startsAt,
+      b.endsAt,
+      pool.id
+    );
+    res.json({ ok: true });
+  });
+
+  app.post('/admin/games/instant/:key/prizes', requireAdmin, (req, res) => {
+    const pool = db.prepare('SELECT * FROM game_instant_pools WHERE game_key = ?').get(req.params.key);
+    if (!pool) return res.status(404).json({ error: 'Game not found' });
+    const b = req.body || {};
+    const label = String(b.label || '').trim();
+    if (!label) return res.status(400).json({ error: 'Label required' });
+    const r = db.prepare(`
+      INSERT INTO game_instant_prizes (pool_id, label, prize_type, prize_value, weight, quantity, tile_style)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      pool.id,
+      label,
+      String(b.prizeType || 'none'),
+      String(b.prizeValue || ''),
+      Math.max(1, Number(b.weight) || 1),
+      b.quantity != null ? Number(b.quantity) : -1,
+      String(b.tileStyle || 'gold')
+    );
+    res.status(201).json({ id: r.lastInsertRowid });
+  });
+
+  app.delete('/admin/games/instant/prizes/:id', requireAdmin, (req, res) => {
+    db.prepare('DELETE FROM game_instant_prizes WHERE id = ?').run(req.params.id);
     res.json({ ok: true });
   });
 

@@ -15,6 +15,7 @@ function ok(name) { passed++; console.log(`  ✓ ${name}`); }
 function fail(name, err) { failed++; console.log(`  ✗ ${name}: ${err}`); }
 
 function purgeGameRowsForOrder(orderId) {
+  db.prepare('DELETE FROM game_wheel_winners WHERE slot_id IN (SELECT id FROM game_wheel_slots WHERE order_id = ?)').run(orderId);
   db.prepare('DELETE FROM game_instant_plays WHERE order_id = ?').run(orderId);
   db.prepare('DELETE FROM game_mystery_plays WHERE order_id = ?').run(orderId);
   db.prepare('DELETE FROM game_scratch_cards WHERE order_id = ?').run(orderId);
@@ -903,7 +904,8 @@ async function runGamesCheck(adminCookie) {
   await request('POST', `/admin/games/wheel/${wheel.json.id}/prizes`, {
     label: 'Loyalty ₱400',
     prizeType: 'wallet',
-    prizeValue: '400'
+    prizeValue: '400',
+    quantity: 1
   }, adminCookie);
 
   await request('POST', '/admin/games/scratch', { title: 'QA Scratch', isEnabled: true, minOrderTotal: 0 }, adminCookie);
@@ -964,6 +966,9 @@ async function runGamesCheck(adminCookie) {
   if (hub.json.eligibility?.strict && hub.json.eligibility?.requiredQuantity === 3) {
     ok('games hub includes strict eligibility');
   } else fail('games hub eligibility', JSON.stringify(hub.json.eligibility || {}));
+
+  if (hub.json.wheel?.entries != null && hub.json.recentWinners != null) ok('games hub wheel entries + recent winners');
+  else fail('games hub wheel extras', 'missing entries or recentWinners');
 
   const gamesPage = await request('GET', '/games');
   const pageBody = gamesPage.json?.raw || '';
