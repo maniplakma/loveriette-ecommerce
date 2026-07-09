@@ -52,6 +52,64 @@
     return `<p class="games-meta games-meta--timer">Ends: <span data-end-countdown="${esc(endsAt)}">${esc(fmtDate(endsAt))}</span></p>`;
   }
 
+  function scratchGridHtml(demo) {
+    const tiles = [0, 1, 2, 3, 4, 5, 6, 7, 8].map((i) => {
+      if (demo) {
+        return '<div class="games-scratch-tile games-scratch-tile--demo"><span class="games-scratch-foil"></span></div>';
+      }
+      return `<button type="button" class="games-scratch-tile" data-tile="${i}"><span class="games-scratch-foil"></span></button>`;
+    }).join('');
+    return `<div class="games-scratch-ticket"><div class="games-scratch-ticket-shine"></div><div class="games-scratch-ticket-label">Lucky Scratch</div><div class="games-scratch-grid">${tiles}</div></div>`;
+  }
+
+  function mysteryBoxHtml(i, demo) {
+    const inner = `<span class="games-mystery-ribbon" aria-hidden="true"></span><span class="games-mystery-lid"></span><span class="games-mystery-body"><em>?</em><small>Box ${i + 1}</small></span>`;
+    if (demo) return `<div class="games-mystery-box games-mystery-box--demo">${inner}</div>`;
+    return `<button type="button" class="games-mystery-box" data-box="${i}">${inner}</button>`;
+  }
+
+  function pickCardHtml(suit, label, demo, idx) {
+    const red = suit === '♥' || suit === '♦';
+    const inner = `<span class="games-pick-corner games-pick-corner--tl">${suit}</span><span class="games-pick-center">${label || suit}</span><span class="games-pick-corner games-pick-corner--br">${suit}</span>`;
+    if (demo) return `<div class="games-pick-card games-pick-card--demo${red ? ' is-red' : ''}">${inner}</div>`;
+    return `<button type="button" class="games-pick-card${red ? ' is-red' : ''}" data-pick="${idx}">${inner}</button>`;
+  }
+
+  function vaultDoorHtml(tier, demo, idx) {
+    const tiers = { Bronze: 'bronze', Silver: 'silver', Gold: 'gold', B: 'bronze', S: 'silver', G: 'gold' };
+    const t = tiers[tier] || 'bronze';
+    const label = tier.length === 1 ? { B: 'Bronze', S: 'Silver', G: 'Gold' }[tier] : tier;
+    const inner = `<span class="games-vault-rivets" aria-hidden="true"></span><span class="games-vault-handle"></span><span class="games-vault-label">${label}</span>`;
+    if (demo) return `<div class="games-vault-door games-vault-door--demo games-vault-door--${t}">${inner}</div>`;
+    return `<button type="button" class="games-vault-door games-vault-door--${t}" data-vault="${idx}">${inner}</button>`;
+  }
+
+  function dieHtml(face, extraClass) {
+    const v = Math.max(1, Math.min(6, Number(face) || 1));
+    return `<div class="games-die games-die--pips games-die--${v}${extraClass ? ` ${extraClass}` : ''}"><div class="games-die-cube"><div class="games-die-face"></div></div></div>`;
+  }
+
+  function revealedMysteryBoxHtml(b) {
+    const inner = `<span class="games-mystery-ribbon" aria-hidden="true"></span><span class="games-mystery-lid"></span><span class="games-mystery-body"><em>${b.winner ? '★' : '·'}</em><small>${esc(b.label)}</small></span>`;
+    return `<div class="games-mystery-box revealed${b.winner ? ' is-winner' : ''}">${inner}</div>`;
+  }
+
+  function revealedPickCardHtml(c, idx) {
+    const suits = ['♠', '♥', '♦'];
+    const suit = suits[idx % 3];
+    const red = suit === '♥' || suit === '♦';
+    const display = c.winner ? c.label : c.label.replace(/^[♠♥♦♣]\s*/, '');
+    const inner = `<span class="games-pick-corner games-pick-corner--tl">${suit}</span><span class="games-pick-center">${esc(display)}</span><span class="games-pick-corner games-pick-corner--br">${suit}</span>`;
+    return `<div class="games-pick-card revealed${c.winner ? ' is-winner' : ''}${red ? ' is-red' : ''}">${inner}</div>`;
+  }
+
+  function revealedVaultDoorHtml(v, idx) {
+    const tiers = ['bronze', 'silver', 'gold'];
+    const t = tiers[idx] || 'bronze';
+    const inner = `<span class="games-vault-rivets" aria-hidden="true"></span><span class="games-vault-handle"></span><span class="games-vault-label">${esc(v.label)}</span>`;
+    return `<div class="games-vault-door revealed games-vault-door--${t}${v.winner ? ' is-winner' : ''}">${inner}</div>`;
+  }
+
   function prizeChips(prizes) {
     if (!prizes?.length) return '<p class="games-meta">Prizes coming soon</p>';
     return `<div class="games-prize-chips">${prizes.map((p) => {
@@ -100,18 +158,21 @@
     const status = !isVisible ? 'Closed' : (statusLabel || (open ? 'Open' : 'Results'));
     const guideHref = guideUrl || `/guide.html#game-${type}`;
     const guide = `<a href="${esc(guideHref)}" class="games-guide-link" target="_blank" rel="noopener noreferrer" data-no-expand>How to play</a>`;
+    const expandBtn = expandable !== false
+      ? '<button type="button" class="games-open-full" aria-label="Open full screen">⛶ Full screen</button>'
+      : '';
     const expandHint = expandable !== false
-      ? '<span class="games-expand-hint" aria-hidden="true">Tap to expand</span>'
+      ? '<span class="games-expand-hint">Tap card or use Full screen</span>'
       : '';
     return `
-      <article class="games-arena games-arena--${state} games-arena--${type}" data-game-type="${esc(type)}" data-expandable="${expandable !== false ? '1' : '0'}" tabindex="0" role="button" aria-label="Open ${esc(title)} full view">
+      <article class="games-arena games-arena--${state} games-arena--${type}" data-game-type="${esc(type)}" data-expandable="${expandable !== false ? '1' : '0'}" tabindex="0">
         <div class="games-arena-glow" aria-hidden="true"></div>
         <header class="games-arena-head">
           ${icon(type, 'games-icon--head')}
           <h2>${esc(title)}</h2>
           <span class="games-arena-status games-arena-status--${isVisible && open ? 'open' : 'closed'}">${esc(status)}</span>
         </header>
-        <div class="games-arena-guide-row">${guide}</div>
+        <div class="games-arena-guide-row">${guide}${expandBtn}</div>
         ${metaHtml || ''}
         ${isVisible && prizesHtml ? `<div class="games-arena-prizes"><h3 class="games-arena-sub">Prizes</h3>${prizesHtml}</div>` : ''}
         <div class="games-arena-body">${body}</div>
@@ -167,23 +228,19 @@
 
   function demoScratch() {
     return `
-      <div class="games-demo-stage">
+      <div class="games-demo-stage games-demo-stage--scratch">
         ${demoBadge()}
-        <div class="games-scratch-grid games-scratch-grid--demo">
-          ${[0, 1, 2, 3, 4, 5, 6, 7, 8].map(() => '<div class="games-scratch-tile games-scratch-tile--demo"></div>').join('')}
-        </div>
-        <p class="games-demo-caption">Scratch 4 tiles to reveal your prize</p>
+        ${scratchGridHtml(true)}
+        <p class="games-demo-caption">Scratch 4 foil tiles to reveal your prize</p>
       </div>`;
   }
 
   function demoMystery() {
     return `
-      <div class="games-demo-stage">
+      <div class="games-demo-stage games-demo-stage--mystery">
         ${demoBadge()}
-        <div class="games-mystery-row">
-          ${[0, 1, 2].map((i) => `<div class="games-mystery-box games-mystery-box--demo"><span>?</span><small>Box ${i + 1}</small></div>`).join('')}
-        </div>
-        <p class="games-demo-caption">Only one box holds the prize</p>
+        <div class="games-mystery-row">${[0, 1, 2].map((i) => mysteryBoxHtml(i, true)).join('')}</div>
+        <p class="games-demo-caption">Only one gift box holds the prize</p>
       </div>`;
   }
 
@@ -192,8 +249,8 @@
       <div class="games-demo-stage games-demo-dice">
         ${demoBadge()}
         <div class="games-dice-row">
-          <div class="games-die games-die--demo"><span>⚅</span></div>
-          <div class="games-die games-die--demo"><span>⚃</span></div>
+          ${dieHtml(6, 'games-die--demo')}
+          ${dieHtml(4, 'games-die--demo')}
         </div>
         <button type="button" class="games-action-btn" disabled>Roll Dice</button>
         <p class="games-demo-caption">Match lucky sums for bigger prizes</p>
@@ -202,10 +259,12 @@
 
   function demoPick() {
     return `
-      <div class="games-demo-stage">
+      <div class="games-demo-stage games-demo-stage--pick">
         ${demoBadge()}
         <div class="games-pick-row">
-          ${['♠', '♥', '♦'].map((s) => `<div class="games-pick-card games-pick-card--demo"><span>${s}</span></div>`).join('')}
+          ${pickCardHtml('♠', 'A', true, 0)}
+          ${pickCardHtml('♥', 'K', true, 1)}
+          ${pickCardHtml('♦', 'Q', true, 2)}
         </div>
         <p class="games-demo-caption">Flip one card — ace wins big</p>
       </div>`;
@@ -216,7 +275,9 @@
       <div class="games-demo-stage games-demo-vault">
         ${demoBadge()}
         <div class="games-vault-row">
-          ${['Bronze', 'Silver', 'Gold'].map((l) => `<div class="games-vault-door games-vault-door--demo"><span>${l}</span></div>`).join('')}
+          ${vaultDoorHtml('Bronze', true, 0)}
+          ${vaultDoorHtml('Silver', true, 1)}
+          ${vaultDoorHtml('Gold', true, 2)}
         </div>
         <p class="games-demo-caption">Pick a vault door to unlock treasure</p>
       </div>`;
@@ -346,11 +407,7 @@
     return `
       <article class="games-play-card" data-scratch-id="${card.id}">
         <h4>Order #${esc(card.orderNumber)}</h4>
-        <div class="games-scratch-grid" id="scratch-grid-${card.id}">
-          ${[0, 1, 2, 3, 4, 5, 6, 7, 8].map((i) =>
-    `<button type="button" class="games-scratch-tile" data-tile="${i}"></button>`
-  ).join('')}
-        </div>
+        ${scratchGridHtml(false)}
         <p class="games-scratch-msg" id="scratch-msg-${card.id}" hidden></p>
       </article>`;
   }
@@ -380,9 +437,7 @@
       <article class="games-play-card" data-mystery-id="${play.id}">
         <h4>Order #${esc(play.orderNumber)}</h4>
         <div class="games-mystery-row">
-          ${[0, 1, 2].map((i) =>
-    `<button type="button" class="games-mystery-box" data-box="${i}"><span>?</span><small>Box ${i + 1}</small></button>`
-  ).join('')}
+          ${[0, 1, 2].map((i) => mysteryBoxHtml(i, false)).join('')}
         </div>
         <p class="games-scratch-msg" id="mystery-msg-${play.id}" hidden></p>
       </article>`;
@@ -412,8 +467,8 @@
         <article class="games-play-card" data-instant-id="${play.id}" data-instant-key="dice">
           <h4>Order #${esc(play.orderNumber)}</h4>
           <div class="games-dice-row" id="dice-row-${play.id}">
-            <div class="games-die"><span>?</span></div>
-            <div class="games-die"><span>?</span></div>
+            ${dieHtml(1)}
+            ${dieHtml(1)}
           </div>
           <button type="button" class="games-action-btn" data-roll-dice="${play.id}">Roll Dice</button>
           <p class="games-scratch-msg" id="instant-msg-${play.id}" hidden></p>
@@ -424,9 +479,9 @@
         <article class="games-play-card" data-instant-id="${play.id}" data-instant-key="pick">
           <h4>Order #${esc(play.orderNumber)}</h4>
           <div class="games-pick-row">
-            ${[0, 1, 2].map((i) =>
-    `<button type="button" class="games-pick-card" data-pick="${i}"><span>?</span></button>`
-  ).join('')}
+            ${pickCardHtml('♠', '?', false, 0)}
+            ${pickCardHtml('♥', '?', false, 1)}
+            ${pickCardHtml('♦', '?', false, 2)}
           </div>
           <p class="games-scratch-msg" id="instant-msg-${play.id}" hidden></p>
         </article>`;
@@ -435,9 +490,9 @@
       <article class="games-play-card" data-instant-id="${play.id}" data-instant-key="vault">
         <h4>Order #${esc(play.orderNumber)}</h4>
         <div class="games-vault-row">
-          ${[0, 1, 2].map((i) =>
-    `<button type="button" class="games-vault-door" data-vault="${i}"><span>${['B', 'S', 'G'][i]}</span></button>`
-  ).join('')}
+          ${vaultDoorHtml('Bronze', false, 0)}
+          ${vaultDoorHtml('Silver', false, 1)}
+          ${vaultDoorHtml('Gold', false, 2)}
         </div>
         <p class="games-scratch-msg" id="instant-msg-${play.id}" hidden></p>
       </article>`;
@@ -506,7 +561,7 @@
               body: JSON.stringify({ boxIndex: Number(btn.dataset.box) })
             });
             card.querySelector('.games-mystery-row').innerHTML = (result.boxes || []).map((b) =>
-              `<div class="games-mystery-box revealed${b.winner ? ' is-winner' : ''}"><span>${esc(b.label)}</span></div>`
+              revealedMysteryBoxHtml(b)
             ).join('');
             if (msg) { msg.hidden = false; msg.textContent = result.prize ? `You won: ${result.prize.label}` : 'No prize'; }
             showPrizeWin(result);
@@ -521,7 +576,6 @@
     });
   }
 
-  const DICE_FACES = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
 
   function bindInstant() {
     document.querySelectorAll('[data-roll-dice]').forEach((btn) => {
@@ -536,7 +590,7 @@
           const result = await gamesApi(`/account/games/instant/dice/${id}/play`, { method: 'POST', body: '{}' });
           const dice = result.result?.dice || [1, 1];
           const row = card.querySelector('.games-dice-row');
-          row.innerHTML = dice.map((d) => `<div class="games-die is-rolled"><span>${DICE_FACES[d - 1] || d}</span></div>`).join('');
+          row.innerHTML = dice.map((d) => dieHtml(d, 'is-rolled')).join('');
           if (msg) { msg.hidden = false; msg.textContent = result.prize ? `You won: ${result.prize.label}` : 'No prize'; }
           showPrizeWin(result);
           setTimeout(() => loadGamesHub(), 2500);
@@ -562,8 +616,8 @@
               method: 'POST',
               body: JSON.stringify({ choice: Number(btn.dataset.pick) })
             });
-            card.querySelector('.games-pick-row').innerHTML = (result.result?.cards || []).map((c) =>
-              `<div class="games-pick-card revealed${c.winner ? ' is-winner' : ''}"><span>${esc(c.label)}</span></div>`
+            card.querySelector('.games-pick-row').innerHTML = (result.result?.cards || []).map((c, i) =>
+              revealedPickCardHtml(c, i)
             ).join('');
             if (msg) { msg.hidden = false; msg.textContent = result.prize ? `You won: ${result.prize.label}` : 'No prize'; }
             showPrizeWin(result);
@@ -591,8 +645,8 @@
               method: 'POST',
               body: JSON.stringify({ choice: Number(btn.dataset.vault) })
             });
-            card.querySelector('.games-vault-row').innerHTML = (result.result?.vaults || []).map((v) =>
-              `<div class="games-vault-door revealed${v.winner ? ' is-winner' : ''}"><span>${esc(v.label)}</span></div>`
+            card.querySelector('.games-vault-row').innerHTML = (result.result?.vaults || []).map((v, i) =>
+              revealedVaultDoorHtml(v, i)
             ).join('');
             if (msg) { msg.hidden = false; msg.textContent = result.prize ? `You won: ${result.prize.label}` : 'No prize'; }
             showPrizeWin(result);
@@ -656,7 +710,12 @@
         <div class="games-expand-body" id="games-expand-body"></div>
       </div>`;
     document.body.appendChild(modal);
-    const close = () => { modal.hidden = true; document.body.classList.remove('games-expand-open'); };
+    const close = () => {
+      modal.hidden = true;
+      document.body.classList.remove('games-expand-open');
+      modal.classList.remove('games-expand-modal--immersive');
+      modal.querySelector('.games-expand-panel').className = 'games-expand-panel';
+    };
     modal.querySelector('.games-expand-close').addEventListener('click', close);
     modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
     document.addEventListener('keydown', (e) => {
@@ -668,17 +727,26 @@
   function openArenaExpand(arena) {
     if (!arena || arena.dataset.expandable === '0') return;
     const modal = ensureExpandModal();
+    const type = arena.dataset.gameType || '';
+    const panel = modal.querySelector('.games-expand-panel');
     const title = arena.querySelector('.games-arena-head h2')?.textContent || 'Game';
     const body = arena.querySelector('.games-arena-body')?.innerHTML || '';
     const meta = arena.querySelector('.games-arena-meta')?.outerHTML || '';
     const prizes = arena.querySelector('.games-arena-prizes')?.outerHTML || '';
+    const guide = arena.querySelector('.games-arena-guide-row')?.innerHTML || '';
+    modal.classList.add('games-expand-modal--immersive');
+    panel.className = `games-expand-panel games-expand-panel--immersive games-expand-panel--${type}`;
     modal.querySelector('#games-expand-title').textContent = title;
-    modal.querySelector('#games-expand-body').innerHTML = `${meta}${prizes}<div class="games-expand-play">${body}</div>`;
+    modal.querySelector('#games-expand-body').innerHTML = `
+      <div class="games-expand-guide">${guide}</div>
+      ${meta}${prizes}
+      <div class="games-expand-play games-expand-play--${type}">${body}</div>`;
     modal.hidden = false;
     document.body.classList.add('games-expand-open');
     bindScratch();
     bindMystery();
     bindInstant();
+    bindExpand();
     tickCountdowns();
   }
 
@@ -686,8 +754,12 @@
     document.querySelectorAll('.games-arena[data-expandable="1"]').forEach((arena) => {
       if (arena.dataset.expandBound) return;
       arena.dataset.expandBound = '1';
+      arena.querySelector('.games-open-full')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openArenaExpand(arena);
+      });
       const open = (e) => {
-        if (e.target.closest('[data-no-expand], a, button, input, .games-scratch-tile, .games-mystery-box, .games-pick-card, .games-vault-door, .games-action-btn')) return;
+        if (e.target.closest('[data-no-expand], .games-open-full, a.games-guide-link, .games-scratch-tile, .games-mystery-box, .games-pick-card, .games-vault-door, .games-action-btn')) return;
         openArenaExpand(arena);
       };
       arena.addEventListener('click', open);
