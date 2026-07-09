@@ -6,8 +6,11 @@ const {
   processDueWheelDraws,
   scratchCard,
   playMysteryBox,
-  parseDays
+  parseDays,
+  buildGamesHubState,
+  isGamesEnabled
 } = require('./games-engine');
+const { sendHtmlPage } = require('./send-html-page');
 
 function mapWheelCampaign(row, db) {
   if (!row) return null;
@@ -47,7 +50,7 @@ function mapWheelCampaign(row, db) {
 }
 
 function mountGamesService(app, db, deps) {
-  const { requireAdmin, requireAuth, createUserNotification } = deps;
+  const { requireAdmin, requireAuth, createUserNotification, frontendDir, trackVisit } = deps;
   const engineDeps = {
     notify: (userId, type, title, body) => {
       try { createUserNotification?.(userId, type, title, body); } catch (_) { /* ignore */ }
@@ -56,54 +59,35 @@ function mountGamesService(app, db, deps) {
 
   setInterval(() => processDueWheelDraws(db, engineDeps), 60 * 1000);
 
-  // ── Buyer ──
+  app.get('/games', (req, res) => {
+    if (!isGamesEnabled(db)) return res.redirect(302, '/shop');
+    trackVisit?.(req);
+    sendHtmlPage(res, frontendDir, 'games.html');
+  });
+
+  app.get('/api/games', (req, res) => {
+    const userId = req.session?.userId || null;
+    res.json(buildGamesHubState(db, userId));
+  });
+
+  // ── Buyer (legacy dashboard API) ──
   app.get('/account/games', requireAuth, (req, res) => {
-    const userId = req.session.userId;
-    const wheels = db.prepare(`
-      SELECT c.* FROM game_wheel_campaigns c
-      WHERE c.is_enabled = 1
-      ORDER BY datetime(c.draw_at) DESC LIMIT 5
-    `).all().map((c) => {
-      const mapped = mapWheelCampaign(c, db);
-      mapped.mySlots = db.prepare(`
-        SELECT id, order_number AS orderNumber, display_name AS displayName, created_at AS createdAt
-        FROM game_wheel_slots WHERE campaign_id = ? AND user_id = ?
-      `).all(c.id, userId);
-      return mapped;
-    });
-
-    const scratchCards = db.prepare(`
-      SELECT sc.id, sc.order_number AS orderNumber, sc.token, sc.scratched_at AS scratchedAt,
-             sc.created_at AS createdAt, p.title AS poolTitle,
-             sp.label AS prizeLabel, sp.prize_type AS prizeType, sp.tile_style AS tileStyle
-      FROM game_scratch_cards sc
-      JOIN game_scratch_pools p ON p.id = sc.pool_id
-      LEFT JOIN game_scratch_prizes sp ON sp.id = sc.prize_id
-      WHERE sc.user_id = ?
-      ORDER BY sc.id DESC LIMIT 50
-    `).all(userId);
-
-    const mysteryPlays = db.prepare(`
-      SELECT mp.id, mp.order_number AS orderNumber, mp.played_at AS playedAt,
-             mp.created_at AS createdAt, p.title AS poolTitle,
-             pr.label AS prizeLabel, pr.prize_type AS prizeType
-      FROM game_mystery_plays mp
-      JOIN game_mystery_pools p ON p.id = mp.pool_id
-      LEFT JOIN game_mystery_prizes pr ON pr.id = mp.prize_id
-      WHERE mp.user_id = ?
-      ORDER BY mp.id DESC LIMIT 50
-    `).all(userId);
-
-    res.json({ wheels, scratchCards, mysteryPlays });
+    res.json(buildGamesHubState(db, req.session.userId));
   });
 
   app.post('/account/games/scratch/:id/play', requireAuth, (req, res) => {
+    const owned = db.prepare('SELECT id FROM game_scratch_cards WHERE id = ? AND user_id = ? AND scratched_at IS NULL')
+      .get(req.params.id, req.session.userId);
+    if (!owned) return res.status(403).json({ error: 'Purchase from the shop first to unlock a scratch card.' });
     const result = scratchCard(db, engineDeps, { cardId: req.params.id, userId: req.session.userId });
     if (result.error) return res.status(400).json({ error: result.error });
     res.json(result);
   });
 
   app.post('/account/games/mystery/:id/play', requireAuth, (req, res) => {
+    const owned = db.prepare('SELECT id FROM game_mystery_plays WHERE id = ? AND user_id = ? AND played_at IS NULL')
+      .get(req.params.id, req.session.userId);
+    if (!owned) return res.status(403).json({ error: 'Purchase from the shop first to unlock mystery box.' });
     const result = playMysteryBox(db, engineDeps, {
       playId: req.params.id,
       userId: req.session.userId,
@@ -115,8 +99,12 @@ function mountGamesService(app, db, deps) {
 
   // ── Admin settings ──
   app.get('/admin/games/settings', requireAdmin, (req, res) => {
-    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('games_enabled');
-    res.json({ gamesEnabled: (row?.value ?? '1') === '1' });
+    const enabled = db.prepare('SELECT value FROM settings WHERE key = ?').get('games_enabled');
+    const channel = db.prepare('SELECT value FROM settings WHERE key = ?').get('games_channel_url');
+    res.json({
+      gamesEnabled: (enabled?.value ?? '1') === '1',
+      channelUrl: channel?.value || 'https://t.me/loveriette'
+    });
   });
 
   app.put('/admin/games/settings', requireAdmin, (req, res) => {
@@ -125,6 +113,12 @@ function mountGamesService(app, db, deps) {
       INSERT INTO settings (key, value) VALUES ('games_enabled', ?)
       ON CONFLICT(key) DO UPDATE SET value = excluded.value
     `).run(enabled);
+    if (req.body?.channelUrl != null) {
+      db.prepare(`
+        INSERT INTO settings (key, value) VALUES ('games_channel_url', ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+      `).run(String(req.body.channelUrl).trim());
+    }
     res.json({ ok: true, gamesEnabled: enabled === '1' });
   });
 

@@ -5288,6 +5288,10 @@ button:hover {
   font-weight: 600;
 }
 
+a.buyer-dash-nav-link {
+  text-decoration: none;
+}
+
 .buyer-dash-sidebar-foot {
   display: flex;
   flex-direction: column;

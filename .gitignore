@@ -16,3 +16,5 @@ server.js/plugging-sessions/
 index.html/uploads/
 backups/
 *.bak
+server.js/ecom.db-shm
+server.js/ecom.db-wal

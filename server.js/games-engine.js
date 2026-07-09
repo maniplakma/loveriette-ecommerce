@@ -28,6 +28,142 @@ function isDayAvailable(availableDays, now = new Date()) {
   return parseDays(availableDays).includes(now.getDay());
 }
 
+function isGamesEnabled(db) {
+  return readSetting(db, 'games_enabled', '1') === '1';
+}
+
+function isWheelCampaignOpen(campaign, now = new Date()) {
+  if (!campaign || !campaign.is_enabled) return false;
+  if (campaign.status === 'drawn') return false;
+  return inDateRange(campaign.starts_at, campaign.ends_at, now)
+    && isDayAvailable(campaign.available_days, now);
+}
+
+function latestWheelCampaign(db) {
+  return db.prepare(`
+    SELECT * FROM game_wheel_campaigns
+    WHERE is_enabled = 1
+    ORDER BY datetime(draw_at) DESC, id DESC
+    LIMIT 1
+  `).get() || null;
+}
+
+function mapPrizeRows(rows) {
+  return (rows || []).map((p) => ({
+    id: p.id,
+    label: p.label,
+    prizeType: p.prize_type,
+    prizeValue: p.prize_value,
+    weight: p.weight,
+    tileStyle: p.tile_style
+  }));
+}
+
+function buildGamesHubState(db, userId = null) {
+  const enabled = isGamesEnabled(db);
+  const channelUrl = readSetting(db, 'games_channel_url', 'https://t.me/loveriette');
+  const now = new Date();
+  const wheelRow = latestWheelCampaign(db);
+  const scratchRow = db.prepare('SELECT * FROM game_scratch_pools ORDER BY id DESC LIMIT 1').get();
+  const mysteryRow = db.prepare('SELECT * FROM game_mystery_pools ORDER BY id DESC LIMIT 1').get();
+
+  const wheelOpen = enabled && isWheelCampaignOpen(wheelRow, now);
+  const scratchOpen = enabled && !!scratchRow?.is_enabled;
+  const mysteryOpen = enabled && !!mysteryRow?.is_enabled;
+
+  const wheelPrizes = wheelRow
+    ? mapPrizeRows(db.prepare('SELECT * FROM game_wheel_prizes WHERE campaign_id = ? ORDER BY sort_order, id').all(wheelRow.id))
+    : [];
+  const scratchPrizes = scratchRow
+    ? mapPrizeRows(db.prepare('SELECT * FROM game_scratch_prizes WHERE pool_id = ? ORDER BY id').all(scratchRow.id))
+    : [];
+  const mysteryPrizes = mysteryRow
+    ? mapPrizeRows(db.prepare('SELECT * FROM game_mystery_prizes WHERE pool_id = ? ORDER BY id').all(mysteryRow.id))
+    : [];
+
+  let wheelSlots = [];
+  let scratchCards = [];
+  let mysteryPlays = [];
+  if (userId) {
+    if (wheelRow) {
+      wheelSlots = db.prepare(`
+        SELECT id, order_number AS orderNumber, display_name AS displayName, created_at AS createdAt
+        FROM game_wheel_slots WHERE campaign_id = ? AND user_id = ?
+      `).all(wheelRow.id, userId);
+    }
+    scratchCards = db.prepare(`
+      SELECT sc.id, sc.order_number AS orderNumber, sc.scratched_at AS scratchedAt, sc.created_at AS createdAt,
+             sp.label AS prizeLabel, sp.prize_type AS prizeType, sp.tile_style AS tileStyle
+      FROM game_scratch_cards sc
+      LEFT JOIN game_scratch_prizes sp ON sp.id = sc.prize_id
+      WHERE sc.user_id = ?
+      ORDER BY sc.id DESC LIMIT 20
+    `).all(userId);
+    mysteryPlays = db.prepare(`
+      SELECT mp.id, mp.order_number AS orderNumber, mp.played_at AS playedAt, mp.created_at AS createdAt,
+             pr.label AS prizeLabel, pr.prize_type AS prizeType
+      FROM game_mystery_plays mp
+      LEFT JOIN game_mystery_prizes pr ON pr.id = mp.prize_id
+      WHERE mp.user_id = ?
+      ORDER BY mp.id DESC LIMIT 20
+    `).all(userId);
+  }
+
+  let wheelWinner = null;
+  if (wheelRow?.winner_slot_id) {
+    wheelWinner = db.prepare(`
+      SELECT display_name AS displayName, order_number AS orderNumber
+      FROM game_wheel_slots WHERE id = ?
+    `).get(wheelRow.winner_slot_id);
+  }
+
+  const wheelEntries = wheelRow
+    ? db.prepare('SELECT COUNT(*) AS c FROM game_wheel_slots WHERE campaign_id = ?').get(wheelRow.id).c
+    : 0;
+
+  return {
+    gamesEnabled: enabled,
+    channelUrl,
+    authenticated: !!userId,
+    wheel: wheelRow ? {
+      id: wheelRow.id,
+      title: wheelRow.title,
+      open: wheelOpen,
+      status: wheelRow.status,
+      drawAt: wheelRow.draw_at,
+      minOrderTotal: wheelRow.min_order_total,
+      prizes: wheelPrizes,
+      entryCount: wheelEntries,
+      winner: wheelWinner,
+      mySlots: wheelSlots,
+      canPlay: wheelOpen && wheelSlots.length > 0,
+      needsPurchase: wheelOpen && !wheelSlots.length
+    } : { open: false, title: 'Spin the Wheel', prizes: [], needsPurchase: false, canPlay: false },
+    scratch: scratchRow ? {
+      id: scratchRow.id,
+      title: scratchRow.title,
+      open: scratchOpen,
+      minOrderTotal: scratchRow.min_order_total,
+      prizes: scratchPrizes,
+      cards: scratchCards,
+      pending: scratchCards.filter((c) => !c.scratchedAt),
+      canPlay: scratchOpen && scratchCards.some((c) => !c.scratchedAt),
+      needsPurchase: scratchOpen && !scratchCards.length
+    } : { open: false, title: 'Scratch Cards', prizes: [], needsPurchase: false, canPlay: false },
+    mystery: mysteryRow ? {
+      id: mysteryRow.id,
+      title: mysteryRow.title,
+      open: mysteryOpen,
+      minOrderTotal: mysteryRow.min_order_total,
+      prizes: mysteryPrizes,
+      plays: mysteryPlays,
+      pending: mysteryPlays.filter((p) => !p.playedAt),
+      canPlay: mysteryOpen && mysteryPlays.some((p) => !p.playedAt),
+      needsPurchase: mysteryOpen && !mysteryPlays.length
+    } : { open: false, title: 'Mystery Box', prizes: [], needsPurchase: false, canPlay: false }
+  };
+}
+
 function activeWheelCampaign(db, now = new Date()) {
   const rows = db.prepare(`
     SELECT * FROM game_wheel_campaigns
@@ -155,7 +291,7 @@ function grantGamesForApprovedOrder(db, deps, order) {
         INSERT INTO game_scratch_cards (pool_id, user_id, order_id, order_number, token)
         VALUES (?, ?, ?, ?, ?)
       `).run(scratch.id, userId, orderId, orderNumber, token);
-      deps?.notify?.(userId, 'promo', 'Scratch card unlocked!', `Scratch your card in My Services for order #${orderNumber}.`);
+      deps?.notify?.(userId, 'promo', 'Scratch card unlocked!', `Scratch your card in Games for order #${orderNumber}.`);
     }
   }
 
@@ -167,7 +303,7 @@ function grantGamesForApprovedOrder(db, deps, order) {
         INSERT INTO game_mystery_plays (pool_id, user_id, order_id, order_number)
         VALUES (?, ?, ?, ?)
       `).run(mystery.id, userId, orderId, orderNumber);
-      deps?.notify?.(userId, 'promo', 'Mystery box ready!', `Pick a box in My Services for order #${orderNumber}.`);
+      deps?.notify?.(userId, 'promo', 'Mystery box ready!', `Pick a box in Games for order #${orderNumber}.`);
     }
   }
 }
@@ -303,6 +439,8 @@ function playMysteryBox(db, deps, { playId, userId, boxIndex }) {
 module.exports = {
   PRIZE_TYPES,
   parseDays,
+  isGamesEnabled,
+  buildGamesHubState,
   activeWheelCampaign,
   grantGamesForApprovedOrder,
   runWheelDraw,

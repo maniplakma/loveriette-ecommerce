@@ -21,16 +21,18 @@ const ICON_SVGS = {
   shield: '<svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>',
   zap: '<svg viewBox="0 0 24 24"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>',
   heart: '<svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>',
-  star: '<svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>'
+  star: '<svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>',
+  game: '<svg viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><line x1="6" y1="12" x2="10" y2="12"/><line x1="8" y1="10" x2="8" y2="14"/><circle cx="17" cy="10" r="1" fill="currentColor" stroke="none"/><circle cx="15" cy="13" r="1" fill="currentColor" stroke="none"/></svg>'
 };
 
 const DEFAULTS = {
   serviceCategories: {
     title: 'Our Services',
-    subtitle: 'Shop, websites, and plugging — one platform',
+    subtitle: 'Shop, games, plugging, and websites — one platform',
     items: [
-      { title: 'Plugging', desc: 'Telegram message auto forwarder — relay messages across your groups and channels automatically.', link: '/plugging', icon: 'plug', cta: 'View Plugging', primary: true },
-      { title: 'Shop', desc: 'Premium digital products, apps, and subscriptions delivered after payment verification.', link: '/shop', icon: 'cart', cta: 'Browse Shop' },
+      { title: 'Shop', desc: 'Premium digital products, apps, and subscriptions delivered after payment verification.', link: '/shop', icon: 'cart', cta: 'Browse Shop', primary: true },
+      { title: 'Games', desc: 'Spin the wheel, scratch cards, and mystery boxes — unlock with every approved shop order.', link: '/games', icon: 'game', cta: 'Play Games' },
+      { title: 'Plugging', desc: 'Telegram message auto forwarder — relay messages across your groups and channels automatically.', link: '/plugging', icon: 'plug', cta: 'View Plugging' },
       { title: 'Website Making', desc: 'Custom ecommerce sites, auto-order platforms, and ongoing maintenance for your brand.', link: '/website-making', icon: 'web', cta: 'View Packages' }
     ]
   },

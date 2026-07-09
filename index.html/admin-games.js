@@ -49,13 +49,19 @@
     const data = await api('/admin/games/settings');
     const toggle = document.getElementById('games-enabled-toggle');
     if (toggle) toggle.checked = !!data.gamesEnabled;
+    const channel = document.getElementById('games-channel-url');
+    if (channel) channel.value = data.channelUrl || 'https://t.me/loveriette';
   }
 
   async function saveGamesSettings() {
     const toggle = document.getElementById('games-enabled-toggle');
+    const channel = document.getElementById('games-channel-url');
     await api('/admin/games/settings', {
       method: 'PUT',
-      body: JSON.stringify({ gamesEnabled: !!toggle?.checked })
+      body: JSON.stringify({
+        gamesEnabled: !!toggle?.checked,
+        channelUrl: channel?.value || 'https://t.me/loveriette'
+      })
     });
   }
 
@@ -179,6 +185,9 @@
 
   function bindGamesForms() {
     document.getElementById('games-enabled-toggle')?.addEventListener('change', () => {
+      saveGamesSettings().catch((e) => alert(e.message));
+    });
+    document.getElementById('games-channel-url')?.addEventListener('change', () => {
       saveGamesSettings().catch((e) => alert(e.message));
     });
 
