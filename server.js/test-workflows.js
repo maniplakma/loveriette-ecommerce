@@ -872,6 +872,72 @@ async function runLoyaltyCheck(adminCookie) {
   db.prepare('UPDATE users SET wallet_balance = ? WHERE id = ?').run(buyer.wallet_balance, buyer.id);
 }
 
+async function runGamesCheck(adminCookie) {
+  console.log('\nShop games (order → slot)');
+  const email = `games-${Date.now()}@test.local`;
+  const reg = await request('POST', '/auth/register', { email, password: 'testpass123', name: 'Games QA' });
+  if (reg.status !== 201 && reg.status !== 200) { fail('games buyer register', reg.status); return; }
+  ok('games buyer registered');
+  const buyer = db.prepare('SELECT id FROM users WHERE LOWER(email) = ?').get(email.toLowerCase());
+  if (!buyer?.id) { fail('games buyer id', 'missing'); return; }
+
+  const drawAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  const wheel = await request('POST', '/admin/games/wheel', {
+    title: 'QA Wheel',
+    drawAt,
+    isEnabled: true,
+    availableDays: [0, 1, 2, 3, 4, 5, 6],
+    minOrderTotal: 0
+  }, adminCookie);
+  if (wheel.status !== 201) { fail('create wheel campaign', wheel.json?.error || wheel.status); return; }
+  ok('wheel campaign created');
+
+  await request('POST', `/admin/games/wheel/${wheel.json.id}/prizes`, {
+    label: 'Loyalty ₱400',
+    prizeType: 'wallet',
+    prizeValue: '400'
+  }, adminCookie);
+
+  await request('POST', '/admin/games/scratch', { title: 'QA Scratch', isEnabled: true, minOrderTotal: 0 }, adminCookie);
+  await request('POST', '/admin/games/mystery', { title: 'QA Mystery', isEnabled: true, minOrderTotal: 0 }, adminCookie);
+  ok('scratch + mystery pools enabled');
+
+  const pm = db.prepare('SELECT id FROM payment_methods WHERE is_active = 1 LIMIT 1').get();
+  const product = db.prepare('SELECT id FROM products ORDER BY id LIMIT 1').get();
+  const seq = db.prepare('SELECT COALESCE(MAX(order_seq), 0) + 1 AS n FROM orders').get().n;
+  const orderNumber = String(seq);
+  const ins = db.prepare(`
+    INSERT INTO orders (
+      order_number, order_seq, email, user_id, payment_method_id,
+      subtotal, discount, total, status, tingi_drop_enabled, fulfillment_mode, receipt_url
+    ) VALUES (?, ?, ?, ?, ?, 200, 0, 200, 'pending', 0, 'auto', '/uploads/receipts/test.png')
+  `).run(orderNumber, seq, email, buyer.id, pm.id);
+  const orderId = ins.lastInsertRowid;
+  db.prepare(`INSERT INTO order_items (order_id, product_id, product_name, quantity, price) VALUES (?, ?, 'Games Test', 1, 200)`)
+    .run(orderId, product.id);
+
+  const approveRes = await request('POST', `/admin/orders/${orderNumber}/approve`, {}, adminCookie);
+  if (approveRes.status !== 200) { fail('games order approve', approveRes.json?.error || approveRes.status); return; }
+
+  const slot = db.prepare('SELECT id FROM game_wheel_slots WHERE order_id = ?').get(orderId);
+  if (slot?.id) ok('wheel slot granted for approved order');
+  else fail('wheel slot granted', 'missing');
+
+  const scratch = db.prepare('SELECT id FROM game_scratch_cards WHERE order_id = ?').get(orderId);
+  if (scratch?.id) ok('scratch card granted');
+  else fail('scratch card granted', 'missing');
+
+  const mystery = db.prepare('SELECT id FROM game_mystery_plays WHERE order_id = ?').get(orderId);
+  if (mystery?.id) ok('mystery play granted');
+  else fail('mystery play granted', 'missing');
+
+  db.prepare('DELETE FROM game_mystery_plays WHERE order_id = ?').run(orderId);
+  db.prepare('DELETE FROM game_scratch_cards WHERE order_id = ?').run(orderId);
+  db.prepare('DELETE FROM game_wheel_slots WHERE order_id = ?').run(orderId);
+  db.prepare('DELETE FROM order_items WHERE order_id = ?').run(orderId);
+  db.prepare('DELETE FROM orders WHERE id = ?').run(orderId);
+}
+
 async function main() {
   console.log('Ecom workflow smoke tests');
   try {
@@ -882,6 +948,7 @@ async function main() {
     await runApiChecks(adminCookie);
     await runOrderFlowCheck(adminCookie);
     await runLoyaltyCheck(adminCookie);
+    await runGamesCheck(adminCookie);
     await runVariantDescriptionCheck(adminCookie);
     await runUserAdminCheck(adminCookie);
     await runRefundReportCheck(adminCookie);

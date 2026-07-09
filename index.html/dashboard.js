@@ -1749,6 +1749,9 @@ function switchPanel(panelId) {
   if (panelId === 'plugging' || panelId === 'webtech') {
     ensureServicesLoaded();
   }
+  if (panelId === 'games' && window.loadBuyerGames) {
+    window.loadBuyerGames();
+  }
   if (panelId === 'settings' && typeof loadSettings === 'function') {
     loadSettings();
   }

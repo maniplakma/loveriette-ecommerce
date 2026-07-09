@@ -7,6 +7,7 @@ const bcrypt = require('bcryptjs');
 const appConfig = require('./config');
 const db = require('./db');
 const { creditLoyaltyForPurchase } = require('./loyalty');
+const { grantGamesForApprovedOrder } = require('./games-engine');
 const { fetchLatestUnreadGmail, parseGmailFilters, getLastFetchedMessageId } = require('./gmail-fetch');
 const {
   oauthConfigured,
@@ -1911,6 +1912,9 @@ function markOrderApprovedAndFulfill(orderId) {
     orderRef: fullOrder.order_number || String(fullOrder.id),
     source: 'order'
   });
+  grantGamesForApprovedOrder(db, {
+    notify: (userId, type, title, body) => createUserNotification(userId, type, title, body)
+  }, fullOrder);
   return { ok: true };
 }
 
@@ -5894,7 +5898,8 @@ const platformHelpers = mountPlatformRoutes(app, db, {
   getVariants,
   variantAvailability,
   lowestUnitPrice,
-  parseBulkTiers
+  parseBulkTiers,
+  createUserNotification
 });
 
 app.use(express.static(appConfig.frontendDir, {

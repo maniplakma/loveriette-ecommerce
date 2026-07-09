@@ -7,6 +7,7 @@
     'active-purchases': 'My Purchases',
     plugging: 'Plugging',
     webtech: 'Webtech',
+    games: 'My Services',
     wallet: 'Wallet Activity',
     'email-access': 'Email Access',
     reports: 'Reports & Refunds',

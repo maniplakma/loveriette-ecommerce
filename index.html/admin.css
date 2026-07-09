@@ -2605,6 +2605,58 @@ a.admin-btn-success:hover { color: #fff; }
   word-break: break-all;
 }
 
+.admin-games-subtabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.admin-games-subtab {
+  padding: 0.45rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid var(--a-border, rgba(255,255,255,0.12));
+  background: transparent;
+  color: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.admin-games-subtab.active {
+  background: var(--a-accent, #e50914);
+  border-color: transparent;
+  color: #fff;
+}
+
+.admin-day-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.85rem;
+  font-size: 0.85rem;
+}
+
+.admin-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+}
+
+.admin-chip {
+  font-size: 0.72rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  background: var(--a-surface-2, rgba(255,255,255,0.06));
+}
+
+.admin-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.65rem;
+}
+
 /* ---------- UI icons (realistic stroke SVG) ---------- */
 .admin-ui-icon,
 .admin-panel-icon,
