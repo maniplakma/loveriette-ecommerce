@@ -20,6 +20,7 @@ function purgeGameRowsForOrder(orderId) {
   db.prepare('DELETE FROM game_mystery_plays WHERE order_id = ?').run(orderId);
   db.prepare('DELETE FROM game_scratch_cards WHERE order_id = ?').run(orderId);
   db.prepare('DELETE FROM game_wheel_slots WHERE order_id = ?').run(orderId);
+  db.prepare('DELETE FROM game_order_credits WHERE order_id = ?').run(orderId);
 }
 
 function request(method, urlPath, body, cookie) {
@@ -952,38 +953,17 @@ async function runGamesCheck(adminCookie) {
   const approveRes = await request('POST', `/admin/orders/${orderNumber}/approve`, {}, adminCookie);
   if (approveRes.status !== 200) { fail('games order approve', approveRes.json?.error || approveRes.status); return; }
 
+  const credit = db.prepare('SELECT id, chosen_game FROM game_order_credits WHERE order_id = ?').get(orderId);
+  if (credit?.id && !credit.chosen_game) ok('one game credit granted (pending choice)');
+  else fail('one game credit granted', credit?.id || 'missing');
+
   const slot = db.prepare('SELECT id FROM game_wheel_slots WHERE order_id = ?').get(orderId);
-  if (slot?.id) ok('wheel slot granted after delivery');
-  else fail('wheel slot granted after delivery', 'missing');
+  if (!slot?.id) ok('no auto wheel slot before game choice');
+  else fail('no auto wheel slot before game choice', 'unexpected slot');
 
   const scratch = db.prepare('SELECT id FROM game_scratch_cards WHERE order_id = ?').get(orderId);
-  if (scratch?.id) ok('scratch card granted');
-  else fail('scratch card granted', 'missing');
-
-  const mystery = db.prepare('SELECT id FROM game_mystery_plays WHERE order_id = ?').get(orderId);
-  if (mystery?.id) ok('mystery play granted');
-  else fail('mystery play granted', 'missing');
-
-  const dicePlay = db.prepare(`
-    SELECT ip.id FROM game_instant_plays ip
-    JOIN game_instant_pools p ON p.id = ip.pool_id WHERE ip.order_id = ? AND p.game_key = 'dice'
-  `).get(orderId);
-  if (dicePlay?.id) ok('dice play granted');
-  else fail('dice play granted', 'missing');
-
-  const pickPlay = db.prepare(`
-    SELECT ip.id FROM game_instant_plays ip
-    JOIN game_instant_pools p ON p.id = ip.pool_id WHERE ip.order_id = ? AND p.game_key = 'pick'
-  `).get(orderId);
-  if (pickPlay?.id) ok('pick play granted');
-  else fail('pick play granted', 'missing');
-
-  const vaultPlay = db.prepare(`
-    SELECT ip.id FROM game_instant_plays ip
-    JOIN game_instant_pools p ON p.id = ip.pool_id WHERE ip.order_id = ? AND p.game_key = 'vault'
-  `).get(orderId);
-  if (vaultPlay?.id) ok('vault play granted');
-  else fail('vault play granted', 'missing');
+  if (!scratch?.id) ok('no auto scratch before game choice');
+  else fail('no auto scratch before game choice', 'unexpected card');
 
   const hub = await request('GET', '/api/games');
   if (hub.status === 200 && hub.json.wheel && hub.json.scratch && hub.json.mystery
@@ -993,6 +973,9 @@ async function runGamesCheck(adminCookie) {
   if (hub.json.eligibility?.strict && hub.json.eligibility?.requiredQuantity === 3) {
     ok('games hub includes strict eligibility');
   } else fail('games hub eligibility', JSON.stringify(hub.json.eligibility || {}));
+
+  if (hub.json.eligibility?.oneGamePerPurchase) ok('games hub one-game-per-purchase flag');
+  else fail('games hub one-game-per-purchase', 'missing');
 
   if (hub.json.wheel?.entries != null && hub.json.recentWinners != null) ok('games hub wheel entries + recent winners');
   else fail('games hub wheel extras', 'missing entries or recentWinners');
@@ -1007,41 +990,42 @@ async function runGamesCheck(adminCookie) {
   else fail('games hub guides', JSON.stringify(hub.json.eligibility?.guides || {}));
 
   const login = await loginUser(email, 'testpass123');
-  if (login.cookie) {
-    const account = await request('GET', '/account/games', {}, login.cookie);
-    if (account.status === 200 && account.json.wheel?.mySlots?.length) ok('account games hub has wheel slot');
-    else fail('account games hub', account.json?.wheel?.mySlots?.length || account.status);
+  if (!login.cookie) { fail('games buyer login', login.status); return; }
 
-    const scratchRes = await request('POST', `/account/games/scratch/${scratch.id}/play`, {}, login.cookie);
-    if (scratchRes.status === 200 && scratchRes.json.ok) ok('played scratch card');
-    else fail('played scratch card', scratchRes.json?.error || scratchRes.status);
+  const accountBefore = await request('GET', '/account/games', {}, login.cookie);
+  if (accountBefore.status === 200 && accountBefore.json.hasPendingCredit) ok('account hub shows pending game choice');
+  else fail('account hub pending choice', accountBefore.json?.hasPendingCredit);
 
-    const mysteryRes = await request('POST', `/account/games/mystery/${mystery.id}/play`, { boxIndex: 1 }, login.cookie);
-    if (mysteryRes.status === 200 && mysteryRes.json.ok) ok('played mystery box');
-    else fail('played mystery box', mysteryRes.json?.error || mysteryRes.status);
+  const chooseScratch = await request('POST', `/account/games/credits/${credit.id}/choose`, { gameType: 'scratch' }, login.cookie);
+  if (chooseScratch.status === 200 && chooseScratch.json.gameType === 'scratch') ok('chose scratch for order');
+  else fail('chose scratch for order', chooseScratch.json?.error || chooseScratch.status);
 
-    const diceRes = await request('POST', `/account/games/instant/dice/${dicePlay.id}/play`, {}, login.cookie);
-    if (diceRes.status === 200 && diceRes.json.ok && diceRes.json.result?.dice?.length === 2) ok('played lucky dice');
-    else fail('played lucky dice', diceRes.json?.error || diceRes.status);
+  const chooseAgain = await request('POST', `/account/games/credits/${credit.id}/choose`, { gameType: 'dice' }, login.cookie);
+  if (chooseAgain.status === 400) ok('second game choice blocked');
+  else fail('second game choice blocked', chooseAgain.status);
 
-    const pickRes = await request('POST', `/account/games/instant/pick/${pickPlay.id}/play`, { choice: 0 }, login.cookie);
-    if (pickRes.status === 200 && pickRes.json.ok && pickRes.json.result?.cards?.length === 3) ok('played card flip');
-    else fail('played card flip', pickRes.json?.error || pickRes.status);
+  const scratchRow = db.prepare('SELECT id FROM game_scratch_cards WHERE order_id = ?').get(orderId);
+  if (scratchRow?.id) ok('scratch card created after choice');
+  else fail('scratch card created after choice', 'missing');
 
-    const vaultRes = await request('POST', `/account/games/instant/vault/${vaultPlay.id}/play`, { choice: 2 }, login.cookie);
-    if (vaultRes.status === 200 && vaultRes.json.ok && vaultRes.json.result?.vaults?.length === 3) ok('played treasure vault');
-    else fail('played treasure vault', vaultRes.json?.error || vaultRes.status);
+  const diceRow = db.prepare(`
+    SELECT ip.id FROM game_instant_plays ip
+    JOIN game_instant_pools p ON p.id = ip.pool_id WHERE ip.order_id = ? AND p.game_key = 'dice'
+  `).get(orderId);
+  if (!diceRow?.id) ok('dice not granted when scratch was chosen');
+  else fail('dice not granted when scratch was chosen', 'unexpected dice play');
 
-    const wheelDraw = await request('POST', `/admin/games/wheel/${wheel.json.id}/draw`, {}, adminCookie);
-    if (wheelDraw.status === 200 && wheelDraw.json.winners?.length) ok('wheel draw completed with winners');
-    else fail('wheel draw', wheelDraw.json?.error || wheelDraw.status);
+  const scratchRes = await request('POST', `/account/games/scratch/${scratchRow.id}/play`, {}, login.cookie);
+  if (scratchRes.status === 200 && scratchRes.json.ok) ok('played chosen scratch card');
+  else fail('played chosen scratch card', scratchRes.json?.error || scratchRes.status);
 
-    const accountAfter = await request('GET', '/account/games', {}, login.cookie);
-    const scratchDone = !(accountAfter.json.scratch?.cards || []).some((c) => !c.scratchedAt);
-    const mysteryDone = !(accountAfter.json.mystery?.plays || []).some((p) => !p.playedAt);
-    if (scratchDone && mysteryDone) ok('all instant plays marked complete in account hub');
-    else fail('games completion state', `scratch=${scratchDone} mystery=${mysteryDone}`);
-  } else fail('games buyer login', login.status);
+  const accountAfter = await request('GET', '/account/games', {}, login.cookie);
+  if (!accountAfter.json.hasPendingCredit) ok('pending choice cleared after pick');
+  else fail('pending choice cleared', 'still pending');
+
+  const scratchDone = !(accountAfter.json.scratch?.cards || []).some((c) => !c.scratchedAt);
+  if (scratchDone) ok('scratch marked complete');
+  else fail('scratch completion', 'not scratched');
 
   purgeGameRowsForOrder(orderId);
   db.prepare('DELETE FROM order_items WHERE order_id = ?').run(orderId);

@@ -279,6 +279,19 @@ function initGamesSchema(db) {
     CREATE INDEX IF NOT EXISTS idx_game_mystery_plays_user ON game_mystery_plays(user_id);
     CREATE INDEX IF NOT EXISTS idx_game_instant_plays_user ON game_instant_plays(user_id);
 
+    CREATE TABLE IF NOT EXISTS game_order_credits (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id INTEGER NOT NULL UNIQUE,
+      user_id INTEGER NOT NULL,
+      order_number TEXT NOT NULL,
+      chosen_game TEXT,
+      chosen_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (order_id) REFERENCES orders(id),
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_game_order_credits_user ON game_order_credits(user_id);
+
     CREATE TABLE IF NOT EXISTS game_wheel_winners (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       campaign_id INTEGER NOT NULL,

@@ -7,6 +7,9 @@ const {
   scratchCard,
   playMysteryBox,
   playInstantGame,
+  chooseGameForCredit,
+  orderAllowsGamePlay,
+  playDeniedMessage,
   parseDays,
   buildGamesHubState,
   isGamesEnabled
@@ -101,12 +104,26 @@ function mountGamesService(app, db, deps) {
     res.json(buildGamesHubState(db, req.session.userId));
   });
 
+  app.post('/account/games/credits/:id/choose', requireAuth, (req, res) => {
+    const gameType = String(req.body?.gameType || '').trim();
+    const result = chooseGameForCredit(db, engineDeps, {
+      creditId: Number(req.params.id),
+      userId: req.session.userId,
+      gameType
+    });
+    if (result.error) return res.status(400).json({ error: result.error });
+    res.json(result);
+  });
+
   app.post('/account/games/scratch/:id/play', requireAuth, (req, res) => {
     const owned = db.prepare('SELECT id, order_id FROM game_scratch_cards WHERE id = ? AND user_id = ? AND scratched_at IS NULL')
       .get(req.params.id, req.session.userId);
     if (!owned) return res.status(403).json({ error: gamesDeniedError(db) });
     if (!orderQualifiesForGames(db, owned.order_id)) {
       return res.status(403).json({ error: gamesDeniedError(db) });
+    }
+    if (!orderAllowsGamePlay(db, owned.order_id, 'scratch')) {
+      return res.status(403).json({ error: playDeniedMessage(db, owned.order_id) });
     }
     const result = scratchCard(db, engineDeps, { cardId: req.params.id, userId: req.session.userId });
     if (result.error) return res.status(400).json({ error: result.error });
@@ -119,6 +136,9 @@ function mountGamesService(app, db, deps) {
     if (!owned) return res.status(403).json({ error: gamesDeniedError(db) });
     if (!orderQualifiesForGames(db, owned.order_id)) {
       return res.status(403).json({ error: gamesDeniedError(db) });
+    }
+    if (!orderAllowsGamePlay(db, owned.order_id, 'mystery')) {
+      return res.status(403).json({ error: playDeniedMessage(db, owned.order_id) });
     }
     const result = playMysteryBox(db, engineDeps, {
       playId: req.params.id,
@@ -138,6 +158,9 @@ function mountGamesService(app, db, deps) {
     if (!owned) return res.status(403).json({ error: gamesDeniedError(db) });
     if (!orderQualifiesForGames(db, owned.order_id)) {
       return res.status(403).json({ error: gamesDeniedError(db) });
+    }
+    if (!orderAllowsGamePlay(db, owned.order_id, req.params.key)) {
+      return res.status(403).json({ error: playDeniedMessage(db, owned.order_id) });
     }
     const result = playInstantGame(db, engineDeps, {
       playId: req.params.id,

@@ -110,6 +110,75 @@
     return `<div class="games-vault-door revealed games-vault-door--${t}${v.winner ? ' is-winner' : ''}">${inner}</div>`;
   }
 
+  const GAME_LABELS = {
+    wheel: 'Spin the Wheel',
+    scratch: 'Scratch Card',
+    mystery: 'Mystery Box',
+    dice: 'Lucky Dice',
+    pick: 'Card Flip',
+    vault: 'Treasure Vault'
+  };
+
+  function renderPendingChoices(state) {
+    const credits = state.pendingCredits || [];
+    const open = new Set(state.openGamesForChoice || []);
+    if (!credits.length) return '';
+    return `
+      <section class="games-choice-panel" id="games-choice-panel" aria-live="polite">
+        <h2 class="games-choice-title">Pick ONE game per purchase</h2>
+        <p class="games-choice-note">Each delivered order unlocks a single game — choose wisely. This cannot be changed.</p>
+        ${credits.map((credit) => `
+          <article class="games-choice-card" data-credit-id="${credit.id}">
+            <header class="games-choice-head">
+              <strong>Order #${esc(credit.orderNumber)}</strong>
+              <span class="games-choice-badge">Choose now</span>
+            </header>
+            <div class="games-choice-grid">
+              ${Object.keys(GAME_LABELS).map((key) => {
+    const enabled = open.has(key);
+    return `<button type="button" class="games-choice-btn" data-choose-game="${key}" data-credit-id="${credit.id}"${enabled ? '' : ' disabled title="Game closed"'}>${esc(GAME_LABELS[key])}</button>`;
+  }).join('')}
+            </div>
+          </article>
+        `).join('')}
+      </section>`;
+  }
+
+  function bindGameChoices() {
+    document.querySelectorAll('.games-choice-btn:not([disabled])').forEach((btn) => {
+      if (btn.dataset.choiceBound) return;
+      btn.dataset.choiceBound = '1';
+      btn.addEventListener('click', async () => {
+        const creditId = btn.dataset.creditId;
+        const gameType = btn.dataset.chooseGame;
+        const label = GAME_LABELS[gameType] || gameType;
+        if (!confirm(`Use order credit for ${label}? You cannot change this later.`)) return;
+        btn.disabled = true;
+        try {
+          await gamesApi(`/account/games/credits/${creditId}/choose`, {
+            method: 'POST',
+            body: JSON.stringify({ gameType })
+          });
+          if (typeof window.showToast === 'function') window.showToast(`Locked to ${label}`, 'success');
+          loadGamesHub();
+        } catch (err) {
+          btn.disabled = false;
+          if (typeof window.showToast === 'function') window.showToast(err.message, 'error');
+          else alert(err.message);
+        }
+      });
+    });
+  }
+
+  function pendingChoiceGate(state) {
+    if (!state.hasPendingCredit) return '';
+    return `
+      <div class="games-arena-gate games-arena-gate--compact games-arena-gate--choice">
+        ${icon('wheel', 'games-icon--gate')}
+        <div><strong>Pick your game above</strong><span>One purchase = one game. Choose in the panel before playing.</span></div>
+      </div>`;
+  }
+
   function prizeChips(prizes) {
     if (!prizes?.length) return '<p class="games-meta">Prizes coming soon</p>';
     return `<div class="games-prize-chips">${prizes.map((p) => {
@@ -347,7 +416,8 @@
     }
     const gate = resolveGate(game, state);
     const parts = [];
-    if (gate) parts.push(gateBanner(gate, state.channelUrl, game.minOrderTotal, state.eligibility));
+    if (state.hasPendingCredit && !game.canPlay) parts.push(pendingChoiceGate(state));
+    else if (gate) parts.push(gateBanner(gate, state.channelUrl, game.minOrderTotal, state.eligibility));
     if (game.canPlay && playHtml) parts.push(playHtml);
     else parts.push(demoFn());
     return parts.join('');
@@ -818,6 +888,10 @@
     }
     renderRecentWinners(data.recentWinners);
     const grid = document.getElementById('games-arena-grid');
+    const choiceMount = document.getElementById('games-choice-mount');
+    if (choiceMount) {
+      choiceMount.innerHTML = data.hasPendingCredit ? renderPendingChoices(data) : '';
+    }
     if (!grid) return;
     grid.innerHTML = [
       renderWheel(data.wheel || {}, data),
@@ -831,6 +905,7 @@
     bindMystery();
     bindInstant();
     bindExpand();
+    bindGameChoices();
     startCountdowns();
   }
 

@@ -215,9 +215,13 @@ function buildGamesHubState(db, userId = null) {
     ? db.prepare('SELECT COUNT(*) AS c FROM game_wheel_slots WHERE campaign_id = ?').get(wheelRow.id).c
     : 0;
 
-  const dice = buildInstantHubGame(db, 'dice', userId, enabled);
-  const pick = buildInstantHubGame(db, 'pick', userId, enabled);
-  const vault = buildInstantHubGame(db, 'vault', userId, enabled);
+  const pendingCredits = userId ? listPendingCredits(db, userId) : [];
+  const hasPendingCredit = pendingCredits.length > 0;
+  const openGamesForChoice = GAME_TYPES.filter((key) => isGameTypeOpen(db, key, 0));
+
+  const dice = buildInstantHubGame(db, 'dice', userId, enabled, hasPendingCredit);
+  const pick = buildInstantHubGame(db, 'pick', userId, enabled, hasPendingCredit);
+  const vault = buildInstantHubGame(db, 'vault', userId, enabled, hasPendingCredit);
 
   const recentWinners = getRecentPrizeWinners(db, 8);
 
@@ -227,6 +231,9 @@ function buildGamesHubState(db, userId = null) {
     authenticated: !!userId,
     previewExamples: true,
     eligibility: buildEligibilityHub(db),
+    pendingCredits,
+    hasPendingCredit,
+    openGamesForChoice,
     recentWinners,
     wheel: wheelRow ? {
       id: wheelRow.id,
@@ -245,7 +252,7 @@ function buildGamesHubState(db, userId = null) {
       winners: wheelWinners,
       mySlots: wheelSlots,
       canPlay: wheelOpen && wheelSlots.length > 0,
-      needsPurchase: wheelOpen && !wheelSlots.length
+      needsPurchase: wheelOpen && !wheelSlots.length && !hasPendingCredit
     } : { open: false, visible: false, title: 'Spin the Wheel', prizes: [], needsPurchase: false, canPlay: false },
     scratch: scratchRow ? {
       id: scratchRow.id,
@@ -258,7 +265,7 @@ function buildGamesHubState(db, userId = null) {
       cards: scratchCards,
       pending: scratchCards.filter((c) => !c.scratchedAt),
       canPlay: scratchOpen && scratchCards.some((c) => !c.scratchedAt),
-      needsPurchase: scratchOpen && !scratchCards.length
+      needsPurchase: scratchOpen && !scratchCards.length && !hasPendingCredit
     } : { open: false, title: 'Scratch Cards', prizes: [], needsPurchase: false, canPlay: false },
     mystery: mysteryRow ? {
       id: mysteryRow.id,
@@ -271,7 +278,7 @@ function buildGamesHubState(db, userId = null) {
       plays: mysteryPlays,
       pending: mysteryPlays.filter((p) => !p.playedAt),
       canPlay: mysteryOpen && mysteryPlays.some((p) => !p.playedAt),
-      needsPurchase: mysteryOpen && !mysteryPlays.length
+      needsPurchase: mysteryOpen && !mysteryPlays.length && !hasPendingCredit
     } : { open: false, title: 'Mystery Box', prizes: [], needsPurchase: false, canPlay: false },
     dice,
     pick,
@@ -285,7 +292,7 @@ const INSTANT_DEFAULTS = {
   vault: 'Treasure Vault'
 };
 
-function buildInstantHubGame(db, gameKey, userId, enabled) {
+function buildInstantHubGame(db, gameKey, userId, enabled, hasPendingCredit = false) {
   const pool = db.prepare('SELECT * FROM game_instant_pools WHERE game_key = ?').get(gameKey);
   const fallbackTitle = INSTANT_DEFAULTS[gameKey] || 'Instant Game';
   if (!pool) {
@@ -325,7 +332,7 @@ function buildInstantHubGame(db, gameKey, userId, enabled) {
     plays,
     pending: plays.filter((p) => !p.playedAt),
     canPlay: open && plays.some((p) => !p.playedAt),
-    needsPurchase: open && !plays.length
+    needsPurchase: open && !plays.length && !hasPendingCredit
   };
 }
 
@@ -538,6 +545,157 @@ function fulfillPrize(db, deps, { userId, prize, orderRef, source }) {
   return { fulfilled: true, message: label, manual: true, fulfillment };
 }
 
+const GAME_TYPES = ['wheel', 'scratch', 'mystery', 'dice', 'pick', 'vault'];
+
+function getOrderCredit(db, orderId) {
+  return db.prepare('SELECT * FROM game_order_credits WHERE order_id = ?').get(orderId) || null;
+}
+
+function listPendingCredits(db, userId) {
+  return db.prepare(`
+    SELECT id, order_id AS orderId, order_number AS orderNumber, created_at AS createdAt
+    FROM game_order_credits
+    WHERE user_id = ? AND chosen_game IS NULL
+    ORDER BY id ASC
+  `).all(userId);
+}
+
+function orderAllowsGamePlay(db, orderId, gameType) {
+  const credit = getOrderCredit(db, orderId);
+  if (!credit) return true;
+  if (!credit.chosen_game) return false;
+  return credit.chosen_game === gameType;
+}
+
+function playDeniedMessage(db, orderId) {
+  const credit = getOrderCredit(db, orderId);
+  if (credit && !credit.chosen_game) {
+    return 'Pick ONE game for this order in the Games hub before playing.';
+  }
+  if (credit && credit.chosen_game) {
+    const labels = {
+      wheel: 'Spin the Wheel',
+      scratch: 'Scratch Cards',
+      mystery: 'Mystery Box',
+      dice: 'Lucky Dice',
+      pick: 'Card Flip',
+      vault: 'Treasure Vault'
+    };
+    return `This order is locked to ${labels[credit.chosen_game] || credit.chosen_game} only.`;
+  }
+  return eligibilityMessage(db);
+}
+
+function isGameTypeOpen(db, gameType, orderTotal = 0) {
+  const enabled = isGamesEnabled(db);
+  const now = new Date();
+  const total = Number(orderTotal) || 0;
+  if (gameType === 'wheel') {
+    const wheel = resolveWheelCampaign(db, now);
+    return enabled && isWheelCampaignOpen(wheel, now) && total >= Number(wheel?.min_order_total || 0);
+  }
+  if (gameType === 'scratch') {
+    const pool = activeScratchPool(db);
+    return isScratchPoolOpen(pool, enabled, now) && total >= Number(pool?.min_order_total || 0);
+  }
+  if (gameType === 'mystery') {
+    const pool = activeMysteryPool(db);
+    return isMysteryPoolOpen(pool, enabled, now) && total >= Number(pool?.min_order_total || 0);
+  }
+  const pool = activeInstantPool(db, gameType);
+  return pool && isInstantPoolOpen(pool, enabled, now) && total >= Number(pool.min_order_total || 0);
+}
+
+function grantSingleGameForOrder(db, deps, order, gameType) {
+  const userId = resolveUserId(db, { userId: order.user_id, email: order.email });
+  if (!userId) return;
+  const orderId = order.id;
+  const orderNumber = String(order.order_number || order.id);
+  const displayName = displayNameForUser(db, userId, order.email);
+  const total = Number(order.total) || 0;
+
+  if (gameType === 'wheel') {
+    const wheel = activeWheelCampaign(db);
+    if (!wheel || total < Number(wheel.min_order_total || 0)) return;
+    const exists = db.prepare('SELECT id FROM game_wheel_slots WHERE order_id = ?').get(orderId);
+    if (exists) return;
+    db.prepare(`
+      INSERT INTO game_wheel_slots (campaign_id, user_id, order_id, order_number, display_name)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(wheel.id, userId, orderId, orderNumber, displayName);
+    deps?.notify?.(userId, 'promo', 'Spin the Wheel entry!', `Order #${orderNumber} — you chose the wheel. Good luck!`);
+    return;
+  }
+
+  if (gameType === 'scratch') {
+    const scratch = activeScratchPool(db);
+    if (!scratch || total < Number(scratch.min_order_total || 0)) return;
+    const exists = db.prepare('SELECT id FROM game_scratch_cards WHERE order_id = ?').get(orderId);
+    if (exists) return;
+    db.prepare(`
+      INSERT INTO game_scratch_cards (pool_id, user_id, order_id, order_number, token)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(scratch.id, userId, orderId, orderNumber, genToken());
+    deps?.notify?.(userId, 'promo', 'Scratch card ready!', `Order #${orderNumber} — scratch your card in Games.`);
+    return;
+  }
+
+  if (gameType === 'mystery') {
+    const mystery = activeMysteryPool(db);
+    if (!mystery || total < Number(mystery.min_order_total || 0)) return;
+    const exists = db.prepare('SELECT id FROM game_mystery_plays WHERE order_id = ?').get(orderId);
+    if (exists) return;
+    db.prepare(`
+      INSERT INTO game_mystery_plays (pool_id, user_id, order_id, order_number)
+      VALUES (?, ?, ?, ?)
+    `).run(mystery.id, userId, orderId, orderNumber);
+    deps?.notify?.(userId, 'promo', 'Mystery box ready!', `Order #${orderNumber} — pick a box in Games.`);
+    return;
+  }
+
+  const pool = activeInstantPool(db, gameType);
+  if (!pool || total < Number(pool.min_order_total || 0)) return;
+  const exists = db.prepare('SELECT id FROM game_instant_plays WHERE order_id = ? AND pool_id = ?').get(orderId, pool.id);
+  if (exists) return;
+  db.prepare(`
+    INSERT INTO game_instant_plays (pool_id, user_id, order_id, order_number)
+    VALUES (?, ?, ?, ?)
+  `).run(pool.id, userId, orderId, orderNumber);
+  const label = INSTANT_DEFAULTS[gameType] || 'Game';
+  deps?.notify?.(userId, 'promo', `${label} unlocked!`, `Order #${orderNumber} — play in Games.`);
+}
+
+function chooseGameForCredit(db, deps, { creditId, userId, gameType }) {
+  if (!GAME_TYPES.includes(gameType)) return { error: 'Invalid game type' };
+
+  const credit = db.prepare('SELECT * FROM game_order_credits WHERE id = ? AND user_id = ?').get(creditId, userId);
+  if (!credit) return { error: 'Game credit not found' };
+  if (credit.chosen_game) return { error: 'You already chose a game for this order' };
+  if (!orderQualifiesForGames(db, credit.order_id)) return { error: eligibilityMessage(db) };
+
+  const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(credit.order_id);
+  if (!order) return { error: 'Order not found' };
+  if (!isGameTypeOpen(db, gameType, order.total)) return { error: 'This game is not open right now' };
+
+  const now = new Date().toISOString();
+  try {
+    db.exec('BEGIN');
+    const updated = db.prepare(`
+      UPDATE game_order_credits SET chosen_game = ?, chosen_at = ? WHERE id = ? AND chosen_game IS NULL
+    `).run(gameType, now, creditId);
+    if (!updated.changes) {
+      db.exec('ROLLBACK');
+      return { error: 'Game already chosen for this order' };
+    }
+    grantSingleGameForOrder(db, deps, order, gameType);
+    db.exec('COMMIT');
+    return { ok: true, gameType, orderNumber: credit.order_number };
+  } catch (err) {
+    try { db.exec('ROLLBACK'); } catch (_) { /* ignore */ }
+    return { error: err.message || 'Could not lock game choice' };
+  }
+}
+
 function tryGrantGamesForDeliveredOrder(db, deps, orderId) {
   if (!orderIsDeliveredForGames(db, orderId)) return;
   const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
@@ -552,62 +710,22 @@ function grantGamesForApprovedOrder(db, deps, order) {
   if (!orderIsDeliveredForGames(db, order.id)) return;
   if (!orderQualifiesForGames(db, order.id)) return;
 
-  const total = Number(order.total) || 0;
   const orderId = order.id;
   const orderNumber = String(order.order_number || order.id);
-  const displayName = displayNameForUser(db, userId, order.email);
+  const exists = db.prepare('SELECT id FROM game_order_credits WHERE order_id = ?').get(orderId);
+  if (exists) return;
 
-  const wheel = activeWheelCampaign(db);
-  if (wheel && total >= Number(wheel.min_order_total || 0)) {
-    const exists = db.prepare('SELECT id FROM game_wheel_slots WHERE order_id = ?').get(orderId);
-    if (!exists) {
-      db.prepare(`
-        INSERT INTO game_wheel_slots (campaign_id, user_id, order_id, order_number, display_name)
-        VALUES (?, ?, ?, ?, ?)
-      `).run(wheel.id, userId, orderId, orderNumber, displayName);
-      deps?.notify?.(userId, 'promo', 'Spin the Wheel entry!', `Order #${orderNumber} is delivered — you earned a slot on "${wheel.title}".`);
-    }
-  }
+  db.prepare(`
+    INSERT INTO game_order_credits (order_id, user_id, order_number, created_at)
+    VALUES (?, ?, ?, ?)
+  `).run(orderId, userId, orderNumber, new Date().toISOString());
 
-  const scratch = activeScratchPool(db);
-  if (scratch && total >= Number(scratch.min_order_total || 0)) {
-    const exists = db.prepare('SELECT id FROM game_scratch_cards WHERE order_id = ?').get(orderId);
-    if (!exists) {
-      const token = genToken();
-      db.prepare(`
-        INSERT INTO game_scratch_cards (pool_id, user_id, order_id, order_number, token)
-        VALUES (?, ?, ?, ?, ?)
-      `).run(scratch.id, userId, orderId, orderNumber, token);
-      deps?.notify?.(userId, 'promo', 'Scratch card unlocked!', `Scratch your card in Games for order #${orderNumber}.`);
-    }
-  }
-
-  const mystery = activeMysteryPool(db);
-  if (mystery && total >= Number(mystery.min_order_total || 0)) {
-    const exists = db.prepare('SELECT id FROM game_mystery_plays WHERE order_id = ?').get(orderId);
-    if (!exists) {
-      db.prepare(`
-        INSERT INTO game_mystery_plays (pool_id, user_id, order_id, order_number)
-        VALUES (?, ?, ?, ?)
-      `).run(mystery.id, userId, orderId, orderNumber);
-      deps?.notify?.(userId, 'promo', 'Mystery box ready!', `Pick a box in Games for order #${orderNumber}.`);
-    }
-  }
-
-  for (const gameKey of ['dice', 'pick', 'vault']) {
-    const pool = activeInstantPool(db, gameKey);
-    if (pool && total >= Number(pool.min_order_total || 0)) {
-      const exists = db.prepare('SELECT id FROM game_instant_plays WHERE order_id = ? AND pool_id = ?').get(orderId, pool.id);
-      if (!exists) {
-        db.prepare(`
-          INSERT INTO game_instant_plays (pool_id, user_id, order_id, order_number)
-          VALUES (?, ?, ?, ?)
-        `).run(pool.id, userId, orderId, orderNumber);
-        const label = INSTANT_DEFAULTS[gameKey] || 'Game';
-        deps?.notify?.(userId, 'promo', `${label} unlocked!`, `Play in Games for order #${orderNumber}.`);
-      }
-    }
-  }
+  deps?.notify?.(
+    userId,
+    'promo',
+    'Choose your game!',
+    `Order #${orderNumber} is delivered — pick ONE game in the Games hub.`
+  );
 }
 
 function runWheelDraw(db, deps, campaignId) {
@@ -708,6 +826,9 @@ function scratchCard(db, deps, { cardId, userId }) {
   const card = db.prepare('SELECT * FROM game_scratch_cards WHERE id = ? AND user_id = ?').get(cardId, userId);
   if (!card) return { error: 'Card not found' };
   if (card.scratched_at) return { error: 'Already scratched' };
+  if (!orderAllowsGamePlay(db, card.order_id, 'scratch')) {
+    return { error: playDeniedMessage(db, card.order_id) };
+  }
 
   const prizes = db.prepare('SELECT * FROM game_scratch_prizes WHERE pool_id = ?').all(card.pool_id);
   const prize = pickWeightedPrize(prizes);
@@ -739,6 +860,9 @@ function playMysteryBox(db, deps, { playId, userId, boxIndex }) {
   const play = db.prepare('SELECT * FROM game_mystery_plays WHERE id = ? AND user_id = ?').get(playId, userId);
   if (!play) return { error: 'Game not found' };
   if (play.played_at) return { error: 'Already played' };
+  if (!orderAllowsGamePlay(db, play.order_id, 'mystery')) {
+    return { error: playDeniedMessage(db, play.order_id) };
+  }
 
   const prizes = db.prepare('SELECT * FROM game_mystery_prizes WHERE pool_id = ?').all(play.pool_id);
   const prize = pickWeightedPrize(prizes);
@@ -782,6 +906,9 @@ function playInstantGame(db, deps, { playId, userId, gameKey, choice }) {
   if (!play) return { error: 'Game not found' };
   if (play.played_at) return { error: 'Already played' };
   if (gameKey && play.gameKey !== gameKey) return { error: 'Invalid game' };
+  if (!orderAllowsGamePlay(db, play.order_id, play.gameKey)) {
+    return { error: playDeniedMessage(db, play.order_id) };
+  }
 
   const prizes = db.prepare('SELECT * FROM game_instant_prizes WHERE pool_id = ?').all(play.pool_id);
   const prize = pickWeightedPrize(prizes);
@@ -849,6 +976,11 @@ module.exports = {
   activeWheelCampaign,
   grantGamesForApprovedOrder,
   tryGrantGamesForDeliveredOrder,
+  chooseGameForCredit,
+  listPendingCredits,
+  orderAllowsGamePlay,
+  playDeniedMessage,
+  GAME_TYPES,
   runWheelDraw,
   processDueWheelDraws,
   scratchCard,

@@ -94,11 +94,12 @@ function orderQualifiesForGames(db, orderId) {
 function eligibilityMessage(db) {
   const rules = getGamesRules(db);
   const products = getEligibleProducts(db, rules.productIds);
+  const choiceNote = 'Each qualifying purchase unlocks ONE game — pick yours after delivery.';
   if (!rules.strict || !rules.productIds.length) {
-    return 'Purchase from the shop — games unlock after your order is delivered.';
+    return `Purchase from the shop — ${choiceNote}`;
   }
   const names = products.map((p) => p.name).join(', ') || 'selected account products';
-  return `Buy at least ${rules.requiredQuantity} quantity of ${names} — play unlocks once delivered.`;
+  return `Buy at least ${rules.requiredQuantity} quantity of ${names} — ${choiceNote}`;
 }
 
 function buildEligibilityHub(db) {
@@ -110,7 +111,8 @@ function buildEligibilityHub(db) {
     products: products.map((p) => ({ id: p.id, name: p.name })),
     telegramHandle: rules.telegramHandle,
     guides: rules.guides,
-    message: eligibilityMessage(db)
+    message: eligibilityMessage(db),
+    oneGamePerPurchase: true
   };
 }
 
