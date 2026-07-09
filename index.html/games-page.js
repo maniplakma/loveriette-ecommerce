@@ -1,5 +1,7 @@
 /* Games hub — /games */
 (function () {
+  let hubEligibility = null;
+
   function esc(s) {
     return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   }
@@ -32,15 +34,19 @@
     ).join('')}</div>`;
   }
 
-  function arenaShell({ type, title, open, statusLabel, body, prizesHtml }) {
+  function arenaShell({ type, title, open, statusLabel, body, prizesHtml, guideUrl }) {
     const state = open ? 'open' : 'closed';
     const status = open ? (statusLabel || 'Open') : 'Closed';
+    const guide = guideUrl
+      ? `<a href="${esc(guideUrl)}" class="games-guide-link" target="_blank" rel="noopener noreferrer">How to play</a>`
+      : '';
     return `
       <article class="games-arena games-arena--${state} games-arena--${type}">
         <div class="games-arena-glow" aria-hidden="true"></div>
         <header class="games-arena-head">
           ${icon(type, 'games-icon--head')}
           <h2>${esc(title)}</h2>
+          ${guide}
           <span class="games-arena-status games-arena-status--${state}">${esc(status)}</span>
         </header>
         ${open && prizesHtml ? `<div class="games-arena-prizes"><h3 class="games-arena-sub">Prizes</h3>${prizesHtml}</div>` : ''}
@@ -58,14 +64,14 @@
       </div>`;
   }
 
-  function gateBanner(kind, channelUrl, minTotal) {
+  function gateBanner(kind, channelUrl, minTotal, elig) {
     if (kind === 'closed') return closedBody(channelUrl);
-    const min = Number(minTotal) > 0 ? ` (min. ₱${minTotal})` : '';
+    const purchaseMsg = elig?.message || 'Shop order → unlock after approval';
     if (kind === 'purchase') {
       return `
         <div class="games-arena-gate games-arena-gate--compact">
           ${icon('cart', 'games-icon--gate')}
-          <div><strong>Purchase to play</strong><span>Shop order${min} → unlock after approval</span></div>
+          <div><strong>Purchase to play</strong><span>${esc(purchaseMsg)}</span></div>
           <a href="/shop" class="games-shop-btn games-shop-btn--sm">Shop</a>
         </div>`;
     }
@@ -158,11 +164,59 @@
     return null;
   }
 
+  function guideFor(state, type) {
+    return state?.eligibility?.guides?.[type] || `/guide.html#game-${type}`;
+  }
+
+  function showPrizeWin(result) {
+    const f = result?.fulfillment;
+    const prize = result?.prize;
+    if (!f || f.type === 'none') return;
+    let modal = document.getElementById('games-prize-modal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'games-prize-modal';
+      modal.className = 'games-prize-modal';
+      modal.innerHTML = '<div class="games-prize-modal-card" role="dialog" aria-modal="true"><button type="button" class="games-prize-modal-close" aria-label="Close">&times;</button><div id="games-prize-modal-body"></div></div>';
+      document.body.appendChild(modal);
+      modal.querySelector('.games-prize-modal-close').addEventListener('click', () => modal.hidden = true);
+      modal.addEventListener('click', (e) => { if (e.target === modal) modal.hidden = true; });
+    }
+    const body = modal.querySelector('#games-prize-modal-body');
+    const label = esc(prize?.label || f.label || 'Prize');
+    let inner = `<h3 class="games-prize-modal-title">You won!</h3><p class="games-prize-modal-prize">${label}</p>`;
+
+    if (f.type === 'loyalty' || f.type === 'wallet') {
+      inner += `<p class="games-prize-modal-msg">${esc(f.message || `₱${f.amount} credited automatically.`)}</p>`;
+      inner += '<p class="games-prize-modal-note">Check your wallet — we also sent a notification.</p>';
+    } else if (f.type === 'redeem' && f.code) {
+      inner += `<p class="games-prize-modal-msg">${esc(f.message || 'Your voucher is ready.')}</p>`;
+      inner += `<div class="games-prize-code-row"><code id="games-prize-code">${esc(f.code)}</code><button type="button" class="games-shop-btn games-shop-btn--sm" id="games-copy-code">Copy code</button></div>`;
+    } else if (f.type === 'product') {
+      inner += `<p class="games-prize-modal-msg">${esc(f.instruction || f.message)}</p>`;
+      inner += `<p class="games-prize-modal-telegram">Send screenshot to <strong>${esc(f.telegram || '@loveriette')}</strong> on Telegram</p>`;
+      inner += '<p class="games-prize-modal-note">Take a screenshot of this screen before closing.</p>';
+    } else {
+      inner += `<p class="games-prize-modal-msg">${esc(f.message || '')}</p>`;
+    }
+
+    body.innerHTML = inner;
+    modal.hidden = false;
+    const copyBtn = document.getElementById('games-copy-code');
+    if (copyBtn && f.code) {
+      copyBtn.addEventListener('click', () => {
+        navigator.clipboard?.writeText(f.code).then(() => {
+          copyBtn.textContent = 'Copied!';
+        }).catch(() => { copyBtn.textContent = f.code; });
+      }, { once: true });
+    }
+  }
+
   function wrapPlay(game, state, type, demoFn, playHtml) {
     const gate = resolveGate(game, state);
     if (!game.open) return closedBody(state.channelUrl);
     const parts = [];
-    if (gate) parts.push(gateBanner(gate, state.channelUrl, game.minOrderTotal));
+    if (gate) parts.push(gateBanner(gate, state.channelUrl, game.minOrderTotal, state.eligibility));
     if (game.canPlay && playHtml) parts.push(playHtml);
     else parts.push(demoFn());
     return parts.join('');
@@ -195,6 +249,7 @@
       open: game.open,
       statusLabel: drawn ? 'Drawn' : 'Open',
       prizesHtml: prizeChips(game.prizes),
+      guideUrl: guideFor(state, 'wheel'),
       body: game.open ? wrapPlay(game, state, 'wheel', demoWheel, play) : closedBody(state.channelUrl)
     });
   }
@@ -224,6 +279,7 @@
       title: game.title || 'Scratch Cards',
       open: game.open,
       prizesHtml: prizeChips(game.prizes),
+      guideUrl: guideFor(state, 'scratch'),
       body: wrapPlay(game, state, 'scratch', demoScratch, play)
     });
   }
@@ -252,6 +308,7 @@
       title: game.title || 'Mystery Box',
       open: game.open,
       prizesHtml: prizeChips(game.prizes),
+      guideUrl: guideFor(state, 'mystery'),
       body: wrapPlay(game, state, 'mystery', demoMystery, pending.map(mysteryPlay).join(''))
     });
   }
@@ -302,6 +359,7 @@
       title: game.title || INSTANT_TITLES[type],
       open: game.open,
       prizesHtml: prizeChips(game.prizes),
+      guideUrl: guideFor(state, type),
       body: wrapPlay(game, state, type, demoFn, instantPlay(game, state))
     });
   }
@@ -328,7 +386,8 @@
           const label = result.prize?.label || 'No prize';
           grid.innerHTML = `<div class="games-scratch-reveal">${esc(label)}</div>`;
           if (msg) { msg.hidden = false; msg.textContent = `You won: ${label}`; }
-          setTimeout(() => loadGamesHub(), 1500);
+          showPrizeWin(result);
+          setTimeout(() => loadGamesHub(), 2500);
         } catch (err) {
           if (msg) { msg.hidden = false; msg.className = 'games-scratch-msg is-error'; msg.textContent = err.message; }
           revealed = false;
@@ -357,7 +416,8 @@
               `<div class="games-mystery-box revealed${b.winner ? ' is-winner' : ''}"><span>${esc(b.label)}</span></div>`
             ).join('');
             if (msg) { msg.hidden = false; msg.textContent = result.prize ? `You won: ${result.prize.label}` : 'No prize'; }
-            setTimeout(() => loadGamesHub(), 2000);
+            showPrizeWin(result);
+            setTimeout(() => loadGamesHub(), 2500);
           } catch (err) {
             if (msg) { msg.hidden = false; msg.className = 'games-scratch-msg is-error'; msg.textContent = err.message; }
             delete card.dataset.playing;
@@ -385,7 +445,8 @@
           const row = card.querySelector('.games-dice-row');
           row.innerHTML = dice.map((d) => `<div class="games-die is-rolled"><span>${DICE_FACES[d - 1] || d}</span></div>`).join('');
           if (msg) { msg.hidden = false; msg.textContent = result.prize ? `You won: ${result.prize.label}` : 'No prize'; }
-          setTimeout(() => loadGamesHub(), 2000);
+          showPrizeWin(result);
+          setTimeout(() => loadGamesHub(), 2500);
         } catch (err) {
           if (msg) { msg.hidden = false; msg.className = 'games-scratch-msg is-error'; msg.textContent = err.message; }
           btn.disabled = false;
@@ -412,7 +473,8 @@
               `<div class="games-pick-card revealed${c.winner ? ' is-winner' : ''}"><span>${esc(c.label)}</span></div>`
             ).join('');
             if (msg) { msg.hidden = false; msg.textContent = result.prize ? `You won: ${result.prize.label}` : 'No prize'; }
-            setTimeout(() => loadGamesHub(), 2000);
+            showPrizeWin(result);
+            setTimeout(() => loadGamesHub(), 2500);
           } catch (err) {
             if (msg) { msg.hidden = false; msg.className = 'games-scratch-msg is-error'; msg.textContent = err.message; }
             delete card.dataset.playing;
@@ -440,7 +502,8 @@
               `<div class="games-vault-door revealed${v.winner ? ' is-winner' : ''}"><span>${esc(v.label)}</span></div>`
             ).join('');
             if (msg) { msg.hidden = false; msg.textContent = result.prize ? `You won: ${result.prize.label}` : 'No prize'; }
-            setTimeout(() => loadGamesHub(), 2000);
+            showPrizeWin(result);
+            setTimeout(() => loadGamesHub(), 2500);
           } catch (err) {
             if (msg) { msg.hidden = false; msg.className = 'games-scratch-msg is-error'; msg.textContent = err.message; }
             delete card.dataset.playing;
@@ -451,6 +514,11 @@
   }
 
   function renderHub(data) {
+    hubEligibility = data.eligibility || null;
+    const intro = document.getElementById('games-hub-intro');
+    if (intro && data.eligibility?.message) {
+      intro.querySelector('p').textContent = data.eligibility.message;
+    }
     const grid = document.getElementById('games-arena-grid');
     if (!grid) return;
     grid.innerHTML = [

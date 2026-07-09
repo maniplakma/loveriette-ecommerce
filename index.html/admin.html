@@ -659,7 +659,28 @@
             <h2>Shop Games</h2>
             <label class="admin-toggle"><input type="checkbox" id="games-enabled-toggle"> <span>Enable games for buyers</span></label>
           </div>
-          <p class="admin-card-meta">One approved shop order = one entry per active game. Configure prizes below.</p>
+          <p class="admin-card-meta">Strict eligibility: buyer must order the required quantity of selected account products. One qualifying order = one play per game.</p>
+          <div class="admin-games-eligibility" style="margin-top:.75rem">
+            <label class="admin-toggle"><input type="checkbox" id="games-strict-toggle" checked> <span>Strict product eligibility</span></label>
+            <div class="admin-field" style="margin-top:.5rem;max-width:160px">
+              <label for="games-required-qty">Required quantity per order</label>
+              <input type="number" id="games-required-qty" class="admin-modal-input" min="1" value="3">
+            </div>
+            <div class="admin-field" style="margin-top:.5rem;max-width:420px">
+              <label for="games-telegram-handle">Telegram for product prizes</label>
+              <input type="text" id="games-telegram-handle" class="admin-modal-input" placeholder="@loveriette">
+            </div>
+            <div class="admin-field" style="margin-top:.5rem">
+              <label for="games-required-products">Eligible products (accounts)</label>
+              <select id="games-required-products" class="admin-modal-input" multiple size="6" style="min-height:8rem"></select>
+              <small class="admin-card-meta">Hold Ctrl/Cmd to select multiple products.</small>
+            </div>
+            <div class="admin-field" style="margin-top:.75rem">
+              <label>How-to-play guide links (one per game)</label>
+              <div id="games-guide-fields" class="admin-guide-grid"></div>
+            </div>
+            <button type="button" class="admin-btn admin-btn-primary admin-btn-sm" id="games-eligibility-save" style="margin-top:.5rem">Save eligibility &amp; guides</button>
+          </div>
           <div class="admin-field" style="margin-top:.75rem;max-width:420px">
             <label for="games-channel-url">Telegram channel (closed games CTA)</label>
             <input type="url" id="games-channel-url" class="admin-modal-input" placeholder="https://t.me/loveriette">

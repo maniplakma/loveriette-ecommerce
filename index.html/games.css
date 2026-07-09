@@ -559,3 +559,101 @@
   .games-vault-door { flex: 1 1 28%; min-width: 68px; }
   .games-scratch-grid { max-width: 100%; }
 }
+
+.games-guide-link {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--games-accent);
+  text-decoration: none;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--games-accent) 35%, transparent);
+  white-space: nowrap;
+}
+
+.games-guide-link:hover {
+  background: color-mix(in srgb, var(--games-accent) 12%, transparent);
+}
+
+.games-prize-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(4px);
+}
+
+.games-prize-modal[hidden] { display: none !important; }
+
+.games-prize-modal-card {
+  position: relative;
+  width: min(100%, 400px);
+  padding: 1.35rem 1.25rem;
+  border-radius: 18px;
+  background: linear-gradient(155deg, var(--surface, #1a0a0c), var(--bg, #080404));
+  border: 1px solid color-mix(in srgb, var(--games-accent) 40%, transparent);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+}
+
+.games-prize-modal-close {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.65rem;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 1.5rem;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.games-prize-modal-title {
+  margin: 0 0 0.35rem;
+  font-size: 1.1rem;
+  color: var(--games-accent);
+}
+
+.games-prize-modal-prize {
+  margin: 0 0 0.65rem;
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+.games-prize-modal-msg,
+.games-prize-modal-note,
+.games-prize-modal-telegram {
+  margin: 0.35rem 0;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.games-prize-code-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.games-prize-code-row code {
+  flex: 1;
+  padding: 0.55rem 0.75rem;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: #e6c35c;
+}
+
+.admin-guide-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}

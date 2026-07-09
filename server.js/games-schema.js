@@ -278,6 +278,19 @@ function initGamesSchema(db) {
     CREATE INDEX IF NOT EXISTS idx_game_scratch_cards_user ON game_scratch_cards(user_id);
     CREATE INDEX IF NOT EXISTS idx_game_mystery_plays_user ON game_mystery_plays(user_id);
     CREATE INDEX IF NOT EXISTS idx_game_instant_plays_user ON game_instant_plays(user_id);
+
+    CREATE TABLE IF NOT EXISTS game_prize_awards (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      prize_type TEXT NOT NULL,
+      prize_label TEXT NOT NULL,
+      redeem_code TEXT,
+      order_ref TEXT,
+      source TEXT,
+      fulfillment_json TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
   `);
 
   const settings = db.prepare('SELECT value FROM settings WHERE key = ?').get('games_enabled');
@@ -287,6 +300,18 @@ function initGamesSchema(db) {
   const channel = db.prepare('SELECT value FROM settings WHERE key = ?').get('games_channel_url');
   if (!channel) {
     db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('games_channel_url', 'https://t.me/loveriette');
+  }
+  const tg = db.prepare('SELECT value FROM settings WHERE key = ?').get('games_telegram_handle');
+  if (!tg) {
+    db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('games_telegram_handle', '@loveriette');
+  }
+  const qty = db.prepare('SELECT value FROM settings WHERE key = ?').get('games_required_quantity');
+  if (!qty) {
+    db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('games_required_quantity', '3');
+  }
+  const strict = db.prepare('SELECT value FROM settings WHERE key = ?').get('games_strict_eligibility');
+  if (!strict) {
+    db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('games_strict_eligibility', '1');
   }
 
   try { seedDefaultGames(db); } catch (err) {

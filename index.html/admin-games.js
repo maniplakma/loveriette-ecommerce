@@ -4,17 +4,29 @@
     { v: 0, l: 'Sun' }, { v: 1, l: 'Mon' }, { v: 2, l: 'Tue' }, { v: 3, l: 'Wed' },
     { v: 4, l: 'Thu' }, { v: 5, l: 'Fri' }, { v: 6, l: 'Sat' }
   ];
+  const GAME_KEYS = [
+    { key: 'wheel', label: 'Spin the Wheel' },
+    { key: 'scratch', label: 'Scratch Cards' },
+    { key: 'mystery', label: 'Mystery Box' },
+    { key: 'dice', label: 'Lucky Dice' },
+    { key: 'pick', label: 'Card Flip' },
+    { key: 'vault', label: 'Treasure Vault' }
+  ];
   const PRIZE_TYPES = [
     { v: 'wallet', l: 'Wallet credit (₱)' },
-    { v: 'loyalty', l: 'Loyalty points (₱)' },
+    { v: 'loyalty', l: 'Loyalty points — auto credit + notify' },
+    { v: 'redeem', l: 'Voucher / redeem code — auto issue + copy' },
+    { v: 'product', l: 'Product prize — Telegram screenshot' },
+    { v: 'account', l: 'Account prize — Telegram screenshot' },
+    { v: 'netflix', l: 'Netflix / streaming — Telegram screenshot' },
     { v: 'plug_access', l: 'Plug access' },
-    { v: 'netflix', l: 'Netflix / account' },
     { v: 'custom', l: 'Custom prize' },
     { v: 'none', l: 'No prize' },
     { v: 'bomb', l: 'Bomb (scratch)' }
   ];
 
   let gamesLoaded = false;
+  let catalogProducts = [];
 
   function esc(s) {
     return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
@@ -31,17 +43,23 @@
     return data;
   }
 
-  function toLocalInput(iso) {
-    if (!iso) return '';
-    const d = new Date(iso.includes('T') ? iso : `${iso.replace(' ', 'T')}Z`);
-    if (Number.isNaN(d.getTime())) return '';
-    const pad = (n) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  function renderGuideFields(guides = {}) {
+    const wrap = document.getElementById('games-guide-fields');
+    if (!wrap) return;
+    wrap.innerHTML = GAME_KEYS.map((g) => `
+      <div class="admin-field">
+        <label>${esc(g.label)} guide URL</label>
+        <input type="text" class="admin-modal-input games-guide-input" data-guide-key="${g.key}"
+          value="${esc(guides[g.key] || `/guide.html#game-${g.key}`)}" placeholder="/guide.html#game-${g.key}">
+      </div>`).join('');
   }
 
-  function prizeTypeOptions(selected) {
-    return PRIZE_TYPES.map((p) =>
-      `<option value="${p.v}"${p.v === selected ? ' selected' : ''}>${esc(p.l)}</option>`
+  function fillProductSelect(selectedIds) {
+    const sel = document.getElementById('games-required-products');
+    if (!sel) return;
+    const set = new Set((selectedIds || []).map(Number));
+    sel.innerHTML = catalogProducts.map((p) =>
+      `<option value="${p.id}"${set.has(Number(p.id)) ? ' selected' : ''}>${esc(p.name)} (#${p.id})</option>`
     ).join('');
   }
 
@@ -51,16 +69,37 @@
     if (toggle) toggle.checked = !!data.gamesEnabled;
     const channel = document.getElementById('games-channel-url');
     if (channel) channel.value = data.channelUrl || 'https://t.me/loveriette';
+    const strict = document.getElementById('games-strict-toggle');
+    if (strict) strict.checked = data.strictEligibility !== false;
+    const qty = document.getElementById('games-required-qty');
+    if (qty) qty.value = data.requiredQuantity || 3;
+    const tg = document.getElementById('games-telegram-handle');
+    if (tg) tg.value = data.telegramHandle || '@loveriette';
+    fillProductSelect(data.productIds || []);
+    renderGuideFields(data.guides || {});
   }
 
   async function saveGamesSettings() {
     const toggle = document.getElementById('games-enabled-toggle');
     const channel = document.getElementById('games-channel-url');
+    const strict = document.getElementById('games-strict-toggle');
+    const qty = document.getElementById('games-required-qty');
+    const tg = document.getElementById('games-telegram-handle');
+    const sel = document.getElementById('games-required-products');
+    const guides = {};
+    document.querySelectorAll('.games-guide-input').forEach((inp) => {
+      guides[inp.dataset.guideKey] = inp.value.trim();
+    });
     await api('/admin/games/settings', {
       method: 'PUT',
       body: JSON.stringify({
         gamesEnabled: !!toggle?.checked,
-        channelUrl: channel?.value || 'https://t.me/loveriette'
+        channelUrl: channel?.value || 'https://t.me/loveriette',
+        strictEligibility: !!strict?.checked,
+        requiredQuantity: Number(qty?.value || 3),
+        telegramHandle: tg?.value || '@loveriette',
+        productIds: [...(sel?.selectedOptions || [])].map((o) => Number(o.value)),
+        guides
       })
     });
   }
@@ -113,8 +152,8 @@
   function openPrizeModal(kind, parentId) {
     const label = prompt('Prize label (e.g. Loyalty ₱400, Netflix Solo)');
     if (!label) return;
-    const type = prompt('Type: wallet, loyalty, plug_access, netflix, custom, none, bomb', 'custom');
-    const value = prompt('Value (amount for wallet/loyalty, or notes)', '');
+    const type = prompt('Type: loyalty, redeem, product, wallet, account, netflix, plug_access, custom, none, bomb', 'loyalty');
+    const value = prompt('Value: amount for loyalty/wallet; {"discountValue":50} for voucher; empty for product', '');
     const url = kind === 'wheel'
       ? `/admin/games/wheel/${parentId}/prizes`
       : kind === 'scratch'
@@ -147,7 +186,6 @@
           <span class="admin-badge">${p.isEnabled ? 'ON' : 'OFF'}</span>
         </div>
         <p class="admin-muted">Min order: ₱${p.min_order_total || p.minOrderTotal || 0}</p>
-        <p><strong>Prizes:</strong></p>
         <ul>${(p.prizes || []).map((pr) =>
     `<li>${esc(pr.label)} <small>(${esc(pr.prizeType)} · weight ${pr.weight})</small></li>`
   ).join('') || '<li>None — add prizes</li>'}</ul>
@@ -189,6 +227,9 @@
     });
     document.getElementById('games-channel-url')?.addEventListener('change', () => {
       saveGamesSettings().catch((e) => alert(e.message));
+    });
+    document.getElementById('games-eligibility-save')?.addEventListener('click', () => {
+      saveGamesSettings().then(() => alert('Games eligibility saved.')).catch((e) => alert(e.message));
     });
 
     document.getElementById('admin-wheel-create-form')?.addEventListener('submit', async (e) => {
@@ -263,6 +304,11 @@
     const root = document.getElementById('tab-games');
     if (!root || root.hidden) return;
     bindGamesForms();
+    try {
+      catalogProducts = await api('/admin/products');
+    } catch (_) {
+      catalogProducts = [];
+    }
     await loadGamesSettings();
     await Promise.all([loadWheelAdmin(), loadScratchAdmin(), loadMysteryAdmin()]);
     gamesLoaded = true;

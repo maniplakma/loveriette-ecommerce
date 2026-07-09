@@ -12,6 +12,16 @@ const {
   isGamesEnabled
 } = require('./games-engine');
 const { sendHtmlPage } = require('./send-html-page');
+const {
+  buildEligibilityHub,
+  saveGamesRules,
+  orderQualifiesForGames,
+  eligibilityMessage
+} = require('./games-eligibility');
+
+function gamesDeniedError(db) {
+  return eligibilityMessage(db);
+}
 
 function mapWheelCampaign(row, db) {
   if (!row) return null;
@@ -77,18 +87,24 @@ function mountGamesService(app, db, deps) {
   });
 
   app.post('/account/games/scratch/:id/play', requireAuth, (req, res) => {
-    const owned = db.prepare('SELECT id FROM game_scratch_cards WHERE id = ? AND user_id = ? AND scratched_at IS NULL')
+    const owned = db.prepare('SELECT id, order_id FROM game_scratch_cards WHERE id = ? AND user_id = ? AND scratched_at IS NULL')
       .get(req.params.id, req.session.userId);
-    if (!owned) return res.status(403).json({ error: 'Purchase from the shop first to unlock a scratch card.' });
+    if (!owned) return res.status(403).json({ error: gamesDeniedError(db) });
+    if (!orderQualifiesForGames(db, owned.order_id)) {
+      return res.status(403).json({ error: gamesDeniedError(db) });
+    }
     const result = scratchCard(db, engineDeps, { cardId: req.params.id, userId: req.session.userId });
     if (result.error) return res.status(400).json({ error: result.error });
     res.json(result);
   });
 
   app.post('/account/games/mystery/:id/play', requireAuth, (req, res) => {
-    const owned = db.prepare('SELECT id FROM game_mystery_plays WHERE id = ? AND user_id = ? AND played_at IS NULL')
+    const owned = db.prepare('SELECT id, order_id FROM game_mystery_plays WHERE id = ? AND user_id = ? AND played_at IS NULL')
       .get(req.params.id, req.session.userId);
-    if (!owned) return res.status(403).json({ error: 'Purchase from the shop first to unlock mystery box.' });
+    if (!owned) return res.status(403).json({ error: gamesDeniedError(db) });
+    if (!orderQualifiesForGames(db, owned.order_id)) {
+      return res.status(403).json({ error: gamesDeniedError(db) });
+    }
     const result = playMysteryBox(db, engineDeps, {
       playId: req.params.id,
       userId: req.session.userId,
@@ -100,11 +116,14 @@ function mountGamesService(app, db, deps) {
 
   app.post('/account/games/instant/:key/:id/play', requireAuth, (req, res) => {
     const owned = db.prepare(`
-      SELECT ip.id FROM game_instant_plays ip
+      SELECT ip.id, ip.order_id FROM game_instant_plays ip
       JOIN game_instant_pools p ON p.id = ip.pool_id
       WHERE ip.id = ? AND ip.user_id = ? AND ip.played_at IS NULL AND p.game_key = ?
     `).get(req.params.id, req.session.userId, req.params.key);
-    if (!owned) return res.status(403).json({ error: 'Purchase from the shop first to unlock this game.' });
+    if (!owned) return res.status(403).json({ error: gamesDeniedError(db) });
+    if (!orderQualifiesForGames(db, owned.order_id)) {
+      return res.status(403).json({ error: gamesDeniedError(db) });
+    }
     const result = playInstantGame(db, engineDeps, {
       playId: req.params.id,
       userId: req.session.userId,
@@ -119,9 +138,16 @@ function mountGamesService(app, db, deps) {
   app.get('/admin/games/settings', requireAdmin, (req, res) => {
     const enabled = db.prepare('SELECT value FROM settings WHERE key = ?').get('games_enabled');
     const channel = db.prepare('SELECT value FROM settings WHERE key = ?').get('games_channel_url');
+    const hub = buildEligibilityHub(db);
     res.json({
       gamesEnabled: (enabled?.value ?? '1') === '1',
-      channelUrl: channel?.value || 'https://t.me/loveriette'
+      channelUrl: channel?.value || 'https://t.me/loveriette',
+      requiredQuantity: hub.requiredQuantity,
+      productIds: hub.products.map((p) => p.id),
+      products: hub.products,
+      telegramHandle: hub.telegramHandle,
+      guides: hub.guides,
+      strictEligibility: hub.strict
     });
   });
 
@@ -137,6 +163,13 @@ function mountGamesService(app, db, deps) {
         ON CONFLICT(key) DO UPDATE SET value = excluded.value
       `).run(String(req.body.channelUrl).trim());
     }
+    saveGamesRules(db, {
+      requiredQuantity: req.body?.requiredQuantity,
+      productIds: req.body?.productIds,
+      telegramHandle: req.body?.telegramHandle,
+      guides: req.body?.guides,
+      strictEligibility: req.body?.strictEligibility
+    });
     res.json({ ok: true, gamesEnabled: enabled === '1' });
   });
 

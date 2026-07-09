@@ -912,6 +912,16 @@ async function runGamesCheck(adminCookie) {
 
   const pm = db.prepare('SELECT id FROM payment_methods WHERE is_active = 1 LIMIT 1').get();
   const product = db.prepare('SELECT id FROM products ORDER BY id LIMIT 1').get();
+  const eligSettings = await request('PUT', '/admin/games/settings', {
+    gamesEnabled: true,
+    strictEligibility: true,
+    requiredQuantity: 3,
+    productIds: [product.id],
+    telegramHandle: '@loveriette'
+  }, adminCookie);
+  if (eligSettings.status !== 200) { fail('games eligibility settings', eligSettings.json?.error || eligSettings.status); return; }
+  ok('games strict eligibility configured (3 qty)');
+
   const seq = db.prepare('SELECT COALESCE(MAX(order_seq), 0) + 1 AS n FROM orders').get().n;
   const orderNumber = String(seq);
   const ins = db.prepare(`
@@ -921,7 +931,7 @@ async function runGamesCheck(adminCookie) {
     ) VALUES (?, ?, ?, ?, ?, 200, 0, 200, 'pending', 0, 'auto', '/uploads/receipts/test.png')
   `).run(orderNumber, seq, email, buyer.id, pm.id);
   const orderId = ins.lastInsertRowid;
-  db.prepare(`INSERT INTO order_items (order_id, product_id, product_name, quantity, price) VALUES (?, ?, 'Games Test', 1, 200)`)
+  db.prepare(`INSERT INTO order_items (order_id, product_id, product_name, quantity, price) VALUES (?, ?, 'Games Test', 3, 200)`)
     .run(orderId, product.id);
 
   const approveRes = await request('POST', `/admin/orders/${orderNumber}/approve`, {}, adminCookie);
@@ -950,6 +960,10 @@ async function runGamesCheck(adminCookie) {
   if (hub.status === 200 && hub.json.wheel && hub.json.scratch && hub.json.mystery
       && hub.json.dice && hub.json.pick && hub.json.vault) ok('GET /api/games hub (6 games)');
   else fail('GET /api/games hub', hub.status);
+
+  if (hub.json.eligibility?.strict && hub.json.eligibility?.requiredQuantity === 3) {
+    ok('games hub includes strict eligibility');
+  } else fail('games hub eligibility', JSON.stringify(hub.json.eligibility || {}));
 
   const gamesPage = await request('GET', '/games');
   const pageBody = gamesPage.json?.raw || '';

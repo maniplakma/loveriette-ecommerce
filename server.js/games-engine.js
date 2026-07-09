@@ -1,9 +1,16 @@
 'use strict';
 
 const crypto = require('crypto');
+const {
+  orderQualifiesForGames,
+  eligibilityMessage,
+  buildEligibilityHub,
+  getGamesRules
+} = require('./games-eligibility');
 
 const PRIZE_TYPES = new Set([
-  'none', 'bomb', 'wallet', 'loyalty', 'plug_access', 'custom', 'netflix', 'account'
+  'none', 'bomb', 'wallet', 'loyalty', 'plug_access', 'custom', 'netflix', 'account',
+  'product', 'redeem', 'voucher'
 ]);
 
 function readSetting(db, key, fallback) {
@@ -130,6 +137,7 @@ function buildGamesHubState(db, userId = null) {
     channelUrl,
     authenticated: !!userId,
     previewExamples: true,
+    eligibility: buildEligibilityHub(db),
     wheel: wheelRow ? {
       id: wheelRow.id,
       title: wheelRow.title,
@@ -286,46 +294,148 @@ function pickWeightedPrize(prizes) {
   return available[available.length - 1];
 }
 
+function recordPrizeAward(db, { userId, prize, orderRef, source, fulfillment }) {
+  try {
+    db.prepare(`
+      INSERT INTO game_prize_awards (user_id, prize_type, prize_label, redeem_code, order_ref, source, fulfillment_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      userId,
+      String(prize?.prize_type || 'none'),
+      String(prize?.label || 'Prize'),
+      fulfillment?.code || null,
+      String(orderRef || ''),
+      String(source || ''),
+      JSON.stringify(fulfillment || {})
+    );
+  } catch (_) { /* ignore */ }
+}
+
+function issueGameRedeemCode(db, prize) {
+  const raw = String(prize?.prize_value || '').trim();
+  let discountType = 'fixed';
+  let discountValue = 50;
+  if (raw.startsWith('{')) {
+    try {
+      const cfg = JSON.parse(raw);
+      discountType = cfg.discountType || cfg.type || 'fixed';
+      discountValue = Math.max(0, Number(cfg.discountValue ?? cfg.amount ?? 50));
+    } catch (_) { /* use defaults */ }
+  } else if (raw) {
+    const n = Number(raw);
+    if (!Number.isNaN(n) && n > 0) discountValue = n;
+  }
+  let code;
+  do {
+    code = `GAME-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+  } while (db.prepare('SELECT id FROM redeem_codes WHERE UPPER(code) = UPPER(?)').get(code));
+  db.prepare(`
+    INSERT INTO redeem_codes (code, discount_type, discount_value, is_active, max_uses, used_count)
+    VALUES (?, ?, ?, 1, 1, 0)
+  `).run(code, discountType, discountValue);
+  return { code, discountType, discountValue };
+}
+
 function fulfillPrize(db, deps, { userId, prize, orderRef, source }) {
-  if (!prize || !userId) return { fulfilled: false };
+  if (!prize || !userId) return { fulfilled: false, fulfillment: { type: 'none' } };
   const type = String(prize.prize_type || 'none');
   const value = String(prize.prize_value || '').trim();
   const label = String(prize.label || 'Prize');
   const orderKey = `${source}:${orderRef}`;
+  const rules = getGamesRules(db);
+  const telegram = rules.telegramHandle || '@loveriette';
 
   if (type === 'none' || type === 'bomb') {
-    return { fulfilled: true, message: label };
+    const fulfillment = { type: 'none', label, message: label };
+    recordPrizeAward(db, { userId, prize, orderRef, source, fulfillment });
+    return { fulfilled: true, message: label, fulfillment };
   }
 
   if (type === 'wallet' || type === 'loyalty') {
     const amount = Math.max(0, Number(value) || 0);
-    if (amount <= 0) return { fulfilled: true, message: label };
+    if (amount <= 0) {
+      const fulfillment = { type, label, message: label };
+      recordPrizeAward(db, { userId, prize, orderRef, source, fulfillment });
+      return { fulfilled: true, message: label, fulfillment };
+    }
     const exists = db.prepare(`
       SELECT id FROM wallet_transactions WHERE user_id = ? AND order_number = ? AND type = 'loyalty'
     `).get(userId, orderKey);
-    if (exists) return { fulfilled: true, message: label, duplicate: true };
+    if (exists) {
+      const fulfillment = { type, label, amount, message: label, duplicate: true };
+      return { fulfilled: true, message: label, duplicate: true, fulfillment };
+    }
     db.prepare('UPDATE users SET wallet_balance = wallet_balance + ? WHERE id = ?').run(amount, userId);
     db.prepare(`
       INSERT INTO wallet_transactions (user_id, type, amount, order_number, description)
       VALUES (?, 'loyalty', ?, ?, ?)
     `).run(userId, amount, orderKey, `${label} (${source})`);
-    deps?.notify?.(userId, 'promo', 'You won a prize!', `${label} — ₱${amount} added to your wallet.`);
-    return { fulfilled: true, message: label, amount };
+    const msg = type === 'loyalty'
+      ? `You won ${label}! ₱${amount} loyalty credit was added to your wallet automatically.`
+      : `${label} — ₱${amount} added to your wallet.`;
+    deps?.notify?.(userId, 'promo', 'You won a prize!', msg);
+    const fulfillment = {
+      type: type === 'loyalty' ? 'loyalty' : 'wallet',
+      label,
+      amount,
+      message: msg,
+      auto: true
+    };
+    recordPrizeAward(db, { userId, prize, orderRef, source, fulfillment });
+    return { fulfilled: true, message: label, amount, fulfillment };
+  }
+
+  if (type === 'redeem' || type === 'voucher' || type === 'discount') {
+    const issued = issueGameRedeemCode(db, prize);
+    const msg = `You won ${label}! Your discount code ${issued.code} is ready — use it at checkout.`;
+    deps?.notify?.(userId, 'promo', 'You won a voucher!', msg);
+    const fulfillment = {
+      type: 'redeem',
+      label,
+      code: issued.code,
+      discountType: issued.discountType,
+      discountValue: issued.discountValue,
+      message: msg,
+      copyLabel: 'Copy voucher code'
+    };
+    recordPrizeAward(db, { userId, prize, orderRef, source, fulfillment });
+    return { fulfilled: true, message: label, fulfillment };
+  }
+
+  if (type === 'product' || type === 'account' || type === 'netflix' || type === 'custom') {
+    const msg = `You won ${label}! Screenshot this prize screen and send it to ${telegram} on Telegram to claim.`;
+    deps?.notify?.(userId, 'promo', 'You won a product prize!', msg);
+    const fulfillment = {
+      type: 'product',
+      label,
+      telegram,
+      message: msg,
+      instruction: `Screenshot this and send to ${telegram} on Telegram.`
+    };
+    recordPrizeAward(db, { userId, prize, orderRef, source, fulfillment });
+    return { fulfilled: true, message: label, manual: true, fulfillment };
   }
 
   if (type === 'plug_access') {
-    deps?.notify?.(userId, 'promo', 'Plugging prize!', `${label}. Check your email or contact support for access details.`);
-    return { fulfilled: true, message: label, manual: true };
+    const msg = `${label}. Check your email or contact support for access details.`;
+    deps?.notify?.(userId, 'promo', 'Plugging prize!', msg);
+    const fulfillment = { type: 'plug_access', label, message: msg };
+    recordPrizeAward(db, { userId, prize, orderRef, source, fulfillment });
+    return { fulfilled: true, message: label, manual: true, fulfillment };
   }
 
-  deps?.notify?.(userId, 'promo', 'You won a prize!', `${label}. Our team will contact you with details.`);
-  return { fulfilled: true, message: label, manual: true };
+  const msg = `${label}. Our team will contact you with details.`;
+  deps?.notify?.(userId, 'promo', 'You won a prize!', msg);
+  const fulfillment = { type: 'custom', label, message: msg };
+  recordPrizeAward(db, { userId, prize, orderRef, source, fulfillment });
+  return { fulfilled: true, message: label, manual: true, fulfillment };
 }
 
 function grantGamesForApprovedOrder(db, deps, order) {
   if (readSetting(db, 'games_enabled', '1') !== '1') return;
   const userId = resolveUserId(db, { userId: order.user_id, email: order.email });
   if (!userId) return;
+  if (!orderQualifiesForGames(db, order.id)) return;
 
   const total = Number(order.total) || 0;
   const orderId = order.id;
@@ -412,7 +522,7 @@ function runWheelDraw(db, deps, campaignId) {
     WHERE id = ?
   `).run(winner.id, prize.id, now, campaignId);
 
-  fulfillPrize(db, deps, {
+  const fulfilled = fulfillPrize(db, deps, {
     userId: winner.user_id,
     prize,
     orderRef: winner.order_number,
@@ -429,6 +539,7 @@ function runWheelDraw(db, deps, campaignId) {
       email: winner.email
     },
     prize: { id: prize.id, label: prize.label, prizeType: prize.prize_type },
+    fulfillment: fulfilled.fulfillment,
     entryCount: slots.length
   };
 }
@@ -461,9 +572,10 @@ function scratchCard(db, deps, { cardId, userId }) {
     UPDATE game_scratch_cards SET prize_id = ?, scratched_at = ? WHERE id = ? AND scratched_at IS NULL
   `).run(prize?.id || null, now, card.id);
 
+  let fulfilled = { fulfillment: { type: 'none' } };
   if (prize) {
     db.prepare('UPDATE game_scratch_prizes SET won_count = won_count + 1 WHERE id = ?').run(prize.id);
-    fulfillPrize(db, deps, { userId, prize, orderRef: card.order_number, source: 'scratch' });
+    fulfilled = fulfillPrize(db, deps, { userId, prize, orderRef: card.order_number, source: 'scratch' });
   }
 
   return {
@@ -473,7 +585,8 @@ function scratchCard(db, deps, { cardId, userId }) {
       label: prize.label,
       prizeType: prize.prize_type,
       tileStyle: prize.tile_style
-    } : { label: 'No prize', prizeType: 'none', tileStyle: 'gray' }
+    } : { label: 'No prize', prizeType: 'none', tileStyle: 'gray' },
+    fulfillment: fulfilled.fulfillment
   };
 }
 
@@ -491,9 +604,10 @@ function playMysteryBox(db, deps, { playId, userId, boxIndex }) {
     UPDATE game_mystery_plays SET prize_id = ?, played_at = ? WHERE id = ? AND played_at IS NULL
   `).run(prize?.id || null, now, play.id);
 
+  let fulfilled = { fulfillment: { type: 'none' } };
   if (prize) {
     db.prepare('UPDATE game_mystery_prizes SET won_count = won_count + 1 WHERE id = ?').run(prize.id);
-    fulfillPrize(db, deps, { userId, prize, orderRef: play.order_number, source: 'mystery' });
+    fulfilled = fulfillPrize(db, deps, { userId, prize, orderRef: play.order_number, source: 'mystery' });
   }
 
   const decoys = ['Empty box', 'Try again', 'No luck'];
@@ -509,6 +623,7 @@ function playMysteryBox(db, deps, { playId, userId, boxIndex }) {
     ok: true,
     pickedBox,
     prize: prize ? { id: prize.id, label: prize.label, prizeType: prize.prize_type } : null,
+    fulfillment: fulfilled.fulfillment,
     boxes
   };
 }
@@ -561,9 +676,10 @@ function playInstantGame(db, deps, { playId, userId, gameKey, choice }) {
     UPDATE game_instant_plays SET prize_id = ?, played_at = ?, result_json = ? WHERE id = ? AND played_at IS NULL
   `).run(prize?.id || null, now, JSON.stringify(result), play.id);
 
+  let fulfilled = { fulfillment: { type: 'none' } };
   if (prize) {
     db.prepare('UPDATE game_instant_prizes SET won_count = won_count + 1 WHERE id = ?').run(prize.id);
-    fulfillPrize(db, deps, { userId, prize, orderRef: play.order_number, source: play.gameKey });
+    fulfilled = fulfillPrize(db, deps, { userId, prize, orderRef: play.order_number, source: play.gameKey });
   }
 
   return {
@@ -575,7 +691,8 @@ function playInstantGame(db, deps, { playId, userId, gameKey, choice }) {
       label: prize.label,
       prizeType: prize.prize_type,
       tileStyle: prize.tile_style
-    } : { label: 'No prize', prizeType: 'none', tileStyle: 'gray' }
+    } : { label: 'No prize', prizeType: 'none', tileStyle: 'gray' },
+    fulfillment: fulfilled.fulfillment
   };
 }
 
@@ -595,5 +712,10 @@ module.exports = {
   buildInstantHubGame,
   fulfillPrize,
   pickWeightedPrize,
+  orderQualifiesForGames,
+  eligibilityMessage,
+  buildEligibilityHub,
+  getGamesRules,
+  recordPrizeAward,
   displayNameForUser
 };
