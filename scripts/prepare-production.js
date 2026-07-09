@@ -61,13 +61,5 @@ console.log('  app root:', cfg.appRoot);
 console.log('  database:', cfg.dbPath);
 console.log('  uploads:', cfg.uploadsDir);
 
-const patchScripts = ['patch-perf-audit.js', 'patch-nav-professional.js', 'patch-qa-nav.js', 'patch-api-cache-sync.js'];
-for (const name of patchScripts) {
-  const patchScript = path.join(__dirname, name);
-  if (fs.existsSync(patchScript)) {
-    require(patchScript);
-  }
-}
-
 console.log('Production prepare complete.');
 console.log('Next: npm ci --omit=dev && pm2 start ecosystem.config.cjs --env production');

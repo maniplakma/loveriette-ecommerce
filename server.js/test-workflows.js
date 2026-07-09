@@ -971,6 +971,20 @@ async function runGamesCheck(adminCookie) {
   if (dicePlay?.id) ok('dice play granted');
   else fail('dice play granted', 'missing');
 
+  const pickPlay = db.prepare(`
+    SELECT ip.id FROM game_instant_plays ip
+    JOIN game_instant_pools p ON p.id = ip.pool_id WHERE ip.order_id = ? AND p.game_key = 'pick'
+  `).get(orderId);
+  if (pickPlay?.id) ok('pick play granted');
+  else fail('pick play granted', 'missing');
+
+  const vaultPlay = db.prepare(`
+    SELECT ip.id FROM game_instant_plays ip
+    JOIN game_instant_pools p ON p.id = ip.pool_id WHERE ip.order_id = ? AND p.game_key = 'vault'
+  `).get(orderId);
+  if (vaultPlay?.id) ok('vault play granted');
+  else fail('vault play granted', 'missing');
+
   const hub = await request('GET', '/api/games');
   if (hub.status === 200 && hub.json.wheel && hub.json.scratch && hub.json.mystery
       && hub.json.dice && hub.json.pick && hub.json.vault) ok('GET /api/games hub (6 games)');
@@ -997,6 +1011,36 @@ async function runGamesCheck(adminCookie) {
     const account = await request('GET', '/account/games', {}, login.cookie);
     if (account.status === 200 && account.json.wheel?.mySlots?.length) ok('account games hub has wheel slot');
     else fail('account games hub', account.json?.wheel?.mySlots?.length || account.status);
+
+    const scratchRes = await request('POST', `/account/games/scratch/${scratch.id}/play`, {}, login.cookie);
+    if (scratchRes.status === 200 && scratchRes.json.ok) ok('played scratch card');
+    else fail('played scratch card', scratchRes.json?.error || scratchRes.status);
+
+    const mysteryRes = await request('POST', `/account/games/mystery/${mystery.id}/play`, { boxIndex: 1 }, login.cookie);
+    if (mysteryRes.status === 200 && mysteryRes.json.ok) ok('played mystery box');
+    else fail('played mystery box', mysteryRes.json?.error || mysteryRes.status);
+
+    const diceRes = await request('POST', `/account/games/instant/dice/${dicePlay.id}/play`, {}, login.cookie);
+    if (diceRes.status === 200 && diceRes.json.ok && diceRes.json.result?.dice?.length === 2) ok('played lucky dice');
+    else fail('played lucky dice', diceRes.json?.error || diceRes.status);
+
+    const pickRes = await request('POST', `/account/games/instant/pick/${pickPlay.id}/play`, { choice: 0 }, login.cookie);
+    if (pickRes.status === 200 && pickRes.json.ok && pickRes.json.result?.cards?.length === 3) ok('played card flip');
+    else fail('played card flip', pickRes.json?.error || pickRes.status);
+
+    const vaultRes = await request('POST', `/account/games/instant/vault/${vaultPlay.id}/play`, { choice: 2 }, login.cookie);
+    if (vaultRes.status === 200 && vaultRes.json.ok && vaultRes.json.result?.vaults?.length === 3) ok('played treasure vault');
+    else fail('played treasure vault', vaultRes.json?.error || vaultRes.status);
+
+    const wheelDraw = await request('POST', `/admin/games/wheel/${wheel.json.id}/draw`, {}, adminCookie);
+    if (wheelDraw.status === 200 && wheelDraw.json.winners?.length) ok('wheel draw completed with winners');
+    else fail('wheel draw', wheelDraw.json?.error || wheelDraw.status);
+
+    const accountAfter = await request('GET', '/account/games', {}, login.cookie);
+    const scratchDone = !(accountAfter.json.scratch?.cards || []).some((c) => !c.scratchedAt);
+    const mysteryDone = !(accountAfter.json.mystery?.plays || []).some((p) => !p.playedAt);
+    if (scratchDone && mysteryDone) ok('all instant plays marked complete in account hub');
+    else fail('games completion state', `scratch=${scratchDone} mystery=${mysteryDone}`);
   } else fail('games buyer login', login.status);
 
   purgeGameRowsForOrder(orderId);

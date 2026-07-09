@@ -94,6 +94,6 @@ fi
 
 echo ""
 echo "==> Deploy complete. Hard refresh browser: Ctrl+Shift+R"
-echo "    Games page should load games-page.js?v=20260710lux"
+echo "    Games page should load games-page.js?v=20260710smooth"
 echo "    Live: https://loveriette.shop/games"
 pm2 list

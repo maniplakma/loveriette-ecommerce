@@ -41,10 +41,10 @@ GAMES_HTML="$(curl -fsSL "http://127.0.0.1:${PORT}/games" || true)"
 GAMES_CODE="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${PORT}/games" || echo 000)"
 
 echo "    GET /games => $GAMES_CODE"
-if echo "$GAMES_HTML" | grep -q 'games-page.js?v=20260710lux'; then
-  echo "    OK: games-page.js?v=20260710lux"
+if echo "$GAMES_HTML" | grep -q 'games-page.js?v=20260710smooth'; then
+  echo "    OK: games-page.js?v=20260710smooth"
 else
-  echo "WARN: games-page.js cache version not lux — check git log -1" >&2
+  echo "WARN: games-page.js cache version not smooth — check git log -1" >&2
 fi
 if echo "$GAMES_HTML" | grep -q 'How to play all games'; then
   echo "    OK: guide link present"

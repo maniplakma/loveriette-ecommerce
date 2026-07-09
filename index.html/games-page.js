@@ -662,6 +662,12 @@
 
   let countdownTimer = null;
   let hubRefreshPending = false;
+  let pageVisible = true;
+
+  document.addEventListener('visibilitychange', () => {
+    pageVisible = document.visibilityState !== 'hidden';
+    if (pageVisible) tickCountdowns();
+  });
 
   function tickCountdowns() {
     document.querySelectorAll('[data-countdown]').forEach((el) => {
@@ -691,7 +697,9 @@
   function startCountdowns() {
     tickCountdowns();
     if (countdownTimer) clearInterval(countdownTimer);
-    countdownTimer = setInterval(tickCountdowns, 1000);
+    countdownTimer = setInterval(() => {
+      if (pageVisible) tickCountdowns();
+    }, 1000);
   }
 
   function ensureExpandModal() {
@@ -750,6 +758,27 @@
     tickCountdowns();
   }
 
+  let arenaMotionObserver = null;
+
+  function observeArenaMotion() {
+    if (!('IntersectionObserver' in window)) {
+      document.querySelectorAll('.games-arena').forEach((a) => a.classList.add('is-in-view'));
+      return;
+    }
+    if (!arenaMotionObserver) {
+      arenaMotionObserver = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          entry.target.classList.toggle('is-in-view', entry.isIntersecting);
+        });
+      }, { rootMargin: '80px 0px', threshold: 0.08 });
+    }
+    document.querySelectorAll('.games-arena').forEach((arena) => {
+      if (arena.dataset.motionObserved) return;
+      arena.dataset.motionObserved = '1';
+      arenaMotionObserver.observe(arena);
+    });
+  }
+
   function bindExpand() {
     document.querySelectorAll('.games-arena[data-expandable="1"]').forEach((arena) => {
       if (arena.dataset.expandBound) return;
@@ -767,6 +796,7 @@
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openArenaExpand(arena); }
       });
     });
+    observeArenaMotion();
   }
 
   function renderRecentWinners(list) {
