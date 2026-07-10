@@ -11,7 +11,7 @@ function parseSmtpSettings(getSetting) {
 }
 
 function isTruthy(value) {
-  return value === true || value === 'true' || value === 1 || value === '1';
+  return value === true || value === 'true' || value === 1 || value === '1' || value === 'on';
 }
 
 function isSmtpConfigured(settings = {}) {
@@ -32,7 +32,7 @@ function isSmtpSendReady(getSetting) {
 
 function mergeSmtpSettings(existing = {}, incoming = {}) {
   const bool = (val, fallback = false) => {
-    if (val === true || val === 'true' || val === 1 || val === '1') return true;
+    if (val === true || val === 'true' || val === 1 || val === '1' || val === 'on') return true;
     if (val === false || val === 'false' || val === 0 || val === '0') return false;
     return fallback;
   };

@@ -2345,13 +2345,14 @@ function bindIntegrationFormHandlers() {
     if (testSmtpBtn) {
       const form = testSmtpBtn.closest('form[id^="intg-"]');
       if (!form) return;
-      const fd = new FormData(form);
       testSmtpBtn.disabled = true;
       testSmtpBtn.textContent = 'Sending...';
       try {
+        const payload = buildIntegrationPayload(form);
+        payload.testEmail = new FormData(form).get('testEmail') || '';
         const r = await api('/admin/integrations/test-smtp', {
           method: 'POST',
-          body: JSON.stringify(Object.fromEntries(fd))
+          body: JSON.stringify(payload)
         });
         showToast(r.message, r.ok ? 'approved' : 'error');
       } catch (err) { showToast(err.message, 'error'); }
