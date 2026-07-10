@@ -1,7 +1,7 @@
 /**
  * Plugging forward timing:
  * - no pause between target groups within a cycle
- * - configurable delay (minutes) between cycles, measured from cycle start
+ * - configurable delay (minutes) between cycles, measured from cycle end
  */
 
 const GROUP_SEND_DELAY_MS = 0;
