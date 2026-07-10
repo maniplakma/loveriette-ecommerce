@@ -303,6 +303,7 @@ function initPlatformDb(db) {
   }
 
   try { db.exec(`ALTER TABLE plugging_accounts ADD COLUMN proxy_url TEXT NOT NULL DEFAULT ''`); } catch (_) { /* exists */ }
+  try { db.exec(`ALTER TABLE plugging_accounts ADD COLUMN next_cycle_at TEXT`); } catch (_) { /* exists */ }
   try { db.exec(`ALTER TABLE plugging_orders ADD COLUMN expires_at TEXT`); } catch (_) { /* exists */ }
   try { db.exec(`ALTER TABLE plugging_orders ADD COLUMN user_id INTEGER`); } catch (_) { /* exists */ }
   try { db.exec(`ALTER TABLE plugging_plans ADD COLUMN priority INTEGER NOT NULL DEFAULT 0`); } catch (_) { /* exists */ }

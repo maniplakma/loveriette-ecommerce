@@ -2,7 +2,7 @@
  * Staggered auto-start for all plugging accounts in a workspace order.
  * Account 1 starts immediately, account 2 after stagger delay, and so on.
  */
-const { startRunner } = require('./plugging-runner');
+const { startRunner, isRunning } = require('./plugging-runner');
 const { logPlugActivity } = require('./plugging-activity');
 const { isPostLink } = require('./plugging-post');
 const { parseTargets } = require('./plugging-runner');
@@ -58,8 +58,12 @@ function getReadyAccounts(db, orderId) {
 }
 
 async function startAccountSafe(db, account, getSettings) {
+  if (isRunning(account.id)) {
+    logPlugActivity(db, account.id, 'info', 'Auto-start: skipped — already running (cycle delay kept)');
+    return { ok: true, accountId: account.id, skipped: true, reason: 'already_running' };
+  }
   try {
-    await startRunner(db, account.id, getSettings);
+    await startRunner(db, account.id, getSettings, { force: false });
     logPlugActivity(db, account.id, 'started', 'Auto-start: forwarder started');
     return { ok: true, accountId: account.id };
   } catch (err) {
@@ -77,8 +81,20 @@ async function runStaggeredStart(db, orderId, getSettings, { staggerMinutes = 10
     return { ok: false, error: 'A staggered start is already running for this workspace' };
   }
 
-  const accounts = getReadyAccounts(db, orderId);
+  const accounts = getReadyAccounts(db, orderId).filter((row) => !isRunning(row.id));
   if (!accounts.length) {
+    const ready = getReadyAccounts(db, orderId).length;
+    if (ready > 0) {
+      return {
+        ok: true,
+        source,
+        queued: 0,
+        skipped: ready,
+        staggerMinutes: Number(staggerMinutes) || 10,
+        accountIds: [],
+        message: 'All ready accounts are already running — cycle delays preserved'
+      };
+    }
     return { ok: false, error: 'No accounts ready — each needs login, post link, and target groups' };
   }
 

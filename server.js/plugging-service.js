@@ -7,7 +7,7 @@ const crypto = require('crypto');
 const appConfig = require('./config');
 const { sendHtmlPage } = require('./send-html-page');
 const { sendLoginCode, verifyLoginCode } = require('./plugging-telegram');
-const { startRunner, stopRunner, stopRunnerGracefully, isRunning, resumeRunnersOnBoot } = require('./plugging-runner');
+const { startRunner, stopRunner, stopRunnerGracefully, isRunning, resumeRunnersOnBoot, clearRunnerSchedule } = require('./plugging-runner');
 const {
   runStaggeredStart,
   isStaggeredStartRunning,
@@ -510,7 +510,7 @@ function mountPluggingService(app, db, deps) {
 
       ensureAccountProxy(db, account.id, getPluggingSettings());
       clearAccountActivity(db, account.id);
-      await startRunner(db, account.id, getPluggingSettings);
+      await startRunner(db, account.id, getPluggingSettings, { force: true });
       res.json({ ok: true, runnerStatus: 'running' });
     } catch (err) {
       res.status(400).json({ error: err.message || 'Could not start forwarder' });
@@ -522,6 +522,7 @@ function mountPluggingService(app, db, deps) {
       .get(req.params.id, req.plugOrder.id);
     if (!account) return res.status(404).json({ error: 'Account not found' });
     await stopRunnerGracefully(Number(req.params.id));
+    clearRunnerSchedule(db, Number(req.params.id));
     db.prepare('UPDATE plugging_accounts SET runner_status = ?, updated_at = datetime(\'now\') WHERE id = ?')
       .run('stopped', req.params.id);
     logPlugActivity(db, account.id, 'stopped', 'Forwarder stopped manually');
@@ -594,7 +595,9 @@ function mountPluggingService(app, db, deps) {
   });
 
   app.delete('/api/plugging/workspace/accounts/:id', requirePlugWorkspace, async (req, res) => {
-    await stopRunnerGracefully(Number(req.params.id));
+    const accountId = Number(req.params.id);
+    await stopRunnerGracefully(accountId);
+    clearRunnerSchedule(db, accountId);
     db.prepare('DELETE FROM plugging_accounts WHERE id = ? AND order_id = ?').run(req.params.id, req.plugOrder.id);
     res.json({ ok: true });
   });

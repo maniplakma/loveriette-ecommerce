@@ -7,6 +7,7 @@ const {
   shouldRun,
   cycleDelayMs,
   computeNextCycleAt,
+  parseStoredNextCycleAt,
   setRunnerForTest,
   clearRunnerForTest
 } = require('./plugging-runner');
@@ -47,11 +48,19 @@ function testComputeNextCycleAt() {
   assert.strictEqual(computeNextCycleAt(null, 70), 0);
 }
 
+function testParseStoredNextCycleAt() {
+  const future = new Date(Date.now() + 60000).toISOString();
+  assert.ok(parseStoredNextCycleAt(future) > Date.now());
+  assert.strictEqual(parseStoredNextCycleAt(''), 0);
+  assert.strictEqual(parseStoredNextCycleAt('bad'), 0);
+}
+
 async function main() {
   await testWaitWhileRunningStopsEarly();
   testShouldRunRejectsReplacedHandle();
   await testCycleDelayMs();
   testComputeNextCycleAt();
+  testParseStoredNextCycleAt();
   console.log('plugging-runner tests: OK');
 }
 
