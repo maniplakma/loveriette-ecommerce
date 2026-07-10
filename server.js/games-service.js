@@ -339,7 +339,10 @@ function mountGamesService(app, db, deps) {
     if (!row) return res.status(404).json({ error: 'Campaign not found' });
     ensureGamesMasterEnabled(db);
     db.prepare('UPDATE game_wheel_campaigns SET is_enabled = 0').run();
-    db.prepare(`UPDATE game_wheel_campaigns SET is_enabled = 1, updated_at = datetime('now') WHERE id = ?`).run(req.params.id);
+    db.prepare(`
+      UPDATE game_wheel_campaigns SET is_enabled = 1, starts_at = NULL, updated_at = datetime('now')
+      WHERE id = ?
+    `).run(req.params.id);
     res.json({ ok: true, gamesEnabled: true });
   });
 
@@ -421,7 +424,10 @@ function mountGamesService(app, db, deps) {
     if (!row) return res.status(404).json({ error: 'Pool not found' });
     ensureGamesMasterEnabled(db);
     db.prepare('UPDATE game_scratch_pools SET is_enabled = 0').run();
-    db.prepare(`UPDATE game_scratch_pools SET is_enabled = 1, updated_at = datetime('now') WHERE id = ?`).run(req.params.id);
+    db.prepare(`
+      UPDATE game_scratch_pools SET is_enabled = 1, starts_at = NULL, updated_at = datetime('now')
+      WHERE id = ?
+    `).run(req.params.id);
     res.json({ ok: true, gamesEnabled: true });
   });
 
@@ -553,7 +559,10 @@ function mountGamesService(app, db, deps) {
     if (!row) return res.status(404).json({ error: 'Pool not found' });
     ensureGamesMasterEnabled(db);
     db.prepare('UPDATE game_mystery_pools SET is_enabled = 0').run();
-    db.prepare(`UPDATE game_mystery_pools SET is_enabled = 1, updated_at = datetime('now') WHERE id = ?`).run(req.params.id);
+    db.prepare(`
+      UPDATE game_mystery_pools SET is_enabled = 1, starts_at = NULL, updated_at = datetime('now')
+      WHERE id = ?
+    `).run(req.params.id);
     res.json({ ok: true, gamesEnabled: true });
   });
 

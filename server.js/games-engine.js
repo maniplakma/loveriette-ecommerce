@@ -220,6 +220,7 @@ function buildGamesHubState(db, userId = null) {
   const mysteryRow = db.prepare('SELECT * FROM game_mystery_pools ORDER BY id DESC LIMIT 1').get();
 
   const wheelOpen = wheelDiagnosis.open;
+  const wheelCampaignOn = !!(enabled && wheelCandidate?.is_enabled);
   const wheelDrawn = wheelDisplayRow?.status === 'drawn';
   const scratchOpen = isScratchPoolOpen(scratchRow, enabled, now);
   const mysteryOpen = isMysteryPoolOpen(mysteryRow, enabled, now);
@@ -339,6 +340,7 @@ function buildGamesHubState(db, userId = null) {
       title: wheelDisplayRow.title,
       listed: hubListed,
       open: wheelOpen,
+      campaignOn: wheelCampaignOn,
       closeReason: wheelDiagnosis.closeReason,
       availableDaysLabel: wheelDiagnosis.availableDaysLabel || formatAvailableDays(wheelDisplayRow.available_days),
       visible: hubListed,
@@ -376,6 +378,7 @@ function buildGamesHubState(db, userId = null) {
       title: scratchRow.title,
       listed: hubListed,
       open: scratchOpen,
+      campaignOn: !!(enabled && scratchRow.is_enabled),
       visible: hubListed,
       endsAt: scratchRow.ends_at,
       startsAt: scratchRow.starts_at,
@@ -391,6 +394,7 @@ function buildGamesHubState(db, userId = null) {
       title: mysteryRow.title,
       listed: hubListed,
       open: mysteryOpen,
+      campaignOn: !!(enabled && mysteryRow.is_enabled),
       visible: hubListed,
       endsAt: mysteryRow.ends_at,
       startsAt: mysteryRow.starts_at,
@@ -457,6 +461,7 @@ function buildInstantHubGame(db, gameKey, userId, enabled, hasPendingCredit = fa
     title: pool.title,
     listed: hubListed,
     open,
+    campaignOn: !!(enabled && pool.is_enabled),
     visible: hubListed,
     endsAt: pool.ends_at,
     startsAt: pool.starts_at,

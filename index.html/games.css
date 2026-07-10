@@ -366,6 +366,17 @@
   color: var(--text-muted);
 }
 
+.games-gate-copy {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.games-arena-gate--soon {
+  border-color: rgba(125, 255, 176, 0.28);
+  background: rgba(125, 255, 176, 0.07);
+}
+
 .games-arena-closed h3,
 .games-arena-gate h3 {
   margin: 0.35rem 0 0.2rem;
