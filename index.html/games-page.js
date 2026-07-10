@@ -270,17 +270,38 @@
   }
 
   function isGameAdminClosed(game) {
+    if (!game) return true;
+    if (game.campaignOn) return false;
     if (game?.status === 'drawn') return false;
     if (game?.open) return false;
     if (['full', 'not_started', 'ended', 'wrong_day'].includes(game?.closeReason)) return false;
-    return game?.open === false;
+    return ['games_off', 'no_campaign', 'campaign_disabled'].includes(game?.closeReason)
+      || (!game.closeReason && !game.id);
   }
 
-  function arenaShell({ type, title, open, visible, statusLabel, body, prizesHtml, guideUrl, metaHtml, expandable, adminClosed }) {
+  function wheelStatusLabel(game, { drawn, live, rosterFull }) {
+    if (drawn) return 'Drawn';
+    if (live) return 'Open';
+    if (rosterFull) return 'Full';
+    if (game.campaignOn && game.closeReason === 'not_started') return 'Opens soon';
+    if (game.campaignOn && game.closeReason === 'wrong_day') return 'Scheduled';
+    if (game.campaignOn) return 'Open';
+    return 'Closed';
+  }
+
+  function arenaStatusState({ adminClosed, open, campaignOn, statusLabel }) {
+    if (adminClosed) return { state: 'closed', status: 'Closed' };
+    if (open || campaignOn || statusLabel === 'Full' || statusLabel === 'Opens soon' || statusLabel === 'Scheduled') {
+      return { state: 'open', status: statusLabel || 'Open' };
+    }
+    if (statusLabel === 'Drawn') return { state: 'results', status: 'Drawn' };
+    return { state: 'results', status: statusLabel || 'Results' };
+  }
+
+  function arenaShell({ type, title, open, visible, statusLabel, body, prizesHtml, guideUrl, metaHtml, expandable, adminClosed, campaignOn }) {
     const listed = visible !== false;
-    const closed = adminClosed || (!open && statusLabel !== 'Drawn' && statusLabel !== 'Full');
-    const state = closed ? 'closed' : (open || statusLabel === 'Full' ? 'open' : 'results');
-    const status = closed ? 'Closed' : (statusLabel || (open ? 'Open' : 'Results'));
+    const { state, status } = arenaStatusState({ adminClosed, open, campaignOn, statusLabel });
+    const closed = state === 'closed';
     const guideHref = guideUrl || `/guide.html#game-${type}`;
     const guide = `<a href="${esc(guideHref)}" class="games-guide-link" target="_blank" rel="noopener noreferrer" data-no-expand>How to play</a>`;
     const canExpand = expandable !== false && !closed;
@@ -290,13 +311,14 @@
     const expandHint = canExpand
       ? '<span class="games-expand-hint">Tap card or use Full screen</span>'
       : '';
+    const statusClass = closed ? 'closed' : (state === 'open' ? 'open' : 'closed');
     return `
       <article class="games-arena games-arena--${state} games-arena--${type}${closed ? ' games-arena--listed-closed' : ''}" data-game-type="${esc(type)}" data-expandable="${canExpand ? '1' : '0'}" tabindex="0">
         <div class="games-arena-glow" aria-hidden="true"></div>
         <header class="games-arena-head">
           ${icon(type, 'games-icon--head')}
           <h2>${esc(title)}</h2>
-          <span class="games-arena-status games-arena-status--${open && !closed ? 'open' : 'closed'}">${esc(status)}</span>
+          <span class="games-arena-status games-arena-status--${statusClass}">${esc(status)}</span>
         </header>
         <div class="games-arena-guide-row">${guide}${expandBtn}</div>
         ${metaHtml || ''}
@@ -323,8 +345,22 @@
       </div>`;
   }
 
-  function gateBanner(kind, channelUrl, minTotal, elig, type) {
-    if (kind === 'closed') return closedBody(channelUrl, type);
+  function gateBanner(kind, channelUrl, minTotal, elig, type, customCopy) {
+    if (kind === 'closed') return closedBody(channelUrl, type, customCopy);
+    if (kind === 'soon') {
+      return `
+        <div class="games-arena-gate games-arena-gate--soon games-arena-gate--compact">
+          ${icon(type, 'games-icon--gate')}
+          <div><strong>Opens soon</strong><div class="games-gate-copy">${customCopy || 'Check back shortly — this round is almost live.'}</div></div>
+        </div>`;
+    }
+    if (kind === 'ended') {
+      return `
+        <div class="games-arena-gate games-arena-gate--ended games-arena-gate--compact">
+          ${icon(type, 'games-icon--gate')}
+          <div><strong>Round ended</strong><div class="games-gate-copy">${customCopy || 'This round has ended. Watch the channel for the next one.'}</div></div>
+        </div>`;
+    }
     const purchaseMsg = elig?.message || 'Shop order → unlock after delivery';
     if (kind === 'purchase') {
       return `
@@ -417,10 +453,26 @@
   }
 
   function resolveGate(game, state) {
-    if (!game.open) return 'closed';
+    if (isGameAdminClosed(game)) return 'closed';
+    if (!game.open) {
+      if (game.closeReason === 'not_started' || game.closeReason === 'wrong_day') return 'soon';
+      if (game.closeReason === 'ended') return 'ended';
+      if (game.closeReason === 'full') return null;
+    }
     if (!state.authenticated) return 'signin';
     if (game.needsPurchase && !game.canPlay) return 'purchase';
     return null;
+  }
+
+  function gateCopyFor(game, type) {
+    if (type === 'wheel') return wheelCloseCopy(game);
+    if (game.closeReason === 'not_started' && game.startsAt) {
+      return `Opens on <strong>${esc(formatGameWhen(game.startsAt))}</strong>.`;
+    }
+    if (game.closeReason === 'wrong_day') {
+      return `Open on: <strong>${esc(game.availableDaysLabel || 'selected days')}</strong>.`;
+    }
+    return '';
   }
 
   function guideFor(state, type) {
@@ -503,12 +555,13 @@
       if (game.endsAt && new Date(game.endsAt).getTime() < Date.now()) {
         return `<div class="games-arena-ended"><p>This game has ended.</p>${endsMetaHtml(game.endsAt)}</div>`;
       }
-      return closedBody(state.channelUrl, type);
+      const copy = type === 'wheel' ? wheelCloseCopy(game) : '';
+      return closedBody(state.channelUrl, type, copy);
     }
     const gate = resolveGate(game, state);
     const parts = [];
     if (state.hasPendingCredit && !game.canPlay) parts.push(pendingChoiceGate(state));
-    else if (gate) parts.push(gateBanner(gate, state.channelUrl, game.minOrderTotal, state.eligibility, type));
+    else if (gate) parts.push(gateBanner(gate, state.channelUrl, game.minOrderTotal, state.eligibility, type, gateCopyFor(game, type)));
     if (game.canPlay && playHtml) parts.push(playHtml);
     else parts.push(demoFn());
     return parts.join('');
@@ -518,10 +571,11 @@
     const drawn = game.status === 'drawn';
     const rosterFull = game.closeReason === 'full' && !drawn;
     const adminClosed = isGameAdminClosed(game);
+    const campaignOn = !!game.campaignOn;
     const live = !!game.open && !drawn;
+    const statusLabel = wheelStatusLabel(game, { drawn, live, rosterFull });
     let body = '';
     let metaHtml = '';
-    let statusLabel = drawn ? 'Drawn' : (live ? 'Open' : (rosterFull ? 'Full' : 'Closed'));
 
     if (rosterFull) {
       metaHtml = `<div class="games-arena-meta">${wheelEntriesMetaHtml(game)}</div>`;
@@ -546,6 +600,9 @@
         </div>`;
     } else {
       metaHtml = `<div class="games-arena-meta">${wheelEntriesMetaHtml(game)}</div>`;
+      if (game.startsAt && game.closeReason === 'not_started') {
+        metaHtml += `<div class="games-arena-meta">${countdownHtml(game.startsAt, 'Opens in')}</div>`;
+      }
       const slots = (game.mySlots || []).map((s) =>
         `<span class="games-slot-chip is-mine">#${esc(s.orderNumber)}</span>`
       ).join('');
@@ -562,8 +619,9 @@
       type: 'wheel',
       title: game.title || 'Spin the Wheel',
       open: live,
+      campaignOn,
       visible: game.listed !== false,
-      adminClosed: adminClosed && !rosterFull,
+      adminClosed,
       statusLabel,
       prizesHtml: prizeChips(game.prizes),
       guideUrl: guideFor(state, 'wheel'),
@@ -587,6 +645,7 @@
 
   function renderScratch(game, state) {
     const adminClosed = isGameAdminClosed(game);
+    const campaignOn = !!game.campaignOn;
     const pending = (game.cards || []).filter((c) => !c.scratchedAt);
     const play = pending.length ? pending.map(scratchPlay).join('') : '';
     const metaHtml = !adminClosed && game.endsAt ? `<div class="games-arena-meta">${countdownHtml(game.endsAt, 'Ends in')}</div>` : '';
@@ -594,8 +653,10 @@
       type: 'scratch',
       title: game.title || 'Scratch Cards',
       open: game.open,
+      campaignOn,
       visible: game.listed !== false,
       adminClosed,
+      statusLabel: adminClosed ? 'Closed' : (game.open ? 'Open' : (campaignOn ? 'Open' : 'Closed')),
       prizesHtml: prizeChips(game.prizes),
       guideUrl: guideFor(state, 'scratch'),
       metaHtml,
@@ -620,14 +681,17 @@
 
   function renderMystery(game, state) {
     const adminClosed = isGameAdminClosed(game);
+    const campaignOn = !!game.campaignOn;
     const pending = (game.plays || []).filter((p) => !p.playedAt);
     const metaHtml = !adminClosed && game.endsAt ? `<div class="games-arena-meta">${countdownHtml(game.endsAt, 'Ends in')}</div>` : '';
     return arenaShell({
       type: 'mystery',
       title: game.title || 'Mystery Box',
       open: game.open,
+      campaignOn,
       visible: game.listed !== false,
       adminClosed,
+      statusLabel: adminClosed ? 'Closed' : (game.open ? 'Open' : (campaignOn ? 'Open' : 'Closed')),
       prizesHtml: prizeChips(game.prizes),
       guideUrl: guideFor(state, 'mystery'),
       metaHtml,
@@ -677,13 +741,16 @@
 
   function renderInstant(game, state, type, demoFn) {
     const adminClosed = isGameAdminClosed(game);
+    const campaignOn = !!game.campaignOn;
     const metaHtml = !adminClosed && game.endsAt ? `<div class="games-arena-meta">${countdownHtml(game.endsAt, 'Ends in')}</div>` : '';
     return arenaShell({
       type,
       title: game.title || INSTANT_TITLES[type],
       open: game.open,
+      campaignOn,
       visible: game.listed !== false,
       adminClosed,
+      statusLabel: adminClosed ? 'Closed' : (game.open ? 'Open' : (campaignOn ? 'Open' : 'Closed')),
       prizesHtml: prizeChips(game.prizes),
       guideUrl: guideFor(state, type),
       metaHtml,
@@ -911,6 +978,11 @@
   });
 
   function tickCountdowns() {
+    document.querySelectorAll('[data-countdown]').forEach((el) => {
+      const target = el.dataset.countdown;
+      const ms = new Date(target.includes('T') ? target : `${target.replace(' ', 'T')}Z`).getTime() - Date.now();
+      el.textContent = ms <= 0 ? 'Now' : fmtCountdown(ms);
+    });
     document.querySelectorAll('[data-end-countdown]').forEach((el) => {
       const target = el.dataset.endCountdown;
       const ms = new Date(target.includes('T') ? target : `${target.replace(' ', 'T')}Z`).getTime() - Date.now();

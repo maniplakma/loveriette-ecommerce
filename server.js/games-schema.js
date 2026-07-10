@@ -154,6 +154,20 @@ function insertDefaultLoserPrize(db, { prizeTable, poolId, withTile }) {
   }
 }
 
+function applyWheelStaleStartsClear(db) {
+  const flag = db.prepare("SELECT value FROM settings WHERE key = 'wheel_stale_starts_cleared_v1'").get();
+  if (flag?.value === '1') return;
+  db.prepare(`
+    UPDATE game_wheel_campaigns SET starts_at = NULL
+    WHERE is_enabled = 1 AND status = 'scheduled'
+      AND starts_at IS NOT NULL AND TRIM(starts_at) != ''
+  `).run();
+  db.prepare(`
+    INSERT INTO settings (key, value) VALUES ('wheel_stale_starts_cleared_v1', '1')
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+  `).run();
+}
+
 function applyGamesClosedMigration(db) {
   const flag = db.prepare("SELECT value FROM settings WHERE key = 'games_all_closed_v1'").get();
   if (flag?.value === '1') return;
@@ -400,6 +414,9 @@ function initGamesSchema(db) {
   }
   try { applyGamesClosedMigration(db); } catch (err) {
     console.error('[games] closed migration failed:', err.message);
+  }
+  try { applyWheelStaleStartsClear(db); } catch (err) {
+    console.error('[games] wheel starts clear failed:', err.message);
   }
   try { applyLoserWeightsMigration(db); } catch (err) {
     console.error('[games] loser weights migration failed:', err.message);
