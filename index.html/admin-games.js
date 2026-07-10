@@ -66,7 +66,7 @@
         <label>${esc(g.label)} shop link</label>
         <input type="text" class="admin-modal-input games-shop-link-input" data-shop-key="${g.key}"
           value="${esc(shopLinks[g.key] || '/shop')}" placeholder="/shop or /product/your-product">
-        <small class="admin-card-meta">Direct link for Order now on /games#game-${g.key}</small>
+        <small class="admin-card-meta">Share link: /riette.${g.key} — Order now button uses shop URL above</small>
       </div>`).join('');
   }
 
