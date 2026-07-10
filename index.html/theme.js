@@ -20,6 +20,7 @@
       || body.classList.contains('page-shop')
       || body.classList.contains('page-games')
       || /^\/(shop|games|plugging|website-making)\/?$/i.test(path.replace(/\/$/, '') || '/')
+      || /^\/riette\.[a-z]+$/i.test(path.replace(/\/$/, '') || '/')
       || /\/(plugging|website-making)\/?$/i.test(path);
   }
 

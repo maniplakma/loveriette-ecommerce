@@ -1,5 +1,7 @@
 'use strict';
 
+const { RIETTE_GAME_PATHS } = require('./games-paths');
+
 const DEFAULT_GUIDES = {
   wheel: '/guide.html#game-wheel',
   scratch: '/guide.html#game-scratch',
@@ -125,6 +127,7 @@ function buildEligibilityHub(db) {
     telegramHandle: rules.telegramHandle,
     guides: rules.guides,
     shopLinks: rules.shopLinks,
+    gameLinks: { ...RIETTE_GAME_PATHS },
     message: eligibilityMessage(db),
     oneGamePerPurchase: true
   };

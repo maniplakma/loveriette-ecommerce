@@ -985,6 +985,11 @@ async function runGamesCheck(adminCookie) {
     ok('GET /games page with guide link');
   } else fail('GET /games page guide', gamesPage.status);
 
+  const rietteWheel = await request('GET', '/riette.wheel');
+  if (rietteWheel.status === 200 && (rietteWheel.json?.raw || '').includes('games-arena-grid')) {
+    ok('GET /riette.wheel serves games page');
+  } else fail('GET /riette.wheel', rietteWheel.status);
+
   if (hub.json.eligibility?.guides?.wheel) ok('games hub includes guide URLs');
   else fail('games hub guides', JSON.stringify(hub.json.eligibility?.guides || {}));
 

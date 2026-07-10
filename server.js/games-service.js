@@ -21,6 +21,7 @@ const {
   isLoserPrizeType
 } = require('./games-engine');
 const { sendHtmlPage } = require('./send-html-page');
+const { RIETTE_GAME_ROUTES } = require('./games-paths');
 const {
   buildEligibilityHub,
   saveGamesRules,
@@ -98,6 +99,13 @@ function mountGamesService(app, db, deps) {
   app.get('/games', (req, res) => {
     trackVisit?.(req);
     sendHtmlPage(res, frontendDir, 'games.html');
+  });
+
+  RIETTE_GAME_ROUTES.forEach((route) => {
+    app.get(route, (req, res) => {
+      trackVisit?.(req);
+      sendHtmlPage(res, frontendDir, 'games.html');
+    });
   });
 
   app.get('/api/games', (req, res) => {

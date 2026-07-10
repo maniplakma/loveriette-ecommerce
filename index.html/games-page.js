@@ -540,7 +540,7 @@
   }
 
   function gamePageLink(type) {
-    return `/games#game-${type}`;
+    return typeof window.gamePagePath === 'function' ? window.gamePagePath(type) : `/riette.${type}`;
   }
 
   function wheelEntriesMetaHtml(game) {
@@ -1167,26 +1167,56 @@
   function bindCopyGameLinks() {
     document.querySelectorAll('.games-copy-link:not([data-bound])').forEach((btn) => {
       btn.dataset.bound = '1';
-      btn.addEventListener('click', async (e) => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
         e.stopPropagation();
         const path = btn.dataset.gameLink || '';
-        const url = path.startsWith('http') ? path : `${window.location.origin}${path.startsWith('/') ? '' : '/'}${path}`;
-        try {
-          await navigator.clipboard.writeText(url);
+        const url = typeof window.getShareUrl === 'function'
+          ? window.getShareUrl(path)
+          : `${window.location.origin}${path.startsWith('/') ? path : `/${path}`}`;
+        const done = () => {
           const prev = btn.textContent;
           btn.textContent = 'Copied!';
-          setTimeout(() => { btn.textContent = prev; }, 1600);
+          if (typeof window.showToast === 'function') window.showToast('Link copied!');
+          setTimeout(() => { btn.textContent = prev; }, 1800);
+        };
+        const fail = () => {
+          if (typeof window.showToast === 'function') {
+            window.showToast('Copy failed — long-press the link to share');
+          } else {
+            btn.textContent = 'Copy failed';
+            setTimeout(() => { btn.textContent = 'Copy link'; }, 2000);
+          }
+        };
+        if (typeof window.copyToClipboard === 'function') {
+          window.copyToClipboard(url).then(done).catch(fail);
+          return;
+        }
+        const ta = document.createElement('textarea');
+        ta.value = url;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        try {
+          if (document.execCommand('copy')) done();
+          else fail();
         } catch (_) {
-          btn.textContent = url.replace(/^https?:\/\/[^/]+/, '');
+          fail();
+        } finally {
+          ta.remove();
         }
       });
     });
   }
 
-  function scrollToGameFromHash() {
-    const hash = window.location.hash.replace('#', '');
-    if (!hash || !hash.startsWith('game-')) return;
-    const el = document.getElementById(hash);
+  function scrollToGameTarget() {
+    const type = typeof window.resolveFocusedGameType === 'function'
+      ? window.resolveFocusedGameType()
+      : null;
+    if (!type) return;
+    const el = document.getElementById(`game-${type}`);
     if (!el) return;
     requestAnimationFrame(() => {
       el.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1243,7 +1273,7 @@
     bindGameChoices();
     startCountdowns();
     runWheelDrawSequence(data.wheel);
-    scrollToGameFromHash();
+    scrollToGameTarget();
 
     const wheel = data.wheel || {};
     if (wheel.myWin) {
@@ -1275,7 +1305,7 @@
 
   function init() {
     if (typeof initPlatformNav === 'function') initPlatformNav('games');
-    window.addEventListener('hashchange', scrollToGameFromHash);
+    window.addEventListener('hashchange', scrollToGameTarget);
     loadGamesHub();
   }
 
