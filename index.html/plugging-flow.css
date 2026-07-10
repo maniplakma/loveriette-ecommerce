@@ -341,12 +341,18 @@ body.plug-flow-body {
 }
 
 .plug-pay-qr-wrap .qr-box {
-  max-width: 180px;
+  max-width: 260px;
   margin: 0 auto 0.75rem;
   border-radius: 12px;
-  overflow: hidden;
+  overflow: visible;
   border: 1px solid var(--plug-border);
   background: rgba(0, 0, 0, 0.25);
+  padding: 1rem;
+}
+
+.plug-pay-qr-wrap .qr-frame {
+  border-color: color-mix(in srgb, var(--plug-muted) 35%, transparent);
+  background: rgba(0, 0, 0, 0.2);
 }
 
 .plug-pay-qr-wrap .qr-placeholder {
@@ -362,10 +368,8 @@ body.plug-flow-body {
   opacity: 0.7;
 }
 
-.plug-pay-qr-wrap img {
-  display: block;
-  width: 100%;
-  height: auto;
+.plug-pay-qr-wrap #qr-image {
+  object-fit: contain;
 }
 
 .plug-pay-account {

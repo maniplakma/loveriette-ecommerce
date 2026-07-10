@@ -2779,7 +2779,10 @@ function renderPaymentMethodCard(m) {
       <label>Account number <span class="admin-field-optional">(optional)</span></label>
       <input type="text" class="admin-payment-account" value="${escAttr(m.account_number || '')}" placeholder="e.g. 09XX XXX XXXX" data-method-id="${m.id}">
     </div>
-    <button type="button" class="admin-btn admin-btn-primary admin-btn-sm admin-payment-save" data-method-id="${m.id}">Save method</button>
+    <div class="admin-payment-method-actions">
+      <button type="button" class="admin-btn admin-btn-primary admin-btn-sm admin-payment-save" data-method-id="${m.id}">Save method</button>
+      <button type="button" class="admin-btn admin-btn-danger admin-btn-sm admin-payment-delete" data-method-id="${m.id}">Delete</button>
+    </div>
   `;
 }
 
@@ -2824,6 +2827,9 @@ async function loadPayments() {
   wrap.querySelectorAll('.admin-payment-save').forEach((btn) => {
     btn.addEventListener('click', () => savePaymentMethod(Number(btn.dataset.methodId)));
   });
+  wrap.querySelectorAll('.admin-payment-delete').forEach((btn) => {
+    btn.addEventListener('click', () => deletePaymentMethod(Number(btn.dataset.methodId)));
+  });
 }
 
 async function addPaymentMethod() {
@@ -2853,6 +2859,22 @@ async function savePaymentInstructions() {
   } catch (err) {
     showToast(err.message, 'error');
   } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function deletePaymentMethod(methodId) {
+  const card = document.querySelector(`.admin-payment-method-card[data-method-id="${methodId}"]`);
+  const name = card?.querySelector('.admin-payment-name')?.value?.trim() || 'this method';
+  if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
+  const btn = card?.querySelector('.admin-payment-delete');
+  if (btn) btn.disabled = true;
+  try {
+    await api(`/admin/payment-methods/${methodId}`, { method: 'DELETE' });
+    showToast('Payment method deleted', 'approved');
+    await loadPayments();
+  } catch (err) {
+    showToast(err.message, 'error');
     if (btn) btn.disabled = false;
   }
 }

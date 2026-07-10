@@ -9,7 +9,7 @@
   <title>Payment — loveriette</title>
   <link rel="stylesheet" href="theme-critical.css?v=20260708b">
   <script src="theme-boot.js?v=20260708b"></script>
-  <link rel="stylesheet" href="style.css?v=20260708b">
+  <link rel="stylesheet" href="style.css?v=20260710qr">
   <link rel="stylesheet" href="mobile.css?v=20260708b">
   <link rel="stylesheet" href="performance-mobile.css?v=20260708b">
   <link rel="stylesheet" href="theme.css?v=20260708b">
@@ -71,11 +71,13 @@
 
           <div class="payment-method-card" id="payment-method-card">
             <div class="qr-box" id="qr-box">
-              <div class="qr-placeholder" id="qr-placeholder">
-                <span>QR Code</span>
-                <small>Upload QR in admin panel</small>
+              <div class="qr-frame">
+                <div class="qr-placeholder" id="qr-placeholder">
+                  <span>QR Code</span>
+                  <small>Upload QR in admin panel</small>
+                </div>
+                <img id="qr-image" alt="Payment QR code" hidden>
               </div>
-              <img id="qr-image" alt="Payment QR code" hidden>
             </div>
             <p class="payment-account-number" id="payment-account-number" hidden>
               <span class="payment-account-label">Account number</span>

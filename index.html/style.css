@@ -2804,18 +2804,32 @@ button.btn-view {
   border: 1px solid rgba(0, 0, 0, 0.06);
 }
 
-.qr-placeholder {
+.qr-frame {
+  position: relative;
   aspect-ratio: 1;
   max-width: 260px;
+  width: 100%;
   margin: 0 auto;
+  border: 2px dashed #ccc;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.qr-placeholder {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 0.35rem;
   color: var(--text-faint);
-  border: 2px dashed #ccc;
-  border-radius: 8px;
+  margin: 0;
+  max-width: none;
+  aspect-ratio: auto;
+  border: none;
+  border-radius: 0;
 }
 
 .qr-placeholder span {
@@ -2824,9 +2838,18 @@ button.btn-view {
 }
 
 #qr-image {
-  max-width: 260px;
+  position: absolute;
+  inset: 0;
   width: 100%;
-  border-radius: 8px;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  border-radius: 0;
+  max-width: none;
+}
+
+#qr-image[hidden] {
+  display: none !important;
 }
 
 .upload-section-label {
