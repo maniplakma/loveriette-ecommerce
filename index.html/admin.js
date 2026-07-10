@@ -9,7 +9,10 @@ async function api(url, options = {}) {
     credentials: 'include'
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || data.message || 'Request failed');
+  if (!res.ok) {
+    const detail = data.error || data.message || (typeof data === 'string' ? data : '');
+    throw new Error(detail || `Request failed (${res.status})`);
+  }
   return data;
 }
 

@@ -6012,16 +6012,17 @@ app.post('/admin/integrations/test-buyer-email', requireAdmin, async (req, res) 
 app.post('/admin/integrations/test-smtp', requireAdmin, async (req, res) => {
   const toEmail = String(req.body?.testEmail || '').trim();
   if (!toEmail) {
-    return res.status(400).json({ ok: false, message: 'Test email address is required' });
-  }
-  const smtp = mergeSmtpSettings(parseSmtpSettings(getSetting), req.body || {});
-  if (!isTruthy(smtp.enabled) || !isSmtpConfigured(smtp)) {
-    return res.status(400).json({
-      ok: false,
-      message: 'Turn the SMTP main switch ON (top right), fill host + from email, save, then test again.'
-    });
+    return res.status(400).json({ ok: false, error: 'Test email address is required', message: 'Test email address is required' });
   }
   try {
+    const smtp = mergeSmtpSettings(parseSmtpSettings(getSetting), req.body || {});
+    if (!isTruthy(smtp.enabled) || !isSmtpConfigured(smtp)) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Turn the SMTP main switch ON (top right), fill host + from email, save, then test again.',
+        message: 'Turn the SMTP main switch ON (top right), fill host + from email, save, then test again.'
+      });
+    }
     const { sendViaSmtp } = require('./smtp-mailer');
     const siteUrl = String(getSetting('site_public_url', '') || appConfig.publicUrl || 'https://loveriette.shop').replace(/\/$/, '');
     await sendViaSmtp(smtp, {
@@ -6033,7 +6034,8 @@ app.post('/admin/integrations/test-smtp', requireAdmin, async (req, res) => {
     res.json({ ok: true, message: `SMTP test sent to ${toEmail}` });
   } catch (err) {
     const msg = formatSendError(err);
-    res.status(400).json({ ok: false, message: msg });
+    console.error('[test-smtp]', msg);
+    res.status(400).json({ ok: false, error: msg, message: msg });
   }
 });
 
