@@ -1395,9 +1395,11 @@ initPlatformDb(db);
 
 const { initGmailSchema } = require('./gmail-schema');
 const { initMailerSchema } = require('./mailer-schema');
+const { initPasswordResetSchema } = require('./password-reset');
 const { initGamesSchema } = require('./games-schema');
 initGmailSchema(db);
 initMailerSchema(db);
+initPasswordResetSchema(db);
 initGamesSchema(db);
 
 /** Verify checkout-critical columns exist (production DB may lag behind code). */

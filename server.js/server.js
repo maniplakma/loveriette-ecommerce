@@ -26,16 +26,26 @@ const {
   saveFetchedEmail
 } = require('./gmail-schema');
 const { sendHtmlPage } = require('./send-html-page');
+const {
+  createPasswordResetToken,
+  findPasswordResetToken,
+  isPasswordResetTokenValid,
+  markPasswordResetTokenUsed,
+} = require('./password-reset');
 const { domainStatus, gmailOAuthAllowed, isCustomDomainConnected } = require('./domain-setup');
 const {
   sendWelcomeEmail,
+  sendPasswordResetEmail,
   sendPasswordChangedEmail,
   trySendOrderDeliveredEmail,
   queueBuyerEmail,
   parseBuyerEmailSettings,
   sendBuyerEmail,
-  formatGmailSendError
+  isOutboundEmailReady,
+  formatGmailSendError,
+  formatSendError
 } = require('./mailer');
+const { mergeSmtpSettings, publicSmtpSettings, parseSmtpSettings } = require('./smtp-mailer');
 const {
   buildOrderActivityMessage,
   buildOrderActivityMeta,
@@ -2305,6 +2315,102 @@ app.post('/auth/logout', (req, res) => {
   req.session.destroy(() => {
     res.json({ ok: true });
   });
+});
+
+function passwordResetEmailReady() {
+  const settings = parseBuyerEmailSettings(getSetting);
+  if (settings.enabled === false || settings.enabled === 'false') return false;
+  if (settings.passwordReset === false || settings.passwordReset === 'false') return false;
+  return isOutboundEmailReady(getSetting, db);
+}
+
+app.post('/auth/forgot-password', authRateLimit, async (req, res) => {
+  const email = String(req.body?.email || '').trim().toLowerCase();
+  if (!email) {
+    return res.status(400).json({ error: 'Email is required' });
+  }
+
+  if (!passwordResetEmailReady()) {
+    return res.status(503).json({
+      error: 'Password reset email is not available yet. Contact support or try again later.'
+    });
+  }
+
+  const user = db.prepare(`
+    SELECT id, email, name, suspended FROM users WHERE email = ? AND is_admin = 0
+  `).get(email);
+
+  const genericMessage = 'If that email is registered, we sent a password reset link. Check your inbox and spam folder.';
+
+  if (!user || user.suspended) {
+    return res.json({ ok: true, message: genericMessage });
+  }
+
+  try {
+    const siteUrl = String(getSetting('site_public_url', '') || appConfig.publicUrl || '').replace(/\/$/, '')
+      || 'https://loveriette.shop';
+    const { rawToken } = createPasswordResetToken(db, user.id);
+    const resetUrl = `${siteUrl}/reset-password.html?token=${encodeURIComponent(rawToken)}`;
+    await sendPasswordResetEmail(db, getSetting, {
+      userId: user.id,
+      email: user.email,
+      name: user.name,
+      resetUrl
+    });
+    res.json({ ok: true, message: genericMessage });
+  } catch (err) {
+    console.error('[forgot-password]', err.message || err);
+    res.status(500).json({
+      error: formatSendError(err) || 'Could not send reset email. Try again or contact support.'
+    });
+  }
+});
+
+app.get('/auth/reset-password/verify', (req, res) => {
+  const rawToken = String(req.query.token || '').trim();
+  if (!rawToken) return res.json({ valid: false });
+  const row = findPasswordResetToken(db, rawToken);
+  res.json({ valid: isPasswordResetTokenValid(row) });
+});
+
+app.post('/auth/reset-password', authRateLimit, (req, res) => {
+  const rawToken = String(req.body?.token || '').trim();
+  const password = String(req.body?.password || '');
+  const confirmPassword = String(req.body?.confirmPassword || password);
+
+  if (!rawToken) {
+    return res.status(400).json({ error: 'Reset link is invalid or expired' });
+  }
+  if (!password) {
+    return res.status(400).json({ error: 'New password is required' });
+  }
+  if (password !== confirmPassword) {
+    return res.status(400).json({ error: 'Passwords do not match' });
+  }
+  const strengthErr = passwordStrengthError(password);
+  if (strengthErr) return res.status(400).json({ error: strengthErr });
+
+  const row = findPasswordResetToken(db, rawToken);
+  if (!isPasswordResetTokenValid(row)) {
+    return res.status(400).json({ error: 'Reset link is invalid or expired. Request a new one.' });
+  }
+  if (row.suspended) {
+    return res.status(403).json({ error: 'Account suspended. Contact support.' });
+  }
+
+  db.prepare(`
+    UPDATE users SET password_hash = ?, session_version = session_version + 1
+    WHERE id = ?
+  `).run(bcrypt.hashSync(password, 10), row.user_id);
+  markPasswordResetTokenUsed(db, row.id);
+
+  queueBuyerEmail(() => sendPasswordChangedEmail(db, getSetting, {
+    userId: row.user_id,
+    email: row.email,
+    name: row.name
+  }));
+
+  res.json({ ok: true, message: 'Password updated. You can sign in now.' });
 });
 
 app.get('/auth/me', (req, res) => {
@@ -5637,7 +5743,7 @@ app.put('/admin/chat-seller-bot', requireAdmin, (req, res) => {
 /* ============================================================
    INTEGRATIONS — SMTP, Tawk.to, Telegram Bot, IMAP Fetcher
    ============================================================ */
-const INTEGRATION_KEYS = ['gmail', 'chat-seller', 'buyer-emails'];
+const INTEGRATION_KEYS = ['gmail', 'smtp', 'chat-seller', 'buyer-emails'];
 
 function mergeBuyerEmailSettings(existing = {}, incoming = {}) {
   const bool = (val, fallback = true) => {
@@ -5657,6 +5763,9 @@ function mergeBuyerEmailSettings(existing = {}, incoming = {}) {
     password: Object.prototype.hasOwnProperty.call(incoming, 'password')
       ? bool(incoming.password, true)
       : bool(existing.password, true),
+    passwordReset: Object.prototype.hasOwnProperty.call(incoming, 'passwordReset')
+      ? bool(incoming.passwordReset, true)
+      : bool(existing.passwordReset, true),
     orderDelivered: Object.prototype.hasOwnProperty.call(incoming, 'orderDelivered')
       ? bool(incoming.orderDelivered, true)
       : bool(existing.orderDelivered, true)
@@ -5802,6 +5911,7 @@ app.get('/auth/google/callback', async (req, res) => {
 app.get('/admin/integrations', requireAdmin, (req, res) => {
   const domain = domainStatus();
   const activeGmail = getActiveGmailConnection(db);
+  const smtpRaw = parseSmtpSettings(getSetting);
   res.json({
     gmail: {
       ...getIntegration('gmail'),
@@ -5812,11 +5922,14 @@ app.get('/admin/integrations', requireAdmin, (req, res) => {
       redirectUri: getRedirectUri(),
       gmailConnected: !!activeGmail
     },
+    smtp: publicSmtpSettings(smtpRaw),
     'chat-seller': { ...getChatSellerBotSettings(), ...getIntegration('chat_seller') },
     'buyer-emails': {
       ...parseBuyerEmailSettings(getSetting),
       gmailConnected: !!activeGmail,
-      connectedEmail: activeGmail?.connected_email || ''
+      smtpConfigured: publicSmtpSettings(smtpRaw).configured,
+      smtpEnabled: publicSmtpSettings(smtpRaw).enabled,
+      connectedEmail: activeGmail?.connected_email || publicSmtpSettings(smtpRaw).fromEmail || ''
     }
   });
 });
@@ -5836,12 +5949,18 @@ app.put('/admin/integrations/:name', requireAdmin, (req, res) => {
   delete incoming.redirectUri;
   delete incoming.gmailConnected;
   delete incoming.connectedEmail;
+  delete incoming.smtpConfigured;
+  delete incoming.smtpEnabled;
+  delete incoming.configured;
+  delete incoming.hasPassword;
 
   let merged;
   if (req.params.name === 'gmail') {
     merged = mergeGmailIntegration(existing, incoming);
   } else if (req.params.name === 'buyer-emails') {
     merged = mergeBuyerEmailSettings(existing, incoming);
+  } else if (req.params.name === 'smtp') {
+    merged = mergeSmtpSettings(existing, incoming);
   } else {
     merged = { ...existing, ...incoming };
   }
@@ -5852,9 +5971,9 @@ app.put('/admin/integrations/:name', requireAdmin, (req, res) => {
     });
   }
 
-  if (req.params.name === 'buyer-emails' && merged.enabled && !getActiveGmailConnection(db)) {
+  if (req.params.name === 'buyer-emails' && merged.enabled && !isOutboundEmailReady(getSetting, db)) {
     return res.status(400).json({
-      error: 'Connect Gmail first under Gmail OAuth before enabling buyer emails.'
+      error: 'Connect SMTP or Gmail OAuth first before enabling buyer emails.'
     });
   }
 
@@ -5867,9 +5986,8 @@ app.post('/admin/integrations/test-buyer-email', requireAdmin, async (req, res) 
   if (!toEmail) {
     return res.status(400).json({ ok: false, error: 'Test email address is required', message: 'Test email address is required' });
   }
-  const conn = getActiveGmailConnection(db);
-  if (!conn?.access_token_enc) {
-    const msg = 'Gmail is not connected — open Gmail OAuth and connect your seller inbox first.';
+  if (!isOutboundEmailReady(getSetting, db)) {
+    const msg = 'No email sender configured — set up SMTP or connect Gmail OAuth first.';
     return res.status(400).json({ ok: false, error: msg, message: msg });
   }
   try {
@@ -5877,16 +5995,42 @@ app.post('/admin/integrations/test-buyer-email', requireAdmin, async (req, res) 
     const siteUrl = String(getSetting('site_public_url', '') || appConfig.publicUrl || 'https://loveriette.shop').replace(/\/$/, '');
     const storeName = String(getSetting('store_brand_name', '') || getSetting('store_display_name', '') || 'loveriette').trim();
     const payload = buildWelcomeEmail({ name: 'Test Buyer', storeName, siteUrl });
-    await sendBuyerEmail(db, {
+    const result = await sendBuyerEmail(db, getSetting, {
       toEmail,
       subject: `[Test] ${payload.subject}`,
       html: payload.html,
       text: payload.text
     });
-    res.json({ ok: true, message: `Test buyer email sent to ${toEmail}` });
+    const via = result.provider === 'smtp' ? 'SMTP' : 'Gmail';
+    res.json({ ok: true, message: `Test buyer email sent to ${toEmail} via ${via}` });
   } catch (err) {
-    const msg = formatGmailSendError(err);
+    const msg = formatSendError(err);
     res.status(400).json({ ok: false, error: msg, message: msg });
+  }
+});
+
+app.post('/admin/integrations/test-smtp', requireAdmin, async (req, res) => {
+  const toEmail = String(req.body?.testEmail || '').trim();
+  if (!toEmail) {
+    return res.status(400).json({ ok: false, message: 'Test email address is required' });
+  }
+  const smtp = mergeSmtpSettings(parseSmtpSettings(getSetting), req.body || {});
+  if (!smtp.enabled) {
+    return res.status(400).json({ ok: false, message: 'Turn SMTP on and save host + from email first.' });
+  }
+  try {
+    const { sendViaSmtp } = require('./smtp-mailer');
+    const siteUrl = String(getSetting('site_public_url', '') || appConfig.publicUrl || 'https://loveriette.shop').replace(/\/$/, '');
+    await sendViaSmtp(smtp, {
+      toEmail,
+      subject: '[Test] loveriette SMTP',
+      html: `<p>SMTP test OK from <strong>loveriette</strong>.</p><p><a href="${siteUrl}">${siteUrl}</a></p>`,
+      text: `SMTP test OK from loveriette. ${siteUrl}`
+    });
+    res.json({ ok: true, message: `SMTP test sent to ${toEmail}` });
+  } catch (err) {
+    const msg = formatSendError(err);
+    res.status(400).json({ ok: false, message: msg });
   }
 });
 

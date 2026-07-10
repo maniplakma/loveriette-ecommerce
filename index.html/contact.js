@@ -72,7 +72,7 @@ async function loadContact() {
   if (params.get('subject') === 'password-reset') {
     const header = document.querySelector('.info-header p');
     if (header) {
-      header.textContent = 'To reset your password, contact us with the email on your account. We will verify your identity and send you a new password.';
+      header.innerHTML = 'Use the <a href="forgot-password.html">Forgot password</a> page — we\'ll email you a secure reset link. If email reset is unavailable, contact us with the email on your account.';
     }
   }
 

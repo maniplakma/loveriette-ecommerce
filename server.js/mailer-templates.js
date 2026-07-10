@@ -160,8 +160,27 @@ function buildOrderDeliveredEmail({
   };
 }
 
+function buildPasswordResetEmail({ name, storeName, siteUrl, resetUrl, expiresMinutes = 60 }) {
+  const html = emailShell({
+    title: 'Reset Password',
+    eyebrow: 'Account Recovery',
+    greeting: name || 'there',
+    lead: `We received a request to reset your <strong>${escHtml(storeName || 'loveriette')}</strong> password. Click the button below to choose a new password. This link expires in ${expiresMinutes} minutes.`,
+    bodyHtml: `<p style="margin:0;font-size:13px;line-height:1.6;color:${THEME.muted};">If you did not request this, you can ignore this email — your password will stay the same.</p>`,
+    ctaLabel: 'Reset Password',
+    ctaUrl: resetUrl,
+    storeName
+  });
+  return {
+    subject: `Reset your ${storeName || 'loveriette'} password`,
+    html,
+    text: `Reset your password: ${resetUrl}\n\nThis link expires in ${expiresMinutes} minutes. If you did not request this, ignore this email.`
+  };
+}
+
 module.exports = {
   buildWelcomeEmail,
   buildPasswordChangedEmail,
+  buildPasswordResetEmail,
   buildOrderDeliveredEmail
 };

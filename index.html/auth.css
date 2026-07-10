@@ -502,6 +502,12 @@ body.auth-page {
   font-size: 0.85rem;
 }
 
+.form-success {
+  color: #2d8a5f;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
 .auth-submit {
   width: 100%;
   padding: 0.85rem;
