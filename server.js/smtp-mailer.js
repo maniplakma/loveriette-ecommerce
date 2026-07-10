@@ -77,6 +77,10 @@ function createSmtpTransport(settings) {
     socketTimeout: 20000
   };
 
+  if (!secure && (port === 587 || port === 2525 || port === 25)) {
+    options.requireTLS = true;
+  }
+
   if (user || password) {
     options.auth = { user, pass: password };
   }
@@ -143,6 +147,7 @@ module.exports = {
   parseSmtpSettings,
   isSmtpConfigured,
   isSmtpSendReady,
+  isTruthy,
   mergeSmtpSettings,
   sendViaSmtp,
   formatSmtpSendError,
