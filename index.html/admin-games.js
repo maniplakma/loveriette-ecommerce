@@ -63,6 +63,35 @@
     ).join('');
   }
 
+  function readGameOpenToggles() {
+    const state = {};
+    document.querySelectorAll('.games-open-toggle').forEach((inp) => {
+      state[inp.dataset.gameKey] = !!inp.checked;
+    });
+    return state;
+  }
+
+  function renderGameOpenToggles(gameEnabled = {}) {
+    const wrap = document.getElementById('games-open-toggles');
+    if (!wrap) return;
+    wrap.innerHTML = GAME_KEYS.map((g) => {
+      const on = gameEnabled[g.key] !== false;
+      return `
+        <label class="admin-games-open-item">
+          <input type="checkbox" class="games-open-toggle" data-game-key="${g.key}"${on ? ' checked' : ''}>
+          <span class="admin-games-open-label">${esc(g.label)}</span>
+          <span class="admin-games-open-state">${on ? 'Open' : 'Closed'}</span>
+        </label>`;
+    }).join('');
+    wrap.querySelectorAll('.games-open-toggle').forEach((inp) => {
+      inp.addEventListener('change', () => {
+        const stateEl = inp.closest('.admin-games-open-item')?.querySelector('.admin-games-open-state');
+        if (stateEl) stateEl.textContent = inp.checked ? 'Open' : 'Closed';
+        saveGamesSettings().catch((e) => alert(e.message));
+      });
+    });
+  }
+
   async function loadGamesSettings() {
     const data = await api('/admin/games/settings');
     const toggle = document.getElementById('games-enabled-toggle');
@@ -77,6 +106,7 @@
     if (tg) tg.value = data.telegramHandle || '@loveriette';
     fillProductSelect(data.productIds || []);
     renderGuideFields(data.guides || {});
+    renderGameOpenToggles(data.gameEnabled || {});
   }
 
   async function saveGamesSettings() {
@@ -99,9 +129,22 @@
         requiredQuantity: Number(qty?.value || 3),
         telegramHandle: tg?.value || '@loveriette',
         productIds: [...(sel?.selectedOptions || [])].map((o) => Number(o.value)),
-        guides
+        guides,
+        gameEnabled: readGameOpenToggles()
       })
     });
+  }
+
+  async function turnAllGamesOff() {
+    renderGameOpenToggles({
+      wheel: false,
+      scratch: false,
+      mystery: false,
+      dice: false,
+      pick: false,
+      vault: false
+    });
+    await saveGamesSettings();
   }
 
   async function loadWheelAdmin() {
@@ -292,6 +335,9 @@
     });
     document.getElementById('games-eligibility-save')?.addEventListener('click', () => {
       saveGamesSettings().then(() => alert('Games eligibility saved.')).catch((e) => alert(e.message));
+    });
+    document.getElementById('games-all-off-btn')?.addEventListener('click', () => {
+      turnAllGamesOff().then(() => alert('All games are now closed.')).catch((e) => alert(e.message));
     });
 
     document.getElementById('admin-wheel-create-form')?.addEventListener('submit', async (e) => {
