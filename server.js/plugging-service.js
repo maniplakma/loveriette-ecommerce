@@ -7,7 +7,7 @@ const crypto = require('crypto');
 const appConfig = require('./config');
 const { sendHtmlPage } = require('./send-html-page');
 const { sendLoginCode, verifyLoginCode } = require('./plugging-telegram');
-const { startRunner, stopRunner, isRunning } = require('./plugging-runner');
+const { startRunner, stopRunner, isRunning, resumeRunnersOnBoot } = require('./plugging-runner');
 const { isPostLink, normalizePostLink } = require('./plugging-post');
 const { extractInviteHash } = require('./plugging-join');
 const { pickProxyForNewAccount, listPluggingProxies, autoEnableProxySetting, ensureAccountProxy } = require('./plugging-proxy');
@@ -679,6 +679,14 @@ function mountPluggingService(app, db, deps) {
 
     const updated = db.prepare('SELECT * FROM plugging_orders WHERE id = ?').get(order.id);
     res.json({ ok: true, accessKey: updated.access_key, status: updated.status });
+  });
+
+  setImmediate(() => {
+    try {
+      resumeRunnersOnBoot(db, getPluggingSettings);
+    } catch (err) {
+      console.error('[plugging] resume runners failed:', err.message);
+    }
   });
 }
 

@@ -12,6 +12,7 @@ const { forwardPostWithRetries } = require('./plugging-forward');
 const runners = new Map();
 const RETRY_DELAY_MS = 12000;
 const TARGET_RESOLVE_MAX_ATTEMPTS = 3;
+const WAIT_POLL_MS = 500;
 
 function entityLabel(entity) {
   if (!entity) return '';
@@ -29,6 +30,14 @@ function parseTargets(text) {
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+async function waitWhileRunning(state, ms) {
+  if (!ms || ms <= 0) return;
+  const endAt = Date.now() + ms;
+  while (state.running && Date.now() < endAt) {
+    await sleep(Math.min(WAIT_POLL_MS, endAt - Date.now()));
+  }
 }
 
 function normalizeRef(ref) {
@@ -161,18 +170,10 @@ function pruneTargetTracker(tracker, refs) {
   }
 }
 
-async function forwardPostToTargets(client, db, accountId, account, source, msg, targetEntries, { skipDelay = false } = {}) {
+async function forwardPostToTargets(client, db, accountId, account, source, msg, targetEntries) {
   if (!targetEntries.length) {
     logPlugActivity(db, accountId, 'error', 'No valid target groups — add your test group links');
     return { okCount: 0, failCount: 0 };
-  }
-
-  if (!skipDelay) {
-    const waitMs = cycleDelayMs(account.delay_minutes);
-    if (waitMs > 0) {
-      logPlugActivity(db, accountId, 'info', `Cycle delay — waiting ${formatDelayLabel(waitMs)}`);
-      await sleep(waitMs);
-    }
   }
 
   let okCount = 0;
@@ -214,6 +215,36 @@ async function forwardPostToTargets(client, db, accountId, account, source, msg,
   return { okCount, failCount };
 }
 
+async function runForwardCycle(client, db, accountId, account, state, { logTargetReady = false } = {}) {
+  const postLinkNow = String(account.source_link || '').trim();
+  if (!isPostLink(postLinkNow)) {
+    throw new Error('Invalid post link — use https://t.me/channel/123');
+  }
+
+  const targetRefs = parseTargets(account.targets_text);
+  const resolved = await resolvePostMessage(client, postLinkNow, (msg) => {
+    logPlugActivity(db, accountId, 'info', msg);
+  });
+
+  if (logTargetReady) {
+    logPlugActivity(
+      db, accountId, 'info',
+      `Forwarding post #${resolved.messageId} from ${resolved.label}`
+    );
+  }
+
+  pruneTargetTracker(state.targetTracker, targetRefs);
+  const targetEntries = await buildTargetEntries(client, targetRefs, state.targetTracker, db, accountId);
+  if (logTargetReady && targetEntries.length) {
+    logPlugActivity(db, accountId, 'info', `Targets ready — ${targetEntries.length} group(s)`);
+  }
+
+  return forwardPostToTargets(
+    client, db, accountId, account,
+    resolved.source, resolved.message, targetEntries
+  );
+}
+
 function startRunner(db, accountId, getSettings) {
   stopRunner(accountId);
   let account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ?').get(accountId);
@@ -250,74 +281,38 @@ function startRunner(db, accountId, getSettings) {
   logPlugActivity(db, accountId, 'started', 'Connecting to Telegram…');
 
   (async () => {
+    let firstCycle = true;
+
     while (state.running) {
+      account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ?').get(accountId);
+      if (!account) break;
+
+      if (!firstCycle) {
+        const waitMs = cycleDelayMs(account.delay_minutes);
+        if (waitMs > 0) {
+          logPlugActivity(db, accountId, 'info', `Next cycle in ${formatDelayLabel(waitMs)}`);
+          await waitWhileRunning(state, waitMs);
+        }
+      }
+      if (!state.running) break;
+
       try {
         account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ?').get(accountId);
         await withAuthorizedClient(settings, account.session_string, async (client) => {
           logPlugActivity(db, accountId, 'info', 'Telegram connected — forwarding saved post link');
-
-          let firstCycle = true;
-
-          while (state.running) {
-            account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ?').get(accountId);
-            const postLinkNow = String(account.source_link || '').trim();
-            if (!isPostLink(postLinkNow)) {
-              logPlugActivity(db, accountId, 'error', 'Invalid post link — use https://t.me/channel/123');
-              await sleep(RETRY_DELAY_MS);
-              continue;
-            }
-
-            const targetRefs = parseTargets(account.targets_text);
-            try {
-              const resolved = await resolvePostMessage(client, postLinkNow, (msg) => {
-                logPlugActivity(db, accountId, 'info', msg);
-              });
-
-              if (firstCycle) {
-                logPlugActivity(
-                  db, accountId, 'info',
-                  `Forwarding post #${resolved.messageId} from ${resolved.label}`
-                );
-              }
-
-              pruneTargetTracker(state.targetTracker, targetRefs);
-              const targetEntries = await buildTargetEntries(client, targetRefs, state.targetTracker, db, accountId);
-              if (firstCycle && targetEntries.length) {
-                logPlugActivity(db, accountId, 'info', `Targets ready — ${targetEntries.length} group(s)`);
-              }
-
-              await forwardPostToTargets(
-                client, db, accountId, account,
-                resolved.source, resolved.message, targetEntries,
-                { skipDelay: firstCycle }
-              );
-              firstCycle = false;
-            } catch (cycleErr) {
-              logPlugActivity(db, accountId, 'error', String(cycleErr.message || cycleErr).slice(0, 500));
-            }
-
-            if (!state.running) break;
-
-            const waitMs = cycleDelayMs(account.delay_minutes);
-            if (waitMs > 0) {
-              logPlugActivity(db, accountId, 'info', `Next cycle in ${formatDelayLabel(waitMs)}`);
-              const endAt = Date.now() + waitMs;
-              while (state.running && Date.now() < endAt) {
-                await sleep(2000);
-              }
-            }
-          }
+          await runForwardCycle(client, db, accountId, account, state, { logTargetReady: firstCycle });
         }, account.proxy_url);
       } catch (err) {
         if (!state.running) break;
         const errMsg = String(err.message || err).slice(0, 500);
         db.prepare('UPDATE plugging_accounts SET last_error = ?, updated_at = datetime(\'now\') WHERE id = ?')
           .run(errMsg, accountId);
-        logPlugActivity(db, accountId, 'error', `Connection issue (retrying): ${errMsg}`);
-        await sleep(RETRY_DELAY_MS);
+        logPlugActivity(db, accountId, 'error', `Connection issue (retrying in ${Math.round(RETRY_DELAY_MS / 1000)}s): ${errMsg}`);
+        await waitWhileRunning(state, RETRY_DELAY_MS);
         continue;
       }
-      break;
+
+      firstCycle = false;
     }
 
     db.prepare('UPDATE plugging_accounts SET runner_status = ?, updated_at = datetime(\'now\') WHERE id = ?')
@@ -339,4 +334,38 @@ function isRunning(accountId) {
   return !!(state && state.running);
 }
 
-module.exports = { startRunner, stopRunner, isRunning, parseTargets, resolveEntityFromLink };
+function resumeRunnersOnBoot(db, getSettings) {
+  const rows = db.prepare(`
+    SELECT pa.*
+    FROM plugging_accounts pa
+    JOIN plugging_orders po ON po.id = pa.order_id
+    WHERE pa.runner_status = 'running'
+      AND pa.auth_status = 'authenticated'
+      AND po.status = 'approved'
+  `).all();
+
+  for (const row of rows) {
+    if (isRunning(row.id)) continue;
+    if (!isPostLink(row.source_link)) continue;
+    if (!parseTargets(row.targets_text).length) continue;
+    try {
+      startRunner(db, row.id, getSettings);
+      logPlugActivity(db, row.id, 'info', 'Forwarder resumed after server restart');
+    } catch (err) {
+      db.prepare('UPDATE plugging_accounts SET runner_status = ?, last_error = ?, updated_at = datetime(\'now\') WHERE id = ?')
+        .run('stopped', String(err.message || err).slice(0, 500), row.id);
+      logPlugActivity(db, row.id, 'error', `Could not resume forwarder: ${String(err.message || err).slice(0, 200)}`);
+    }
+  }
+}
+
+module.exports = {
+  startRunner,
+  stopRunner,
+  isRunning,
+  resumeRunnersOnBoot,
+  parseTargets,
+  resolveEntityFromLink,
+  waitWhileRunning,
+  cycleDelayMs
+};
