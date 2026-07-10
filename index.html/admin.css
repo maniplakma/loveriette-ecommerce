@@ -2744,6 +2744,40 @@ a.admin-btn-success:hover { color: #fff; }
   color: var(--a-accent);
 }
 
+.admin-prize-inline-block {
+  margin: 1rem 0;
+  padding: 0.85rem;
+  border-radius: 10px;
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.admin-prize-inline-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.65rem;
+}
+
+.admin-prize-inline-row {
+  display: flex;
+  gap: 0.45rem;
+  align-items: flex-start;
+}
+
+.admin-prize-inline-fields {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 0.8fr 0.55fr 0.55fr;
+  gap: 0.4rem;
+}
+
+@media (max-width: 900px) {
+  .admin-prize-inline-fields {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
 /* ---------- UI icons (realistic stroke SVG) ---------- */
 .admin-ui-icon,
 .admin-panel-icon,

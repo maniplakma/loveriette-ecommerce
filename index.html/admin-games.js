@@ -28,6 +28,7 @@
   let gamesLoaded = false;
   let catalogProducts = [];
   let prizeModalBound = false;
+  let inlinePrizeBound = false;
   let prizeModalKind = '';
   let prizeModalParent = '';
 
@@ -145,6 +146,121 @@
 
   function findPrizeType(v) {
     return PRIZE_TYPES.find((t) => t.v === v) || PRIZE_TYPES[0];
+  }
+
+  function prizeTypeSelectHtml(kind, selected) {
+    const types = prizeTypesForKind(kind);
+    return types.map((t) =>
+      `<option value="${t.v}"${t.v === selected ? ' selected' : ''}>${esc(t.l)}</option>`
+    ).join('');
+  }
+
+  function addInlinePrizeRow(listEl, kind, preset = {}) {
+    if (!listEl) return;
+    const isWheel = kind === 'wheel';
+    const row = document.createElement('div');
+    row.className = 'admin-prize-inline-row';
+    const defaultType = preset.prizeType || (isWheel ? 'loyalty' : 'wallet');
+    row.innerHTML = `
+      <div class="admin-prize-inline-fields">
+        <input type="text" class="admin-modal-input prize-inline-label" placeholder="Pangalan (hal. Loyalty ₱400)" value="${esc(preset.label || '')}">
+        <select class="admin-modal-input prize-inline-type" title="Uri ng prize">${prizeTypeSelectHtml(kind, defaultType)}</select>
+        <input type="text" class="admin-modal-input prize-inline-value" placeholder="Value" value="${esc(preset.prizeValue || '')}">
+        <input type="number" class="admin-modal-input prize-inline-qty" min="-1" value="${preset.quantity ?? (isWheel ? 1 : -1)}" title="${isWheel ? 'Winners' : 'Max winners'}">
+        <input type="number" class="admin-modal-input prize-inline-weight" min="1" value="${preset.weight ?? 3}" title="Weight (chance)"${isWheel ? ' hidden' : ''}>
+      </div>
+      <button type="button" class="admin-btn admin-btn-ghost admin-btn-sm prize-inline-remove" title="Alisin">×</button>`;
+    row.querySelector('.prize-inline-remove')?.addEventListener('click', () => row.remove());
+    listEl.appendChild(row);
+  }
+
+  function readInlinePrizeRows(listEl) {
+    if (!listEl) return [];
+    const rows = [];
+    listEl.querySelectorAll('.admin-prize-inline-row').forEach((row) => {
+      const label = row.querySelector('.prize-inline-label')?.value.trim();
+      if (!label) return;
+      rows.push({
+        label,
+        prizeType: row.querySelector('.prize-inline-type')?.value || 'wallet',
+        prizeValue: row.querySelector('.prize-inline-value')?.value.trim() || '',
+        quantity: Number(row.querySelector('.prize-inline-qty')?.value),
+        weight: Math.max(1, Number(row.querySelector('.prize-inline-weight')?.value) || 3)
+      });
+    });
+    return rows;
+  }
+
+  async function submitInlinePrizes(kind, parentId, prizes) {
+    for (const p of prizes) {
+      if (kind === 'wheel') {
+        await api(`/admin/games/wheel/${parentId}/prizes`, {
+          method: 'POST',
+          body: JSON.stringify({
+            label: p.label,
+            prizeType: p.prizeType,
+            prizeValue: p.prizeValue,
+            quantity: Math.max(1, p.quantity || 1)
+          })
+        });
+      } else {
+        const isLoser = p.prizeType === 'none' || p.prizeType === 'bomb';
+        await api(`/admin/games/${kind}/${parentId}/prizes`, {
+          method: 'POST',
+          body: JSON.stringify({
+            label: p.label,
+            prizeType: p.prizeType,
+            prizeValue: p.prizeValue,
+            weight: p.weight,
+            quantity: Number.isFinite(p.quantity) ? p.quantity : -1,
+            ...(kind === 'instant' ? { tileStyle: isLoser ? 'gray' : 'gold' } : {})
+          })
+        });
+      }
+    }
+  }
+
+  function resetInlinePrizeRows(listId, kind, count = 1) {
+    const list = document.getElementById(listId);
+    if (!list) return;
+    list.innerHTML = '';
+    for (let i = 0; i < count; i += 1) addInlinePrizeRow(list, kind);
+  }
+
+  function initInlinePrizeBuilders() {
+    resetInlinePrizeRows('wheel-create-prize-rows', 'wheel', 1);
+    resetInlinePrizeRows('scratch-create-prize-rows', 'scratch', 1);
+    resetInlinePrizeRows('mystery-create-prize-rows', 'mystery', 1);
+    document.getElementById('wheel-create-prize-add')?.addEventListener('click', () => {
+      addInlinePrizeRow(document.getElementById('wheel-create-prize-rows'), 'wheel');
+    });
+    document.getElementById('scratch-create-prize-add')?.addEventListener('click', () => {
+      addInlinePrizeRow(document.getElementById('scratch-create-prize-rows'), 'scratch');
+    });
+    document.getElementById('mystery-create-prize-add')?.addEventListener('click', () => {
+      addInlinePrizeRow(document.getElementById('mystery-create-prize-rows'), 'mystery');
+    });
+  }
+
+  function openPoolEndsModal(kind, id, currentEndsAt) {
+    const modal = document.getElementById('games-pool-ends-modal');
+    document.getElementById('games-pool-ends-kind').value = kind;
+    document.getElementById('games-pool-ends-id').value = id;
+    const input = document.getElementById('games-pool-ends-input');
+    if (input) {
+      if (currentEndsAt) {
+        const d = new Date(currentEndsAt);
+        if (!Number.isNaN(d.getTime())) {
+          input.value = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+        } else input.value = '';
+      } else input.value = '';
+    }
+    if (modal) modal.hidden = false;
+  }
+
+  function closePoolEndsModal() {
+    const modal = document.getElementById('games-pool-ends-modal');
+    if (modal) modal.hidden = true;
   }
 
   function prizeListHtml(prizes, kind, parentId) {
@@ -372,6 +488,16 @@
       } catch (err) { alert(err.message); }
     });
     document.getElementById('games-wheel-max-close')?.addEventListener('click', closeWheelMaxModal);
+    document.getElementById('games-pool-ends-form')?.addEventListener('submit', (e) => {
+      savePoolEndDate(e).catch((err) => alert(err.message));
+    });
+    document.getElementById('games-pool-ends-close')?.addEventListener('click', closePoolEndsModal);
+  }
+
+  function bindInlinePrizeBuilders() {
+    if (inlinePrizeBound) return;
+    inlinePrizeBound = true;
+    initInlinePrizeBuilders();
   }
 
   async function turnAllGamesOff() {
@@ -454,7 +580,7 @@
           <span class="admin-badge">${p.isEnabled ? 'ON' : 'OFF'}</span>
         </div>
         <p class="admin-muted">Min order: ₱${p.min_order_total || p.minOrderTotal || 0}${p.endsAt ? ` · Ends: ${esc(p.endsAt)}` : ''}</p>
-        <button type="button" class="admin-btn admin-btn-outline admin-btn-sm admin-pool-ends" data-kind="scratch" data-id="${p.id}">Set end date</button>
+        <button type="button" class="admin-btn admin-btn-outline admin-btn-sm admin-pool-ends" data-kind="scratch" data-id="${p.id}" data-ends="${esc(p.endsAt || '')}">Set end date</button>
         <ul class="admin-prize-list">${prizeListHtml(p.prizes, 'scratch', p.id)}</ul>
         <button type="button" class="admin-btn admin-btn-outline admin-scratch-add-prize" data-id="${p.id}">Add scratch prize</button>
       </div>`).join('');
@@ -462,7 +588,7 @@
       btn.addEventListener('click', () => openPrizeModal('scratch', btn.dataset.id));
     });
     list.querySelectorAll('.admin-pool-ends').forEach((btn) => {
-      btn.addEventListener('click', () => setPoolEndDate(btn.dataset.kind, btn.dataset.id));
+      btn.addEventListener('click', () => setPoolEndDate(btn.dataset.kind, btn.dataset.id, btn.dataset.ends));
     });
     bindPrizeRowActions(list);
   }
@@ -482,7 +608,7 @@
           <span class="admin-badge">${p.isEnabled ? 'ON' : 'OFF'}</span>
         </div>
         <p class="admin-muted">Min order: ₱${p.min_order_total || p.minOrderTotal || 0}${p.endsAt ? ` · Ends: ${esc(p.endsAt)}` : ''}</p>
-        <button type="button" class="admin-btn admin-btn-outline admin-btn-sm admin-pool-ends" data-kind="mystery" data-id="${p.id}">Set end date</button>
+        <button type="button" class="admin-btn admin-btn-outline admin-btn-sm admin-pool-ends" data-kind="mystery" data-id="${p.id}" data-ends="${esc(p.endsAt || '')}">Set end date</button>
         <ul class="admin-prize-list">${prizeListHtml(p.prizes, 'mystery', p.id)}</ul>
         <button type="button" class="admin-btn admin-btn-outline admin-mystery-add-prize" data-id="${p.id}">Add box prize</button>
       </div>`).join('');
@@ -490,25 +616,29 @@
       btn.addEventListener('click', () => openPrizeModal('mystery', btn.dataset.id));
     });
     list.querySelectorAll('.admin-pool-ends').forEach((btn) => {
-      btn.addEventListener('click', () => setPoolEndDate(btn.dataset.kind, btn.dataset.id));
+      btn.addEventListener('click', () => setPoolEndDate(btn.dataset.kind, btn.dataset.id, btn.dataset.ends));
     });
     bindPrizeRowActions(list);
   }
 
-  async function setPoolEndDate(kind, id) {
-    const raw = prompt('End date & time (YYYY-MM-DDTHH:mm) — leave empty to clear');
-    if (raw === null) return;
-    const endsAt = raw.trim() ? new Date(raw.trim()).toISOString() : null;
+  async function setPoolEndDate(kind, id, currentEndsAt) {
+    openPoolEndsModal(kind, id, currentEndsAt);
+  }
+
+  async function savePoolEndDate(e) {
+    e.preventDefault();
+    const kind = document.getElementById('games-pool-ends-kind')?.value;
+    const id = document.getElementById('games-pool-ends-id')?.value;
+    const raw = document.getElementById('games-pool-ends-input')?.value.trim();
+    const endsAt = raw ? new Date(raw).toISOString() : null;
     const path = kind === 'instant'
       ? `/admin/games/instant/${id}`
       : `/admin/games/${kind}/${id}`;
-    const body = kind === 'instant' ? { endsAt } : { endsAt };
-    try {
-      await api(path, { method: 'PUT', body: JSON.stringify(body) });
-      if (kind === 'scratch') loadScratchAdmin();
-      else if (kind === 'mystery') loadMysteryAdmin();
-      else loadInstantAdmin();
-    } catch (e) { alert(e.message); }
+    await api(path, { method: 'PUT', body: JSON.stringify({ endsAt }) });
+    closePoolEndsModal();
+    if (kind === 'scratch') loadScratchAdmin();
+    else if (kind === 'mystery') loadMysteryAdmin();
+    else loadInstantAdmin();
   }
 
   async function loadInstantAdmin() {
@@ -526,7 +656,7 @@
           <span class="admin-badge">${p.isEnabled ? 'ON' : 'OFF'} · ${esc(p.gameKey)}</span>
         </div>
         <p class="admin-muted">Min order: ₱${p.minOrderTotal || 0}${p.endsAt ? ` · Ends: ${esc(p.endsAt)}` : ''}</p>
-        <button type="button" class="admin-btn admin-btn-outline admin-btn-sm admin-pool-ends" data-kind="instant" data-id="${p.gameKey}">Set end date</button>
+        <button type="button" class="admin-btn admin-btn-outline admin-btn-sm admin-pool-ends" data-kind="instant" data-id="${p.gameKey}" data-ends="${esc(p.endsAt || '')}">Set end date</button>
         <ul class="admin-prize-list">${prizeListHtml(p.prizes, 'instant', p.gameKey)}</ul>
         <button type="button" class="admin-btn admin-btn-outline admin-instant-add-prize" data-key="${p.gameKey}">Add prize</button>
       </div>`).join('');
@@ -534,13 +664,14 @@
       btn.addEventListener('click', () => openPrizeModal('instant', btn.dataset.key));
     });
     list.querySelectorAll('.admin-pool-ends').forEach((btn) => {
-      btn.addEventListener('click', () => setPoolEndDate(btn.dataset.kind, btn.dataset.id));
+      btn.addEventListener('click', () => setPoolEndDate(btn.dataset.kind, btn.dataset.id, btn.dataset.ends));
     });
     bindPrizeRowActions(list);
   }
 
   function bindGamesForms() {
     bindPrizeModal();
+    bindInlinePrizeBuilders();
     document.getElementById('games-enabled-toggle')?.addEventListener('change', () => {
       saveGamesSettings().catch((e) => alert(e.message));
     });
@@ -558,8 +689,9 @@
       e.preventDefault();
       const fd = new FormData(e.target);
       const days = [...e.target.querySelectorAll('input[name="days"]:checked')].map((x) => Number(x.value));
+      const prizes = readInlinePrizeRows(document.getElementById('wheel-create-prize-rows'));
       try {
-        await api('/admin/games/wheel', {
+        const created = await api('/admin/games/wheel', {
           method: 'POST',
           body: JSON.stringify({
             title: fd.get('title'),
@@ -571,7 +703,9 @@
             availableDays: days.length ? days : [0, 1, 2, 3, 4, 5, 6]
           })
         });
+        if (prizes.length) await submitInlinePrizes('wheel', created.id, prizes);
         e.target.reset();
+        resetInlinePrizeRows('wheel-create-prize-rows', 'wheel', 1);
         loadWheelAdmin();
       } catch (err) { alert(err.message); }
     });
@@ -579,8 +713,9 @@
     document.getElementById('admin-scratch-create-form')?.addEventListener('submit', async (e) => {
       e.preventDefault();
       const fd = new FormData(e.target);
+      const prizes = readInlinePrizeRows(document.getElementById('scratch-create-prize-rows'));
       try {
-        await api('/admin/games/scratch', {
+        const created = await api('/admin/games/scratch', {
           method: 'POST',
           body: JSON.stringify({
             title: fd.get('title'),
@@ -589,7 +724,9 @@
             endsAt: fd.get('endsAt') ? new Date(fd.get('endsAt')).toISOString() : null
           })
         });
+        if (prizes.length) await submitInlinePrizes('scratch', created.id, prizes);
         e.target.reset();
+        resetInlinePrizeRows('scratch-create-prize-rows', 'scratch', 1);
         loadScratchAdmin();
       } catch (err) { alert(err.message); }
     });
@@ -597,8 +734,9 @@
     document.getElementById('admin-mystery-create-form')?.addEventListener('submit', async (e) => {
       e.preventDefault();
       const fd = new FormData(e.target);
+      const prizes = readInlinePrizeRows(document.getElementById('mystery-create-prize-rows'));
       try {
-        await api('/admin/games/mystery', {
+        const created = await api('/admin/games/mystery', {
           method: 'POST',
           body: JSON.stringify({
             title: fd.get('title'),
@@ -607,7 +745,9 @@
             endsAt: fd.get('endsAt') ? new Date(fd.get('endsAt')).toISOString() : null
           })
         });
+        if (prizes.length) await submitInlinePrizes('mystery', created.id, prizes);
         e.target.reset();
+        resetInlinePrizeRows('mystery-create-prize-rows', 'mystery', 1);
         loadMysteryAdmin();
       } catch (err) { alert(err.message); }
     });

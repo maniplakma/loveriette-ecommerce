@@ -738,6 +738,12 @@
                 </div>
               </div>
               <label class="admin-toggle"><input type="checkbox" name="isEnabled" checked> <span>Enabled</span></label>
+              <div class="admin-prize-inline-block">
+                <p class="admin-field-label">Prizes <small class="admin-muted">(ilagay dito — hindi na popup)</small></p>
+                <p class="admin-card-meta">Pangalan · Uri · Value · Qty (1 = isang spin/winner). Puwede ring mag-add pagkatapos sa campaign list.</p>
+                <div id="wheel-create-prize-rows" class="admin-prize-inline-rows" data-prize-kind="wheel"></div>
+                <button type="button" class="admin-btn admin-btn-outline admin-btn-sm" id="wheel-create-prize-add">+ Add prize</button>
+              </div>
               <button type="submit" class="admin-btn admin-btn-primary">Create campaign</button>
             </form>
           </div>
@@ -755,9 +761,15 @@
               <div class="admin-field"><label>Min order (₱)</label><input type="number" name="minOrderTotal" min="0" value="0"></div>
               <div class="admin-field"><label>Ends (optional)</label><input type="datetime-local" name="endsAt"></div>
               <label class="admin-toggle"><input type="checkbox" name="isEnabled" checked> <span>Enabled</span></label>
+              <div class="admin-prize-inline-block">
+                <p class="admin-field-label">Prizes <small class="admin-muted">(ilagay dito)</small></p>
+                <p class="admin-card-meta">Weight = chance (talo/none: 25–40). Qty = max winners (-1 = unlimited).</p>
+                <div id="scratch-create-prize-rows" class="admin-prize-inline-rows" data-prize-kind="scratch"></div>
+                <button type="button" class="admin-btn admin-btn-outline admin-btn-sm" id="scratch-create-prize-add">+ Add prize</button>
+              </div>
               <button type="submit" class="admin-btn admin-btn-primary">Create / enable pool</button>
             </form>
-            <p class="admin-card-meta" style="margin-top:0.75rem">Add prizes with winner count (quantity). Set end date so buyers see a countdown.</p>
+            <p class="admin-card-meta" style="margin-top:0.75rem">Set end date sa pool list para may countdown ang buyers.</p>
           </div>
           <div id="admin-games-scratch-list" style="margin-top:1rem"></div>
         </div>
@@ -770,6 +782,11 @@
               <div class="admin-field"><label>Min order (₱)</label><input type="number" name="minOrderTotal" min="0" value="0"></div>
               <div class="admin-field"><label>Ends (optional)</label><input type="datetime-local" name="endsAt"></div>
               <label class="admin-toggle"><input type="checkbox" name="isEnabled" checked> <span>Enabled</span></label>
+              <div class="admin-prize-inline-block">
+                <p class="admin-field-label">Prizes <small class="admin-muted">(ilagay dito)</small></p>
+                <div id="mystery-create-prize-rows" class="admin-prize-inline-rows" data-prize-kind="mystery"></div>
+                <button type="button" class="admin-btn admin-btn-outline admin-btn-sm" id="mystery-create-prize-add">+ Add prize</button>
+              </div>
               <button type="submit" class="admin-btn admin-btn-primary">Create / enable pool</button>
             </form>
           </div>
@@ -906,6 +923,25 @@
     </div>
   </div>
 
+  <div class="admin-modal" id="games-pool-ends-modal" hidden>
+    <div class="admin-modal-card" style="max-width:400px">
+      <div class="admin-modal-head">
+        <h2>Set pool end date</h2>
+        <button type="button" class="admin-modal-close" id="games-pool-ends-close" aria-label="Close">&times;</button>
+      </div>
+      <form id="games-pool-ends-form" class="admin-modal-body">
+        <div class="admin-field">
+          <label for="games-pool-ends-input">End date &amp; time</label>
+          <input type="datetime-local" id="games-pool-ends-input" class="admin-modal-input">
+          <p class="admin-card-meta">Iwanang blank para alisin ang end date.</p>
+        </div>
+        <input type="hidden" id="games-pool-ends-kind" value="">
+        <input type="hidden" id="games-pool-ends-id" value="">
+        <button type="submit" class="admin-btn admin-btn-primary">Save</button>
+      </form>
+    </div>
+  </div>
+
   <div class="admin-modal" id="games-wheel-max-modal" hidden>
     <div class="admin-modal-card" style="max-width:400px">
       <div class="admin-modal-head">
@@ -995,7 +1031,7 @@
   <script src="badges.js?v=20260614tabs"></script>
   <script src="admin.js?v=20260707perf"></script>
   <script src="admin-platform.js?v=20260707deploy"></script>
-  <script src="admin-games.js?v=20260710prizeform"></script>
+  <script src="admin-games.js?v=20260710prizeinline"></script>
   <script src="mobile.js?v=20260614mobile"></script>
 </body>
 </html>
