@@ -45,7 +45,7 @@ const {
   formatGmailSendError,
   formatSendError
 } = require('./mailer');
-const { mergeSmtpSettings, publicSmtpSettings, parseSmtpSettings } = require('./smtp-mailer');
+const { mergeSmtpSettings, publicSmtpSettings, parseSmtpSettings, isSmtpConfigured, isTruthy } = require('./smtp-mailer');
 const {
   buildOrderActivityMessage,
   buildOrderActivityMeta,
@@ -6015,8 +6015,11 @@ app.post('/admin/integrations/test-smtp', requireAdmin, async (req, res) => {
     return res.status(400).json({ ok: false, message: 'Test email address is required' });
   }
   const smtp = mergeSmtpSettings(parseSmtpSettings(getSetting), req.body || {});
-  if (!smtp.enabled) {
-    return res.status(400).json({ ok: false, message: 'Turn SMTP on and save host + from email first.' });
+  if (!isTruthy(smtp.enabled) || !isSmtpConfigured(smtp)) {
+    return res.status(400).json({
+      ok: false,
+      message: 'Turn the SMTP main switch ON (top right), fill host + from email, save, then test again.'
+    });
   }
   try {
     const { sendViaSmtp } = require('./smtp-mailer');
