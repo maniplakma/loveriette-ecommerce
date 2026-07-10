@@ -1061,6 +1061,18 @@ async function runGamesToggleCheck(adminCookie) {
     openGamesForChoice: closedHub.json?.openGamesForChoice
   }));
 
+  const listed = keys.every((k) => closedHub.json?.[k]?.listed !== false);
+  if (listed) ok('all six games still listed when closed');
+  else fail('all six games still listed when closed', keys.map((k) => [k, closedHub.json?.[k]?.listed]));
+
+  const gamesClosedPage = await request('GET', '/games');
+  const closedPageBody = gamesClosedPage.json?.raw || '';
+  if (gamesClosedPage.status === 200
+      && closedPageBody.includes('games-arena-grid')
+      && closedPageBody.includes('games-page.js?v=20260710closed')) {
+    ok('GET /games page loads closed-state assets');
+  } else fail('GET /games page loads closed-state assets', gamesClosedPage.status);
+
   const scratchOn = await request('PUT', '/admin/games/settings', {
     gamesEnabled: true,
     gameEnabled: { scratch: true }

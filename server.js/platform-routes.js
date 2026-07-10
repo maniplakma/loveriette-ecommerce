@@ -153,14 +153,12 @@ function mountPlatformRoutes(app, db, deps) {
   function filterServiceCategoryItems(items) {
     if (!Array.isArray(items)) return items;
     const shopOn = isShopEnabled();
-    const gamesOn = isGamesEnabled();
     const plugOn = isPluggingEnabled();
     const webOn = isWebsiteMakingEnabled();
     return items.filter((i) => {
       if (isLendingServiceItem(i)) return false;
       const link = String(i?.link || '').toLowerCase();
       if (!shopOn && (link === '/shop' || link.startsWith('/product'))) return false;
-      if (!gamesOn && link === '/games') return false;
       if (!plugOn && link.startsWith('/plugging')) return false;
       if (!webOn && link.includes('website-making')) return false;
       return true;
