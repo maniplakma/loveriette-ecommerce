@@ -1069,6 +1069,53 @@ html:not(.lite-ui) .games-expand-modal .games-scratch-foil {
   flex-wrap: wrap;
 }
 
+.games-join-promo {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin: 0 1rem 0.5rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 12px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--games-accent) 14%, transparent), color-mix(in srgb, var(--games-accent) 6%, transparent));
+  border: 1px solid color-mix(in srgb, var(--games-accent) 28%, rgba(255, 255, 255, 0.08));
+  position: relative;
+  z-index: 1;
+}
+
+.games-join-promo-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.games-join-promo-text strong {
+  font-size: 0.82rem;
+  line-height: 1.25;
+}
+
+.games-join-promo-text span {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+.games-join-promo--ready {
+  border-color: rgba(125, 255, 176, 0.32);
+  background: rgba(125, 255, 176, 0.08);
+}
+
+.games-join-promo--ready .games-join-promo-text strong {
+  color: rgba(125, 255, 176, 0.95);
+}
+
+.games-join-promo-btn {
+  flex-shrink: 0;
+  padding: 0.42rem 0.9rem;
+  font-size: 0.72rem;
+}
+
 .games-open-full {
   border: 1px solid color-mix(in srgb, var(--games-accent) 35%, rgba(255, 255, 255, 0.12));
   background: rgba(255, 255, 255, 0.04);

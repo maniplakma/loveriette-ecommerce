@@ -304,7 +304,49 @@
     return { state: 'closed', status: 'Closed' };
   }
 
-  function arenaShell({ type, title, open, visible, statusLabel, body, prizesHtml, guideUrl, metaHtml, expandable, adminClosed, campaignOn }) {
+  const GAME_JOIN_COPY = {
+    wheel: { hook: 'Wanna join the grand draw?', sub: 'Order from the shop — one game per purchase.' },
+    scratch: { hook: 'Wanna scratch a lucky card?', sub: 'Order now and unlock after delivery.' },
+    mystery: { hook: 'Wanna pick a mystery box?', sub: 'Order now — only one box wins!' },
+    dice: { hook: 'Wanna roll lucky dice?', sub: 'Order now and try your luck.' },
+    pick: { hook: 'Wanna flip for a prize?', sub: 'Order now and pick your card.' },
+    vault: { hook: 'Wanna crack the treasure vault?', sub: 'Order now and choose a door.' }
+  };
+
+  function joinPromoBanner(type, game, state) {
+    if (!game?.campaignOn || isGameAdminClosed(game)) return '';
+    if (game.status === 'drawn' || game.closeReason === 'full') return '';
+    const copy = GAME_JOIN_COPY[type] || { hook: 'Wanna join?', sub: 'Order now and play after delivery.' };
+    if (game.canPlay) {
+      return `
+        <div class="games-join-promo games-join-promo--ready">
+          <div class="games-join-promo-text">
+            <strong>You&rsquo;re in!</strong>
+            <span>Play below — good luck.</span>
+          </div>
+        </div>`;
+    }
+    if (!state?.authenticated) {
+      return `
+        <div class="games-join-promo">
+          <div class="games-join-promo-text">
+            <strong>${esc(copy.hook)}</strong>
+            <span>Sign in first, then order to play.</span>
+          </div>
+          <a href="login.html" class="games-shop-btn games-join-promo-btn" data-no-expand>Sign in</a>
+        </div>`;
+    }
+    return `
+      <div class="games-join-promo">
+        <div class="games-join-promo-text">
+          <strong>${esc(copy.hook)}</strong>
+          <span>${esc(copy.sub)}</span>
+        </div>
+        <a href="/shop" class="games-shop-btn games-join-promo-btn" data-no-expand>Order now!</a>
+      </div>`;
+  }
+
+  function arenaShell({ type, title, open, visible, statusLabel, body, prizesHtml, guideUrl, metaHtml, expandable, adminClosed, campaignOn, joinPromoHtml }) {
     const listed = visible !== false;
     const { state, status } = arenaStatusState({ adminClosed, open, campaignOn, statusLabel });
     const closed = state === 'closed';
@@ -327,6 +369,7 @@
           <span class="games-arena-status games-arena-status--${statusClass}">${esc(status)}</span>
         </header>
         <div class="games-arena-guide-row">${guide}${expandBtn}</div>
+        ${joinPromoHtml || ''}
         ${metaHtml || ''}
         ${listed && prizesHtml && !closed ? `<div class="games-arena-prizes"><h3 class="games-arena-sub">Prizes</h3>${prizesHtml}</div>` : ''}
         <div class="games-arena-body">${body}</div>
@@ -367,13 +410,13 @@
           <div><strong>Round ended</strong><div class="games-gate-copy">${customCopy || 'This round has ended. Watch the channel for the next one.'}</div></div>
         </div>`;
     }
-    const purchaseMsg = elig?.message || 'Shop order → unlock after delivery';
+    const purchaseMsg = elig?.message || 'Unlock one game per qualifying order after delivery.';
     if (kind === 'purchase') {
       return `
-        <div class="games-arena-gate games-arena-gate--compact">
+        <div class="games-arena-gate games-arena-gate--compact games-arena-gate--join">
           ${icon('cart', 'games-icon--gate')}
-          <div><strong>Purchase to play</strong><span>${esc(purchaseMsg)}</span></div>
-          <a href="/shop" class="games-shop-btn games-shop-btn--sm">Shop</a>
+          <div><strong>Wanna join?</strong><span>${esc(purchaseMsg)}</span></div>
+          <a href="/shop" class="games-shop-btn games-shop-btn--sm" data-no-expand>Order now!</a>
         </div>`;
     }
     return `
@@ -397,7 +440,7 @@
           <div class="games-wheel-ring"></div>
           <div class="games-wheel-center">${icon('wheel', 'games-icon--wheel')}</div>
         </div>
-        <p class="games-demo-caption">Grand draw — entries from approved orders</p>
+        <p class="games-demo-caption">Wanna join? Order now — grand draw from approved orders</p>
       </div>`;
   }
 
@@ -406,7 +449,7 @@
       <div class="games-demo-stage games-demo-stage--scratch">
         ${demoBadge()}
         ${scratchGridHtml(true)}
-        <p class="games-demo-caption">Scratch 4 foil tiles to reveal your prize</p>
+        <p class="games-demo-caption">Wanna scratch? Order now — reveal 4 foil tiles</p>
       </div>`;
   }
 
@@ -415,7 +458,7 @@
       <div class="games-demo-stage games-demo-stage--mystery">
         ${demoBadge()}
         <div class="games-mystery-row">${[0, 1, 2].map((i) => mysteryBoxHtml(i, true)).join('')}</div>
-        <p class="games-demo-caption">Only one gift box holds the prize</p>
+        <p class="games-demo-caption">Wanna join? Order now — pick the winning gift box</p>
       </div>`;
   }
 
@@ -428,7 +471,7 @@
           ${dieHtml(4, 'games-die--demo')}
         </div>
         <button type="button" class="games-action-btn" disabled>Roll Dice</button>
-        <p class="games-demo-caption">Match lucky sums for bigger prizes</p>
+        <p class="games-demo-caption">Wanna roll? Order now — match lucky sums</p>
       </div>`;
   }
 
@@ -441,7 +484,7 @@
           ${pickCardHtml('♥', 'K', true, 1)}
           ${pickCardHtml('♦', 'Q', true, 2)}
         </div>
-        <p class="games-demo-caption">Flip one card — ace wins big</p>
+        <p class="games-demo-caption">Wanna flip? Order now — ace wins big</p>
       </div>`;
   }
 
@@ -454,7 +497,7 @@
           ${vaultDoorHtml('Silver', true, 1)}
           ${vaultDoorHtml('Gold', true, 2)}
         </div>
-        <p class="games-demo-caption">Pick a vault door to unlock treasure</p>
+        <p class="games-demo-caption">Wanna crack the vault? Order now — pick a door</p>
       </div>`;
   }
 
@@ -625,6 +668,7 @@
       prizesHtml: adminClosed ? '' : prizeChips(game.prizes),
       guideUrl: guideFor(state, 'wheel'),
       metaHtml,
+      joinPromoHtml: joinPromoBanner('wheel', { ...game, open: live }, state),
       body
     });
   }
@@ -659,6 +703,7 @@
       prizesHtml: adminClosed ? '' : prizeChips(game.prizes),
       guideUrl: guideFor(state, 'scratch'),
       metaHtml,
+      joinPromoHtml: joinPromoBanner('scratch', game, state),
       body: gameArenaBody(game, state, 'scratch', demoScratch, play)
     });
   }
@@ -694,6 +739,7 @@
       prizesHtml: adminClosed ? '' : prizeChips(game.prizes),
       guideUrl: guideFor(state, 'mystery'),
       metaHtml,
+      joinPromoHtml: joinPromoBanner('mystery', game, state),
       body: gameArenaBody(game, state, 'mystery', demoMystery, pending.map(mysteryPlay).join(''))
     });
   }
@@ -753,6 +799,7 @@
       prizesHtml: adminClosed ? '' : prizeChips(game.prizes),
       guideUrl: guideFor(state, type),
       metaHtml,
+      joinPromoHtml: joinPromoBanner(type, game, state),
       body: gameArenaBody(game, state, type, demoFn, instantPlay(game, state))
     });
   }
