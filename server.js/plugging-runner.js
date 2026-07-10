@@ -30,6 +30,13 @@ function parseTargets(text) {
     .filter(Boolean);
 }
 
+function computeNextCycleAt(cycleStartedAt, delayMinutes, now = Date.now()) {
+  const delayMs = cycleDelayMs(delayMinutes);
+  if (!delayMs || delayMs <= 0) return 0;
+  const next = cycleStartedAt + delayMs;
+  return next > now ? next : 0;
+}
+
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
@@ -121,12 +128,12 @@ function getTargetState(tracker, ref) {
   return tracker.get(key);
 }
 
-async function ensureTargetJoined(client, ref, tracker, db, accountId, handle) {
+async function ensureTargetJoined(client, ref, tracker, db, accountId, handle, { quiet = false } = {}) {
   const key = normalizeRef(ref);
   const state = getTargetState(tracker, key);
 
   if (state.entity && state.joined) {
-    return { ref: key, entity: state.entity };
+    return { ref: key, entity: state.entity, wasMember: true };
   }
 
   if (state.failed && state.failCycles >= TARGET_RESOLVE_MAX_ATTEMPTS) return null;
@@ -150,7 +157,6 @@ async function ensureTargetJoined(client, ref, tracker, db, accountId, handle) {
         if (membership.member && membership.entity) {
           entity = membership.entity;
           wasMember = true;
-          logPlugActivity(db, accountId, 'info', `Already in invite ${key}`, key);
         }
       }
       if (!entity) {
@@ -158,23 +164,22 @@ async function ensureTargetJoined(client, ref, tracker, db, accountId, handle) {
       }
     }
 
-    if (!wasMember) {
+    if (!wasMember && entity) {
       const membership = await isAlreadyMember(client, entity, key);
       if (membership.member) {
         wasMember = true;
         entity = membership.entity || entity;
-        logPlugActivity(db, accountId, 'info', `Already in ${entityLabel(entity) || key}`, key);
       }
     }
 
     if (!wasMember) {
       const beforeJoin = entity;
-      const joined = await joinTarget(client, key, entity, (msg) => {
+      const joined = await joinTarget(client, key, entity, quiet ? null : (msg) => {
         logPlugActivity(db, accountId, 'info', msg, key);
-      });
+      }, { skipMemberCheck: true });
       entity = joined || beforeJoin || entity;
       if (entity) {
-        await handlePostJoinVerification(client, entity, entityLabel(entity) || key, (msg) => {
+        await handlePostJoinVerification(client, entity, entityLabel(entity) || key, quiet ? null : (msg) => {
           logPlugActivity(db, accountId, 'info', msg, key);
         });
       }
@@ -187,8 +192,10 @@ async function ensureTargetJoined(client, ref, tracker, db, accountId, handle) {
     state.failed = false;
     state.attempts = 0;
     state.failCycles = 0;
-    logPlugActivity(db, accountId, 'info', `Target ready — ${entityLabel(entity) || key}`, key);
-    return { ref: key, entity };
+    if (!quiet && !wasMember) {
+      logPlugActivity(db, accountId, 'info', `Joined ${entityLabel(entity) || key}`, key);
+    }
+    return { ref: key, entity, wasMember };
   } catch (err) {
     const errMsg = String(err.message || err).slice(0, 500);
     state.lastError = errMsg;
@@ -202,16 +209,6 @@ async function ensureTargetJoined(client, ref, tracker, db, accountId, handle) {
   }
 }
 
-async function prepareAllTargets(client, refs, tracker, db, accountId, handle) {
-  const entries = [];
-  for (const ref of refs) {
-    if (!shouldRun(handle, accountId)) break;
-    const entry = await ensureTargetJoined(client, ref, tracker, db, accountId, handle);
-    if (entry) entries.push(entry);
-  }
-  return entries;
-}
-
 function pruneTargetTracker(tracker, refs) {
   const keep = new Set(refs.map(normalizeRef));
   for (const key of [...tracker.keys()]) {
@@ -219,38 +216,58 @@ function pruneTargetTracker(tracker, refs) {
   }
 }
 
-async function forwardPostToTargets(client, db, accountId, account, source, msg, targetEntries, handle) {
-  if (!targetEntries.length) {
-    logPlugActivity(db, accountId, 'error', 'No valid target groups — add your test group links');
-    return { okCount: 0, failCount: 0, cancelled: false };
+async function runForwardCycle(client, db, accountId, account, handle) {
+  if (!shouldRun(handle, accountId)) return { cancelled: true, cycleStartedAt: null };
+
+  const postLinkNow = String(account.source_link || '').trim();
+  if (!isPostLink(postLinkNow)) {
+    throw new Error('Invalid post link — use https://t.me/channel/123');
   }
+
+  const cycleStartedAt = Date.now();
+  const targetRefs = parseTargets(account.targets_text);
+  pruneTargetTracker(handle.targetTracker, targetRefs);
+
+  const resolved = await resolvePostMessage(client, postLinkNow, null);
+
+  if (!shouldRun(handle, accountId)) return { cancelled: true, cycleStartedAt };
 
   let okCount = 0;
   let failCount = 0;
+  let forwardedAny = false;
 
   db.prepare('UPDATE plugging_accounts SET cycles_count = cycles_count + 1, updated_at = datetime(\'now\') WHERE id = ?').run(accountId);
-  logPlugActivity(db, accountId, 'cycle', `Cycle started — forwarding post #${msg.id}`);
+  logPlugActivity(db, accountId, 'cycle', `Cycle started — forwarding post #${resolved.messageId}`);
 
-  for (let i = 0; i < targetEntries.length; i++) {
+  for (let i = 0; i < targetRefs.length; i++) {
     if (!shouldRun(handle, accountId)) {
-      logPlugActivity(db, accountId, 'info', 'Forward cancelled — runner stopped or replaced');
-      return { okCount, failCount, cancelled: true };
+      return { okCount, failCount, cancelled: true, cycleStartedAt };
     }
-    if (i > 0) await sleep(groupSendDelayMs());
-    const { entity: target } = targetEntries[i];
-    const targetName = entityLabel(target) || targetEntries[i].ref;
+
+    const ref = targetRefs[i];
+    const state = getTargetState(handle.targetTracker, ref);
+    const quiet = !!(state.entity && state.joined);
+    const entry = await ensureTargetJoined(client, ref, handle.targetTracker, db, accountId, handle, { quiet });
+    if (!entry) continue;
+
+    if (forwardedAny) await sleep(groupSendDelayMs());
+    forwardedAny = true;
+
+    const targetName = entityLabel(entry.entity) || entry.ref;
     const result = await forwardPostWithRetries(
-      client, source, target, msg, targetName,
+      client, resolved.source, entry.entity, resolved.message, targetName,
       (retryMsg) => logPlugActivity(db, accountId, 'error', retryMsg, targetName)
     );
+
     if (!shouldRun(handle, accountId)) {
-      return { okCount, failCount, cancelled: true };
+      return { okCount, failCount, cancelled: true, cycleStartedAt };
     }
+
     if (result.ok) {
       okCount += 1;
       db.prepare('UPDATE plugging_accounts SET success_count = success_count + 1, updated_at = datetime(\'now\') WHERE id = ?')
         .run(accountId);
-      logPlugActivity(db, accountId, 'success', `Forwarded post #${msg.id} → ${targetName}`, targetName);
+      logPlugActivity(db, accountId, 'success', `Forwarded post #${resolved.messageId} → ${targetName}`, targetName);
     } else {
       failCount += 1;
       const errMsg = String(result.error || 'Forward failed').slice(0, 500);
@@ -260,57 +277,17 @@ async function forwardPostToTargets(client, db, accountId, account, source, msg,
     }
   }
 
-  if (!shouldRun(handle, accountId)) {
-    return { okCount, failCount, cancelled: true };
-  }
-
-  if (okCount > 0 && failCount === 0) {
-    logPlugActivity(db, accountId, 'complete', `Cycle complete — post #${msg.id} forwarded to ${okCount} group(s)`);
+  if (!forwardedAny) {
+    logPlugActivity(db, accountId, 'error', 'No valid target groups — add your test group links');
+  } else if (okCount > 0 && failCount === 0) {
+    logPlugActivity(db, accountId, 'complete', `Cycle complete — post #${resolved.messageId} forwarded to ${okCount} group(s)`);
   } else if (okCount > 0) {
-    logPlugActivity(db, accountId, 'complete', `Cycle complete — post #${msg.id} (${okCount} sent, ${failCount} failed)`);
+    logPlugActivity(db, accountId, 'complete', `Cycle complete — post #${resolved.messageId} (${okCount} sent, ${failCount} failed)`);
   } else {
-    logPlugActivity(db, accountId, 'complete', `Cycle complete — post #${msg.id} failed on all groups`);
+    logPlugActivity(db, accountId, 'complete', `Cycle complete — post #${resolved.messageId} failed on all groups`);
   }
 
-  return { okCount, failCount, cancelled: false };
-}
-
-async function runForwardCycle(client, db, accountId, account, handle, { logTargetReady = false } = {}) {
-  if (!shouldRun(handle, accountId)) return { cancelled: true };
-
-  const postLinkNow = String(account.source_link || '').trim();
-  if (!isPostLink(postLinkNow)) {
-    throw new Error('Invalid post link — use https://t.me/channel/123');
-  }
-
-  const targetRefs = parseTargets(account.targets_text);
-  const resolved = await resolvePostMessage(client, postLinkNow, (msg) => {
-    logPlugActivity(db, accountId, 'info', msg);
-  });
-
-  if (!shouldRun(handle, accountId)) return { cancelled: true };
-
-  if (logTargetReady) {
-    logPlugActivity(
-      db, accountId, 'info',
-      `Forwarding post #${resolved.messageId} from ${resolved.label}`
-    );
-  }
-
-  pruneTargetTracker(handle.targetTracker, targetRefs);
-  if (logTargetReady && targetRefs.length) {
-    logPlugActivity(db, accountId, 'info', `Joining target groups before forward…`);
-  }
-  const targetEntries = await prepareAllTargets(client, targetRefs, handle.targetTracker, db, accountId, handle);
-  if (!shouldRun(handle, accountId)) return { cancelled: true };
-  if (logTargetReady && targetEntries.length) {
-    logPlugActivity(db, accountId, 'info', `All targets ready — ${targetEntries.length} group(s), starting forward`);
-  }
-
-  return forwardPostToTargets(
-    client, db, accountId, account,
-    resolved.source, resolved.message, targetEntries, handle
-  );
+  return { okCount, failCount, cancelled: false, cycleStartedAt };
 }
 
 function createRunnerHandle(accountId, previous) {
@@ -334,7 +311,7 @@ async function stopRunnerGracefully(accountId) {
   try {
     await Promise.race([
       handle.done,
-      sleep(15000)
+      sleep(5000)
     ]);
   } catch (_) { /* ignore */ }
 }
@@ -370,11 +347,10 @@ async function startRunner(db, accountId, getSettings) {
   db.prepare('UPDATE plugging_accounts SET runner_status = ?, last_error = ?, updated_at = datetime(\'now\') WHERE id = ?')
     .run('running', '', accountId);
 
-  logPlugActivity(db, accountId, 'started', 'Connecting to Telegram…');
+  logPlugActivity(db, accountId, 'started', 'Forwarder started');
 
   (async () => {
     let nextCycleAt = 0;
-    let firstCycle = true;
 
     try {
       while (shouldRun(handle, accountId)) {
@@ -383,20 +359,31 @@ async function startRunner(db, accountId, getSettings) {
 
         const now = Date.now();
         if (nextCycleAt > now) {
-          const waitMs = nextCycleAt - now;
-          logPlugActivity(db, accountId, 'info', `Next cycle in ${formatDelayLabel(waitMs)}`);
-          await waitWhileRunning(handle, accountId, waitMs);
+          await waitWhileRunning(handle, accountId, nextCycleAt - now);
         }
         if (!shouldRun(handle, accountId)) break;
 
-        let cycleCompleted = false;
+        let cycleStartedAt = null;
         try {
           account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ?').get(accountId);
           await withAuthorizedClient(settings, account.session_string, async (client) => {
             if (!shouldRun(handle, accountId)) return;
-            logPlugActivity(db, accountId, 'info', 'Telegram connected — forwarding saved post link');
-            const result = await runForwardCycle(client, db, accountId, account, handle, { logTargetReady: firstCycle });
-            cycleCompleted = !result?.cancelled;
+            const result = await runForwardCycle(client, db, accountId, account, handle);
+            cycleStartedAt = result?.cycleStartedAt || null;
+            if (result?.cancelled) return;
+            account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ?').get(accountId);
+            const delayMs = cycleDelayMs(account?.delay_minutes);
+            if (delayMs > 0 && cycleStartedAt) {
+              nextCycleAt = computeNextCycleAt(cycleStartedAt, account?.delay_minutes);
+              if (nextCycleAt > Date.now()) {
+                logPlugActivity(
+                  db, accountId, 'info',
+                  `Next cycle at ${new Date(nextCycleAt).toLocaleTimeString()} (${formatDelayLabel(nextCycleAt - Date.now())})`
+                );
+              }
+            } else {
+              nextCycleAt = 0;
+            }
           }, account.proxy_url);
         } catch (err) {
           if (!shouldRun(handle, accountId)) break;
@@ -409,19 +396,6 @@ async function startRunner(db, accountId, getSettings) {
         }
 
         if (!shouldRun(handle, accountId)) break;
-
-        if (cycleCompleted) {
-          account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ?').get(accountId);
-          const delayMs = cycleDelayMs(account?.delay_minutes);
-          nextCycleAt = delayMs > 0 ? Date.now() + delayMs : 0;
-          if (delayMs > 0) {
-            logPlugActivity(
-              db, accountId, 'info',
-              `Cycle finished — next send scheduled in ${formatDelayLabel(delayMs)}`
-            );
-          }
-          firstCycle = false;
-        }
       }
     } finally {
       if (runners.get(accountId) === handle) {
@@ -492,6 +466,7 @@ module.exports = {
   waitWhileRunning,
   shouldRun,
   cycleDelayMs,
+  computeNextCycleAt,
   setRunnerForTest,
   clearRunnerForTest
 };
