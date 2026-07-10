@@ -451,6 +451,8 @@
 
   async function activateCampaign(kind, id) {
     await api(`/admin/games/${kind}/${id}/activate`, { method: 'POST', body: '{}' });
+    const masterToggle = document.getElementById('games-enabled-toggle');
+    if (masterToggle && !masterToggle.checked) masterToggle.checked = true;
     await syncGameToggleForKind(kind, true);
     if (kind === 'wheel') loadWheelAdmin();
     else if (kind === 'scratch') loadScratchAdmin();
@@ -496,6 +498,10 @@
   }
 
   async function toggleInstantGame(gameKey, enabled) {
+    if (enabled) {
+      const masterToggle = document.getElementById('games-enabled-toggle');
+      if (masterToggle && !masterToggle.checked) masterToggle.checked = true;
+    }
     await api(`/admin/games/instant/${gameKey}`, {
       method: 'PUT',
       body: JSON.stringify({ isEnabled: enabled })

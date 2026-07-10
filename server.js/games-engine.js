@@ -49,6 +49,13 @@ function isGamesEnabled(db) {
   return readSetting(db, 'games_enabled', '1') === '1';
 }
 
+function ensureGamesMasterEnabled(db) {
+  db.prepare(`
+    INSERT INTO settings (key, value) VALUES ('games_enabled', '1')
+    ON CONFLICT(key) DO UPDATE SET value = '1'
+  `).run();
+}
+
 function countWheelEntries(db, campaignId) {
   return db.prepare('SELECT COUNT(*) AS c FROM game_wheel_slots WHERE campaign_id = ?').get(campaignId).c;
 }
@@ -794,6 +801,9 @@ function readGameEnabledState(db) {
 }
 
 function applyGameEnabledState(db, patch = {}) {
+  const enablingAny = ['wheel', 'scratch', 'mystery', 'dice', 'pick', 'vault'].some((k) => patch[k] === true);
+  if (enablingAny) ensureGamesMasterEnabled(db);
+
   if (patch.wheel != null) {
     if (patch.wheel) {
       db.prepare('UPDATE game_wheel_campaigns SET is_enabled = 0').run();
@@ -1309,6 +1319,7 @@ module.exports = {
   formatAvailableDays,
   readGameEnabledState,
   applyGameEnabledState,
+  ensureGamesMasterEnabled,
   disableAllGamePools,
   isGameTypeOpen
 };
