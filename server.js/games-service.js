@@ -61,6 +61,7 @@ function mapWheelCampaign(row, db) {
     startsAt: row.starts_at,
     endsAt: row.ends_at,
     drawAt: row.draw_at,
+    maxEntries: row.max_entries != null ? Number(row.max_entries) : null,
     minOrderTotal: row.min_order_total,
     status: row.status,
     drawnAt: row.drawn_at,
@@ -88,7 +89,7 @@ function mountGamesService(app, db, deps) {
     }
   };
 
-  setInterval(() => processDueWheelDraws(db, engineDeps), 15 * 1000);
+  setInterval(() => processDueWheelDraws(db, engineDeps), 30 * 1000);
 
   app.get('/games', (req, res) => {
     trackVisit?.(req);
@@ -230,19 +231,22 @@ function mountGamesService(app, db, deps) {
     const b = req.body || {};
     const title = String(b.title || '').trim();
     if (!title) return res.status(400).json({ error: 'Title is required' });
-    if (!b.drawAt) return res.status(400).json({ error: 'Draw date/time is required' });
+    const maxEntries = Math.max(1, Number(b.maxEntries) || 0);
+    if (!maxEntries) return res.status(400).json({ error: 'Max entries is required (minimum 1)' });
     const days = Array.isArray(b.availableDays) ? b.availableDays.join(',') : String(b.availableDays || '0,1,2,3,4,5,6');
+    const placeholderDrawAt = '2099-12-31T00:00:00.000Z';
     const r = db.prepare(`
-      INSERT INTO game_wheel_campaigns (title, is_enabled, available_days, starts_at, ends_at, draw_at, min_order_total)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO game_wheel_campaigns (title, is_enabled, available_days, starts_at, ends_at, draw_at, min_order_total, max_entries)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       title,
       b.isEnabled ? 1 : 0,
       days,
       b.startsAt || null,
       b.endsAt || null,
-      b.drawAt,
-      Math.max(0, Number(b.minOrderTotal) || 0)
+      b.drawAt || placeholderDrawAt,
+      Math.max(0, Number(b.minOrderTotal) || 0),
+      maxEntries
     );
     res.status(201).json({ id: r.lastInsertRowid });
   });
@@ -263,6 +267,7 @@ function mountGamesService(app, db, deps) {
         ends_at = COALESCE(?, ends_at),
         draw_at = COALESCE(?, draw_at),
         min_order_total = COALESCE(?, min_order_total),
+        max_entries = COALESCE(?, max_entries),
         updated_at = datetime('now')
       WHERE id = ?
     `).run(
@@ -273,6 +278,7 @@ function mountGamesService(app, db, deps) {
       b.endsAt,
       b.drawAt,
       b.minOrderTotal != null ? Math.max(0, Number(b.minOrderTotal) || 0) : null,
+      b.maxEntries != null ? Math.max(1, Number(b.maxEntries) || 1) : null,
       row.id
     );
     res.json({ ok: true });

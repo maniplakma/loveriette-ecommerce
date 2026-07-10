@@ -460,14 +460,8 @@
     color-mix(in srgb, var(--games-accent) 30%, #000) 270deg 315deg,
     rgba(255,255,255,0.06) 315deg 360deg
   );
-  animation: games-wheel-spin 22s linear infinite;
-  animation-play-state: paused;
-  will-change: transform;
-}
-
-.games-arena.is-in-view .games-wheel-segments,
-.games-expand-modal .games-wheel-segments {
-  animation-play-state: running;
+  /* Static by default — spin only on draw result (.is-spin-result) for performance */
+  transform: rotate(0deg);
 }
 
 .games-wheel-ring {
@@ -489,7 +483,44 @@
   box-shadow: 0 0 20px var(--games-glow);
 }
 
-@keyframes games-wheel-spin { to { transform: rotate(360deg); } }
+/* Wheel entry progress (max joiners) */
+.games-wheel-progress {
+  margin-top: 0.15rem;
+}
+
+.games-wheel-progress-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-bottom: 0.4rem;
+}
+
+.games-wheel-progress-head strong {
+  color: #e6c35c;
+  font-weight: 800;
+}
+
+.games-wheel-progress-track {
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.games-wheel-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--games-accent) 70%, #ffc107), var(--games-accent));
+  transition: width 0.35s ease;
+}
+
+.games-meta--wheel {
+  margin-top: 0.45rem;
+  font-size: 0.72rem;
+  opacity: 0.9;
+}
 
 /* Scratch — realistic foil ticket */
 .games-scratch-ticket {
@@ -1110,6 +1141,15 @@
   line-height: 1;
 }
 
+.games-prize-modal-kicker {
+  margin: 0 0 0.25rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #e6c35c;
+}
+
 .games-prize-modal-title {
   margin: 0 0 0.35rem;
   font-size: 1.1rem;
@@ -1566,7 +1606,7 @@ body.games-expand-open { overflow: hidden; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .games-wheel-segments,
+  .games-wheel-visual.is-spin-result .games-wheel-segments,
   .games-scratch-foil,
   .games-recent-track,
   .games-countdown-value.is-due,

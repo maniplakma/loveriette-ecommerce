@@ -5,8 +5,8 @@ function seedDefaultGames(db) {
 
   if (!db.prepare('SELECT id FROM game_wheel_campaigns LIMIT 1').get()) {
     const r = db.prepare(`
-      INSERT INTO game_wheel_campaigns (title, is_enabled, available_days, draw_at, min_order_total, status)
-      VALUES ('Weekend Spin Giveaway', 1, '0,1,2,3,4,5,6', ?, 0, 'scheduled')
+      INSERT INTO game_wheel_campaigns (title, is_enabled, available_days, draw_at, min_order_total, max_entries, status)
+      VALUES ('Weekend Spin Giveaway', 1, '0,1,2,3,4,5,6', ?, 0, 20, 'scheduled')
     `).run(drawAt);
     const prizes = [
       ['Grand Prize — Netflix 1 Month', 'netflix', ''],
@@ -364,7 +364,8 @@ function migrateGamesSchema(db) {
     'ALTER TABLE game_mystery_pools ADD COLUMN starts_at TEXT',
     'ALTER TABLE game_mystery_pools ADD COLUMN ends_at TEXT',
     'ALTER TABLE game_instant_pools ADD COLUMN starts_at TEXT',
-    'ALTER TABLE game_instant_pools ADD COLUMN ends_at TEXT'
+    'ALTER TABLE game_instant_pools ADD COLUMN ends_at TEXT',
+    'ALTER TABLE game_wheel_campaigns ADD COLUMN max_entries INTEGER'
   ];
   for (const sql of alters) {
     try { db.exec(sql); } catch (_) { /* column exists */ }

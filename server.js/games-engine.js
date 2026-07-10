@@ -40,9 +40,21 @@ function isGamesEnabled(db) {
   return readSetting(db, 'games_enabled', '1') === '1';
 }
 
-function isWheelCampaignOpen(campaign, now = new Date()) {
+function countWheelEntries(db, campaignId) {
+  return db.prepare('SELECT COUNT(*) AS c FROM game_wheel_slots WHERE campaign_id = ?').get(campaignId).c;
+}
+
+function isWheelFull(db, campaign) {
+  if (!campaign || !db) return false;
+  const max = Number(campaign.max_entries);
+  if (!max || max < 1) return false;
+  return countWheelEntries(db, campaign.id) >= max;
+}
+
+function isWheelCampaignOpen(campaign, now = new Date(), db = null) {
   if (!campaign || !campaign.is_enabled) return false;
   if (campaign.status === 'drawn') return false;
+  if (db && isWheelFull(db, campaign)) return false;
   return inDateRange(campaign.starts_at, campaign.ends_at, now)
     && isDayAvailable(campaign.available_days, now);
 }
@@ -144,7 +156,7 @@ function buildGamesHubState(db, userId = null) {
   const scratchRow = db.prepare('SELECT * FROM game_scratch_pools ORDER BY id DESC LIMIT 1').get();
   const mysteryRow = db.prepare('SELECT * FROM game_mystery_pools ORDER BY id DESC LIMIT 1').get();
 
-  const wheelOpen = enabled && isWheelCampaignOpen(wheelPlayRow, now);
+  const wheelOpen = enabled && isWheelCampaignOpen(wheelPlayRow, now, db);
   const wheelDrawn = wheelPlayRow?.status === 'drawn';
   const scratchOpen = isScratchPoolOpen(scratchRow, enabled, now);
   const mysteryOpen = isMysteryPoolOpen(mysteryRow, enabled, now);
@@ -227,6 +239,27 @@ function buildGamesHubState(db, userId = null) {
 
   const recentWinners = getRecentPrizeWinners(db, 8);
 
+  let myWheelWin = null;
+  if (userId && wheelDisplayRow && (wheelPlayRow?.status === 'drawn' || wheelDisplayRow.status === 'drawn')) {
+    const winRow = db.prepare(`
+      SELECT w.display_name AS displayName, w.order_number AS orderNumber,
+             p.label AS prizeLabel, p.prize_type AS prizeType, p.prize_value AS prizeValue
+      FROM game_wheel_winners w
+      JOIN game_wheel_prizes p ON p.id = w.prize_id
+      WHERE w.campaign_id = ? AND w.user_id = ?
+      ORDER BY w.id ASC LIMIT 1
+    `).get(wheelDisplayRow.id, userId);
+    if (winRow) {
+      myWheelWin = {
+        displayName: winRow.displayName,
+        orderNumber: winRow.orderNumber,
+        prizeLabel: winRow.prizeLabel,
+        prizeType: winRow.prizeType,
+        fulfillment: { type: winRow.prizeType, label: winRow.prizeLabel, message: `You won ${winRow.prizeLabel}!` }
+      };
+    }
+  }
+
   return {
     gamesEnabled: enabled,
     channelUrl,
@@ -245,6 +278,10 @@ function buildGamesHubState(db, userId = null) {
       visible: hubListed,
       status: wheelPlayRow?.status || wheelDisplayRow.status,
       drawAt: wheelDisplayRow.draw_at,
+      maxEntries: wheelDisplayRow.max_entries != null ? Number(wheelDisplayRow.max_entries) : null,
+      entriesRemaining: wheelDisplayRow.max_entries != null
+        ? Math.max(0, Number(wheelDisplayRow.max_entries) - wheelEntryCount)
+        : null,
       drawnAt: wheelDisplayRow.drawn_at,
       endsAt: wheelDisplayRow.ends_at,
       minOrderTotal: wheelDisplayRow.min_order_total,
@@ -254,6 +291,7 @@ function buildGamesHubState(db, userId = null) {
       winner: wheelWinner,
       winners: wheelWinners,
       mySlots: wheelSlots,
+      myWin: myWheelWin,
       canPlay: wheelOpen && wheelSlots.length > 0,
       needsPurchase: wheelOpen && !wheelSlots.length && !hasPendingCredit
     } : { listed: hubListed, open: false, visible: hubListed, title: 'Spin the Wheel', prizes: [], needsPurchase: false, canPlay: false },
@@ -367,7 +405,7 @@ function activeWheelCampaign(db, now = new Date()) {
   const rows = db.prepare(`
     SELECT * FROM game_wheel_campaigns
     WHERE is_enabled = 1 AND status = 'scheduled'
-    ORDER BY datetime(draw_at) ASC
+    ORDER BY id DESC
   `).all();
   return rows.find((c) => inDateRange(c.starts_at, c.ends_at, now) && isDayAvailable(c.available_days, now)) || null;
 }
@@ -672,7 +710,7 @@ function isGameTypeOpen(db, gameType, orderTotal = 0) {
   const total = Number(orderTotal) || 0;
   if (gameType === 'wheel') {
     const wheel = resolveWheelCampaign(db, now);
-    return enabled && isWheelCampaignOpen(wheel, now) && total >= Number(wheel?.min_order_total || 0);
+    return enabled && isWheelCampaignOpen(wheel, now, db) && total >= Number(wheel?.min_order_total || 0);
   }
   if (gameType === 'scratch') {
     const pool = activeScratchPool(db);
@@ -697,6 +735,7 @@ function grantSingleGameForOrder(db, deps, order, gameType) {
   if (gameType === 'wheel') {
     const wheel = activeWheelCampaign(db);
     if (!wheel || total < Number(wheel.min_order_total || 0)) return;
+    if (isWheelFull(db, wheel)) return;
     const exists = db.prepare('SELECT id FROM game_wheel_slots WHERE order_id = ?').get(orderId);
     if (exists) return;
     db.prepare(`
@@ -769,10 +808,44 @@ function chooseGameForCredit(db, deps, { creditId, userId, gameType }) {
     }
     grantSingleGameForOrder(db, deps, order, gameType);
     db.exec('COMMIT');
+    if (gameType === 'wheel') {
+      const wheel = db.prepare(`
+        SELECT * FROM game_wheel_campaigns WHERE id = (
+          SELECT campaign_id FROM game_wheel_slots WHERE order_id = ? LIMIT 1
+        )
+      `).get(order.id);
+      if (wheel) maybeAutoDrawWheel(db, deps, wheel.id);
+    }
     return { ok: true, gameType, orderNumber: credit.order_number };
   } catch (err) {
     try { db.exec('ROLLBACK'); } catch (_) { /* ignore */ }
     return { error: err.message || 'Could not lock game choice' };
+  }
+}
+
+function maybeAutoDrawWheel(db, deps, campaignId) {
+  const campaign = db.prepare('SELECT * FROM game_wheel_campaigns WHERE id = ?').get(campaignId);
+  if (!campaign || campaign.status !== 'scheduled' || !campaign.is_enabled) return null;
+  const max = Number(campaign.max_entries);
+  if (!max || max < 1) return null;
+  const count = countWheelEntries(db, campaignId);
+  if (count < max) return null;
+  return runWheelDraw(db, deps, campaignId);
+}
+
+function processFullWheelDraws(db, deps) {
+  const full = db.prepare(`
+    SELECT c.* FROM game_wheel_campaigns c
+    WHERE c.is_enabled = 1 AND c.status = 'scheduled'
+      AND c.max_entries IS NOT NULL AND c.max_entries > 0
+      AND (SELECT COUNT(*) FROM game_wheel_slots s WHERE s.campaign_id = c.id) >= c.max_entries
+  `).all();
+  for (const c of full) {
+    try {
+      runWheelDraw(db, deps, c.id);
+    } catch (err) {
+      console.error('[games] wheel auto-draw failed', c.id, err.message);
+    }
   }
 }
 
@@ -888,18 +961,7 @@ function runWheelDraw(db, deps, campaignId) {
 }
 
 function processDueWheelDraws(db, deps) {
-  const now = new Date();
-  const due = db.prepare(`
-    SELECT * FROM game_wheel_campaigns
-    WHERE is_enabled = 1 AND status = 'scheduled' AND datetime(draw_at) <= datetime('now')
-  `).all();
-  for (const c of due) {
-    try {
-      runWheelDraw(db, deps, c.id);
-    } catch (err) {
-      console.error('[games] wheel draw failed', c.id, err.message);
-    }
-  }
+  processFullWheelDraws(db, deps);
 }
 
 function scratchCard(db, deps, { cardId, userId }) {
@@ -1063,6 +1125,10 @@ module.exports = {
   GAME_TYPES,
   runWheelDraw,
   processDueWheelDraws,
+  processFullWheelDraws,
+  maybeAutoDrawWheel,
+  countWheelEntries,
+  isWheelFull,
   scratchCard,
   playMysteryBox,
   playInstantGame,

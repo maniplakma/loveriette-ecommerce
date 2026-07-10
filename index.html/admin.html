@@ -707,7 +707,8 @@
             <div class="admin-panel-head"><h3>Create Wheel Campaign</h3></div>
             <form id="admin-wheel-create-form" class="admin-modal-body" style="padding:0">
               <div class="admin-field"><label>Title</label><input name="title" required placeholder="Weekend Spin Giveaway"></div>
-              <div class="admin-field"><label>Draw date & time</label><input type="datetime-local" name="drawAt" required></div>
+              <div class="admin-field"><label>Max entries (orders)</label><input type="number" name="maxEntries" min="1" value="20" required placeholder="20"></div>
+              <p class="admin-card-meta">The wheel spins automatically when this many unique orders join. No timer — full roster triggers the draw.</p>
               <div class="admin-field"><label>Starts (optional)</label><input type="datetime-local" name="startsAt"></div>
               <div class="admin-field"><label>Ends (optional)</label><input type="datetime-local" name="endsAt"></div>
               <div class="admin-field"><label>Min order total (₱)</label><input type="number" name="minOrderTotal" min="0" value="0"></div>
@@ -920,7 +921,7 @@
   <script src="badges.js?v=20260614tabs"></script>
   <script src="admin.js?v=20260707perf"></script>
   <script src="admin-platform.js?v=20260707deploy"></script>
-  <script src="admin-games.js?v=20260710gameoff"></script>
+  <script src="admin-games.js?v=20260710wheelmax"></script>
   <script src="mobile.js?v=20260614mobile"></script>
 </body>
 </html>

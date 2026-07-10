@@ -161,7 +161,8 @@
           <strong>${esc(c.title)}</strong>
           <span class="admin-badge">${c.isEnabled ? 'ON' : 'OFF'} · ${esc(c.status)}</span>
         </div>
-        <p class="admin-muted">Draw: ${esc(c.drawAt)} · Entries: ${c.entryCount || 0} · Min order: ₱${c.minOrderTotal || 0}</p>
+        <p class="admin-muted">Max entries: ${c.maxEntries || '—'} · Joined: ${c.entryCount || 0}${c.maxEntries ? ` / ${c.maxEntries}` : ''} · Min order: ₱${c.minOrderTotal || 0}</p>
+        ${c.status === 'scheduled' ? `<button type="button" class="admin-btn admin-btn-outline admin-btn-sm admin-wheel-max" data-id="${c.id}" data-max="${c.maxEntries || 20}">Edit max entries</button>` : ''}
         ${c.winner ? `<p class="admin-success-text">Winner: ${esc(c.winner.displayName)} (#${esc(c.winner.orderNumber)})</p>` : ''}
         ${(c.winners || []).length > 1 ? `<p class="admin-muted">All winners: ${c.winners.map((w) => `${esc(w.displayName)} (${esc(w.prizeLabel)})`).join(', ')}</p>` : ''}
         <p><strong>Prizes:</strong> ${(c.prizes || []).map((p) => `${esc(p.label)} <small>×${p.quantity || 1} (${p.wonCount || 0} won)</small>`).join(', ') || '—'}</p>
@@ -177,6 +178,21 @@
         </details>
       </div>`).join('');
 
+    list.querySelectorAll('.admin-wheel-max').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const next = window.prompt('Max entries (orders before auto-draw):', btn.dataset.max || '20');
+        if (next == null) return;
+        const maxEntries = Math.max(1, Number(next) || 0);
+        if (!maxEntries) { alert('Enter at least 1'); return; }
+        try {
+          await api(`/admin/games/wheel/${btn.dataset.id}`, {
+            method: 'PUT',
+            body: JSON.stringify({ maxEntries })
+          });
+          loadWheelAdmin();
+        } catch (err) { alert(err.message); }
+      });
+    });
     list.querySelectorAll('.admin-wheel-draw').forEach((btn) => {
       btn.addEventListener('click', async () => {
         if (!confirm('Run the wheel draw now? This picks a random winner.')) return;
@@ -349,7 +365,7 @@
           method: 'POST',
           body: JSON.stringify({
             title: fd.get('title'),
-            drawAt: fd.get('drawAt'),
+            maxEntries: Number(fd.get('maxEntries') || 20),
             startsAt: fd.get('startsAt') || null,
             endsAt: fd.get('endsAt') || null,
             minOrderTotal: Number(fd.get('minOrderTotal') || 0),

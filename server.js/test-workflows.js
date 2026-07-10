@@ -891,16 +891,15 @@ async function runGamesCheck(adminCookie) {
   const buyer = db.prepare('SELECT id FROM users WHERE LOWER(email) = ?').get(email.toLowerCase());
   if (!buyer?.id) { fail('games buyer id', 'missing'); return; }
 
-  const drawAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
   const wheel = await request('POST', '/admin/games/wheel', {
     title: 'QA Wheel',
-    drawAt,
+    maxEntries: 20,
     isEnabled: true,
     availableDays: [0, 1, 2, 3, 4, 5, 6],
     minOrderTotal: 0
   }, adminCookie);
   if (wheel.status !== 201) { fail('create wheel campaign', wheel.json?.error || wheel.status); return; }
-  ok('wheel campaign created');
+  ok('wheel campaign created (max entries)');
 
   await request('POST', `/admin/games/wheel/${wheel.json.id}/prizes`, {
     label: 'Loyalty ₱400',
@@ -1032,6 +1031,120 @@ async function runGamesCheck(adminCookie) {
   db.prepare('DELETE FROM orders WHERE id = ?').run(orderId);
 }
 
+async function runWheelAutoDrawCheck(adminCookie) {
+  console.log('\nWheel auto-draw at max entries');
+
+  await request('PUT', '/admin/games/settings', {
+    gamesEnabled: true,
+    strictEligibility: false,
+    requiredQuantity: 1,
+    productIds: [],
+    gameEnabled: {
+      wheel: true,
+      scratch: true,
+      mystery: true,
+      dice: true,
+      pick: true,
+      vault: true
+    }
+  }, adminCookie);
+
+  const wheel = await request('POST', '/admin/games/wheel', {
+    title: 'QA Wheel Auto Draw',
+    maxEntries: 2,
+    isEnabled: true,
+    availableDays: [0, 1, 2, 3, 4, 5, 6],
+    minOrderTotal: 0
+  }, adminCookie);
+  if (wheel.status !== 201) { fail('wheel auto-draw campaign', wheel.json?.error || wheel.status); return; }
+  ok('wheel auto-draw campaign (max 2)');
+
+  await request('POST', `/admin/games/wheel/${wheel.json.id}/prizes`, {
+    label: 'Loyalty ₱50',
+    prizeType: 'loyalty',
+    prizeValue: '50',
+    quantity: 1
+  }, adminCookie);
+
+  const pm = db.prepare('SELECT id FROM payment_methods WHERE is_active = 1 LIMIT 1').get();
+  const product = db.prepare('SELECT id FROM products ORDER BY id LIMIT 1').get();
+  const variant = db.prepare('SELECT id FROM product_variants WHERE product_id = ? ORDER BY id LIMIT 1').get(product.id);
+  if (!variant) { fail('wheel auto-draw stock', 'no variant'); return; }
+
+  for (let i = 0; i < 2; i++) {
+    const stock = await request('POST', '/admin/inventory', {
+      variant_id: variant.id,
+      email: `wheel-stock-${Date.now()}-${i}@test.local`,
+      password: 'testpass',
+      profiles: [`Wheel Profile ${i + 1}`]
+    }, adminCookie);
+    if (stock.status !== 201) { fail('wheel auto-draw stock seed', stock.status); return; }
+  }
+
+  const orderIds = [];
+
+  async function joinWheel(suffix) {
+    const email = `wheel-auto-${suffix}-${Date.now()}@test.local`;
+    const reg = await request('POST', '/auth/register', { email, password: 'testpass123', name: 'Wheel Auto' });
+    if (reg.status !== 201 && reg.status !== 200) { fail('wheel auto-draw register', reg.status); return null; }
+    const buyer = db.prepare('SELECT id FROM users WHERE LOWER(email) = ?').get(email.toLowerCase());
+    const seq = db.prepare('SELECT COALESCE(MAX(order_seq), 0) + 1 AS n FROM orders').get().n;
+    const orderNumber = String(seq);
+    const ins = db.prepare(`
+      INSERT INTO orders (
+        order_number, order_seq, email, user_id, payment_method_id,
+        subtotal, discount, total, status, tingi_drop_enabled, fulfillment_mode, receipt_url
+      ) VALUES (?, ?, ?, ?, ?, 200, 0, 200, 'pending', 0, 'auto', '/uploads/receipts/test.png')
+    `).run(orderNumber, seq, email, buyer.id, pm.id);
+    const orderId = ins.lastInsertRowid;
+    orderIds.push(orderId);
+    db.prepare(`INSERT INTO order_items (order_id, product_id, product_name, quantity, price) VALUES (?, ?, 'Wheel Auto', 1, 200)`)
+      .run(orderId, product.id);
+    const approveRes = await request('POST', `/admin/orders/${orderNumber}/approve`, {}, adminCookie);
+    if (approveRes.status !== 200) { fail('wheel auto-draw approve', approveRes.json?.error || approveRes.status); return null; }
+    const credit = db.prepare('SELECT id FROM game_order_credits WHERE order_id = ?').get(orderId);
+    const login = await loginUser(email, 'testpass123');
+    const choose = await request('POST', `/account/games/credits/${credit.id}/choose`, { gameType: 'wheel' }, login.cookie);
+    return { orderId, choose };
+  }
+
+  const first = await joinWheel('a');
+  if (first?.choose?.status === 200) ok('wheel entry 1 of 2');
+  else fail('wheel entry 1 of 2', first?.choose?.json?.error || first?.choose?.status);
+
+  const mid = db.prepare('SELECT status FROM game_wheel_campaigns WHERE id = ?').get(wheel.json.id);
+  if (mid?.status === 'scheduled') ok('wheel stays scheduled until full');
+  else fail('wheel stays scheduled until full', mid?.status);
+
+  const second = await joinWheel('b');
+  if (second?.choose?.status === 200) ok('wheel entry 2 of 2');
+  else fail('wheel entry 2 of 2', second?.choose?.json?.error || second?.choose?.status);
+
+  const done = db.prepare('SELECT status FROM game_wheel_campaigns WHERE id = ?').get(wheel.json.id);
+  if (done?.status === 'drawn') ok('wheel auto-drew when max entries reached');
+  else fail('wheel auto-drew when max entries reached', done?.status);
+
+  const winners = db.prepare('SELECT COUNT(*) AS c FROM game_wheel_winners WHERE campaign_id = ?').get(wheel.json.id).c;
+  if (winners >= 1) ok('wheel has winner after auto-draw');
+  else fail('wheel has winner after auto-draw', winners);
+
+  const hub = await request('GET', '/api/games');
+  if (hub.json?.wheel?.maxEntries === 2 && hub.json?.wheel?.status === 'drawn') {
+    ok('hub shows drawn wheel with maxEntries');
+  } else {
+    fail('hub drawn wheel meta', JSON.stringify({
+      maxEntries: hub.json?.wheel?.maxEntries,
+      status: hub.json?.wheel?.status
+    }));
+  }
+
+  for (const orderId of orderIds) {
+    purgeGameRowsForOrder(orderId);
+    db.prepare('DELETE FROM order_items WHERE order_id = ?').run(orderId);
+    db.prepare('DELETE FROM orders WHERE id = ?').run(orderId);
+  }
+}
+
 async function runGamesToggleCheck(adminCookie) {
   console.log('\nShop games per-game off toggles');
   const keys = ['wheel', 'scratch', 'mystery', 'dice', 'pick', 'vault'];
@@ -1109,7 +1222,7 @@ async function runGamesToggleCheck(adminCookie) {
   const closedPageBody = gamesClosedPage.json?.raw || '';
   if (gamesClosedPage.status === 200
       && closedPageBody.includes('games-arena-grid')
-      && closedPageBody.includes('games-page.js?v=20260710gamesfix')) {
+      && closedPageBody.includes('games-page.js?v=20260710wheelmax')) {
     ok('GET /games page loads closed-state assets');
   } else fail('GET /games page loads closed-state assets', gamesClosedPage.status);
 
@@ -1146,6 +1259,7 @@ async function main() {
     await runLoyaltyCheck(adminCookie);
     await runGamesToggleCheck(adminCookie);
     await runGamesCheck(adminCookie);
+    await runWheelAutoDrawCheck(adminCookie);
     await runVariantDescriptionCheck(adminCookie);
     await runUserAdminCheck(adminCookie);
     await runRefundReportCheck(adminCookie);

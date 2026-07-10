@@ -375,10 +375,31 @@
     return state?.eligibility?.guides?.[type] || `/guide.html#game-${type}`;
   }
 
-  function showPrizeWin(result) {
+  function wheelEntriesMetaHtml(game) {
+    const max = Number(game.maxEntries);
+    const count = Number(game.entryCount) || 0;
+    if (!max) return `<p class="games-meta">${count} ${count === 1 ? 'entry' : 'entries'}</p>`;
+    const pct = Math.min(100, Math.round((count / max) * 100));
+    const left = Math.max(0, max - count);
+    return `
+      <div class="games-wheel-progress">
+        <div class="games-wheel-progress-head">
+          <span><strong>${count}</strong> / ${max} orders joined</span>
+          <span>${left} slot${left === 1 ? '' : 's'} left</span>
+        </div>
+        <div class="games-wheel-progress-track" aria-hidden="true">
+          <div class="games-wheel-progress-fill" style="width:${pct}%"></div>
+        </div>
+        <p class="games-meta games-meta--wheel">Auto-draw when full — no timer</p>
+      </div>`;
+  }
+
+  function showCongratulations(result) {
     const f = result?.fulfillment;
     const prize = result?.prize;
-    if (!f || f.type === 'none') return;
+    const label = prize?.label || f?.label;
+    if (!label) return;
+    const isRealWin = f?.type && f.type !== 'none' && prize?.prizeType !== 'bomb';
     let modal = document.getElementById('games-prize-modal');
     if (!modal) {
       modal = document.createElement('div');
@@ -386,37 +407,43 @@
       modal.className = 'games-prize-modal';
       modal.innerHTML = '<div class="games-prize-modal-card" role="dialog" aria-modal="true"><button type="button" class="games-prize-modal-close" aria-label="Close">&times;</button><div id="games-prize-modal-body"></div></div>';
       document.body.appendChild(modal);
-      modal.querySelector('.games-prize-modal-close').addEventListener('click', () => modal.hidden = true);
+      modal.querySelector('.games-prize-modal-close').addEventListener('click', () => { modal.hidden = true; });
       modal.addEventListener('click', (e) => { if (e.target === modal) modal.hidden = true; });
     }
     const body = modal.querySelector('#games-prize-modal-body');
-    const label = esc(prize?.label || f.label || 'Prize');
-    let inner = `<h3 class="games-prize-modal-title">You won!</h3><p class="games-prize-modal-prize">${label}</p>`;
+    const title = isRealWin ? 'Congratulations!' : 'Thanks for playing!';
+    let inner = `<p class="games-prize-modal-kicker">${esc(title)}</p><h3 class="games-prize-modal-title">${esc(label)}</h3>`;
 
-    if (f.type === 'loyalty' || f.type === 'wallet') {
+    if (!f || f.type === 'none') {
+      inner += '<p class="games-prize-modal-msg">Better luck on your next game.</p>';
+    } else if (f.type === 'loyalty' || f.type === 'wallet') {
       inner += `<p class="games-prize-modal-msg">${esc(f.message || `₱${f.amount} credited automatically.`)}</p>`;
       inner += '<p class="games-prize-modal-note">Check your wallet — we also sent a notification.</p>';
     } else if (f.type === 'redeem' && f.code) {
       inner += `<p class="games-prize-modal-msg">${esc(f.message || 'Your voucher is ready.')}</p>`;
       inner += `<div class="games-prize-code-row"><code id="games-prize-code">${esc(f.code)}</code><button type="button" class="games-shop-btn games-shop-btn--sm" id="games-copy-code">Copy code</button></div>`;
-    } else if (f.type === 'product') {
+    } else if (f.type === 'product' || f.type === 'account' || f.type === 'netflix') {
       inner += `<p class="games-prize-modal-msg">${esc(f.instruction || f.message)}</p>`;
       inner += `<p class="games-prize-modal-telegram">Send screenshot to <strong>${esc(f.telegram || '@loveriette')}</strong> on Telegram</p>`;
       inner += '<p class="games-prize-modal-note">Take a screenshot of this screen before closing.</p>';
     } else {
-      inner += `<p class="games-prize-modal-msg">${esc(f.message || '')}</p>`;
+      inner += `<p class="games-prize-modal-msg">${esc(f.message || 'Your prize is on the way!')}</p>`;
     }
 
     body.innerHTML = inner;
     modal.hidden = false;
     const copyBtn = document.getElementById('games-copy-code');
-    if (copyBtn && f.code) {
+    if (copyBtn && f?.code) {
       copyBtn.addEventListener('click', () => {
         navigator.clipboard?.writeText(f.code).then(() => {
           copyBtn.textContent = 'Copied!';
         }).catch(() => { copyBtn.textContent = f.code; });
       }, { once: true });
     }
+  }
+
+  function showPrizeWin(result) {
+    showCongratulations(result);
   }
 
   function wrapPlay(game, state, type, demoFn, playHtml) {
@@ -445,23 +472,21 @@
     if (adminClosed) {
       body = closedBody(state.channelUrl, 'wheel');
     } else if (drawn) {
-      metaHtml = `<div class="games-arena-meta">${countdownHtml(game.drawnAt || game.drawAt, 'Drawn')}</div>`;
       body = `
         <div class="games-play-stage games-play-stage--results">
           ${wheelVisualHtml('is-spin-result')}
           ${winnersPanel(game.winners)}
           ${entriesWall(game.entries, game.winners, game.mySlots)}
-          <p class="games-meta">${game.entryCount || 0} total entries</p>
+          <p class="games-meta">${game.entryCount || 0} total entries · Draw complete</p>
         </div>`;
     } else {
-      metaHtml = `<div class="games-arena-meta">${countdownHtml(game.drawAt, 'Results in')}</div>`;
+      metaHtml = `<div class="games-arena-meta">${wheelEntriesMetaHtml(game)}</div>`;
       const slots = (game.mySlots || []).map((s) =>
         `<span class="games-slot-chip is-mine">#${esc(s.orderNumber)}</span>`
       ).join('');
       const play = `
         <div class="games-play-stage">
-          ${wheelVisualHtml(live ? '' : '')}
-          <p class="games-meta">${game.entryCount || 0} entries · Draw ${esc(fmtDate(game.drawAt))}</p>
+          ${wheelVisualHtml('')}
           ${game.mySlots?.length ? `<p class="games-meta">Your slots: <strong>${game.mySlots.length}</strong></p><div class="games-slot-wall">${slots}</div>` : ''}
           ${entriesWall(game.entries, [], game.mySlots)}
         </div>`;
@@ -474,7 +499,7 @@
       open: live,
       visible: game.listed !== false,
       adminClosed,
-      statusLabel: drawn ? 'Drawn' : (live ? 'Live' : 'Scheduled'),
+      statusLabel: drawn ? 'Drawn' : (live ? 'Open' : 'Full'),
       prizesHtml: prizeChips(game.prizes),
       guideUrl: guideFor(state, 'wheel'),
       metaHtml,
@@ -759,22 +784,6 @@
   });
 
   function tickCountdowns() {
-    document.querySelectorAll('[data-countdown]').forEach((el) => {
-      const target = el.dataset.countdown;
-      if (!target) return;
-      const ms = new Date(target.includes('T') ? target : `${target.replace(' ', 'T')}Z`).getTime() - Date.now();
-      if (Number.isNaN(ms)) return;
-      if (ms <= 0) {
-        el.textContent = 'Drawing now…';
-        el.classList.add('is-due');
-        if (!hubRefreshPending && el.closest('[data-game-type="wheel"]')) {
-          hubRefreshPending = true;
-          setTimeout(() => { hubRefreshPending = false; loadGamesHub(); }, 2000);
-        }
-      } else {
-        el.textContent = fmtCountdown(ms);
-      }
-    });
     document.querySelectorAll('[data-end-countdown]').forEach((el) => {
       const target = el.dataset.endCountdown;
       const ms = new Date(target.includes('T') ? target : `${target.replace(' ', 'T')}Z`).getTime() - Date.now();
@@ -788,7 +797,7 @@
     if (countdownTimer) clearInterval(countdownTimer);
     countdownTimer = setInterval(() => {
       if (pageVisible) tickCountdowns();
-    }, 1000);
+    }, 5000);
   }
 
   function ensureExpandModal() {
@@ -933,6 +942,24 @@
     bindExpand();
     bindGameChoices();
     startCountdowns();
+
+    const wheel = data.wheel || {};
+    if (wheel.myWin) {
+      const key = `games-wheel-win-${wheel.id}`;
+      if (!sessionStorage.getItem(key)) {
+        sessionStorage.setItem(key, '1');
+        showCongratulations({
+          prize: { label: wheel.myWin.prizeLabel, prizeType: wheel.myWin.prizeType },
+          fulfillment: wheel.myWin.fulfillment
+        });
+      }
+    } else if (wheel.maxEntries && wheel.status === 'scheduled'
+      && Number(wheel.entryCount) >= Number(wheel.maxEntries)) {
+      if (!hubRefreshPending) {
+        hubRefreshPending = true;
+        setTimeout(() => { hubRefreshPending = false; loadGamesHub(); }, 2500);
+      }
+    }
   }
 
   async function loadGamesHub() {
