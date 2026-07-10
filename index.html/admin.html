@@ -18,7 +18,7 @@
   </style>
   <link rel="stylesheet" href="style.css?v=20260708b">
   <link rel="stylesheet" href="theme.css?v=20260708b">
-  <link rel="stylesheet" href="admin.css?v=20260708c">
+  <link rel="stylesheet" href="admin.css?v=20260710gameoff">
   <link rel="stylesheet" href="mobile.css?v=20260708b">
   <link rel="stylesheet" href="performance-mobile.css?v=20260708b">
   <script src="theme.js?v=20260708b" defer></script>
@@ -659,6 +659,14 @@
             <h2>Shop Games</h2>
             <label class="admin-toggle"><input type="checkbox" id="games-enabled-toggle"> <span>Enable games for buyers</span></label>
           </div>
+          <div class="admin-games-open-panel">
+            <div class="admin-panel-head" style="margin-bottom:.5rem">
+              <h3 style="margin:0;font-size:1rem">Open / closed per game</h3>
+              <button type="button" class="admin-btn admin-btn-outline admin-btn-sm" id="games-all-off-btn">Turn all off</button>
+            </div>
+            <p class="admin-card-meta" style="margin:0 0 .65rem">Toggle each game off when closed — buyers still see the games page but the game shows as closed.</p>
+            <div class="admin-games-open-grid" id="games-open-toggles"></div>
+          </div>
           <p class="admin-card-meta">Strict eligibility: buyer must order the required quantity of selected account products. Games unlock after delivery. <strong>One purchase = one game choice</strong> (quantity rule is separate from how many games they can play).</p>
           <div class="admin-games-eligibility" style="margin-top:.75rem">
             <label class="admin-toggle"><input type="checkbox" id="games-strict-toggle" checked> <span>Strict product eligibility</span></label>
@@ -911,7 +919,7 @@
   <script src="badges.js?v=20260614tabs"></script>
   <script src="admin.js?v=20260707perf"></script>
   <script src="admin-platform.js?v=20260707deploy"></script>
-  <script src="admin-games.js?v=20260710timer"></script>
+  <script src="admin-games.js?v=20260710gameoff"></script>
   <script src="mobile.js?v=20260614mobile"></script>
 </body>
 </html>

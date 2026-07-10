@@ -12,7 +12,10 @@ const {
   playDeniedMessage,
   parseDays,
   buildGamesHubState,
-  isGamesEnabled
+  isGamesEnabled,
+  readGameEnabledState,
+  applyGameEnabledState,
+  disableAllGamePools
 } = require('./games-engine');
 const { sendHtmlPage } = require('./send-html-page');
 const {
@@ -185,7 +188,8 @@ function mountGamesService(app, db, deps) {
       products: hub.products,
       telegramHandle: hub.telegramHandle,
       guides: hub.guides,
-      strictEligibility: hub.strict
+      strictEligibility: hub.strict,
+      gameEnabled: readGameEnabledState(db)
     });
   });
 
@@ -208,7 +212,14 @@ function mountGamesService(app, db, deps) {
       guides: req.body?.guides,
       strictEligibility: req.body?.strictEligibility
     });
-    res.json({ ok: true, gamesEnabled: enabled === '1' });
+    if (req.body?.gameEnabled && typeof req.body.gameEnabled === 'object') {
+      applyGameEnabledState(db, req.body.gameEnabled);
+    }
+    res.json({
+      ok: true,
+      gamesEnabled: enabled === '1',
+      gameEnabled: readGameEnabledState(db)
+    });
   });
 
   // ── Wheel campaigns ──

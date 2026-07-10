@@ -586,6 +586,67 @@ function playDeniedMessage(db, orderId) {
   return eligibilityMessage(db);
 }
 
+function readGameEnabledState(db) {
+  const wheelRow = db.prepare('SELECT is_enabled FROM game_wheel_campaigns ORDER BY id DESC LIMIT 1').get();
+  const scratchRow = db.prepare('SELECT is_enabled FROM game_scratch_pools ORDER BY id DESC LIMIT 1').get();
+  const mysteryRow = db.prepare('SELECT is_enabled FROM game_mystery_pools ORDER BY id DESC LIMIT 1').get();
+  const state = {
+    wheel: !!wheelRow?.is_enabled,
+    scratch: !!scratchRow?.is_enabled,
+    mystery: !!mysteryRow?.is_enabled
+  };
+  for (const key of ['dice', 'pick', 'vault']) {
+    const row = db.prepare('SELECT is_enabled FROM game_instant_pools WHERE game_key = ?').get(key);
+    state[key] = !!row?.is_enabled;
+  }
+  return state;
+}
+
+function applyGameEnabledState(db, patch = {}) {
+  if (patch.wheel != null) {
+    if (patch.wheel) {
+      db.prepare(`
+        UPDATE game_wheel_campaigns SET is_enabled = 1
+        WHERE id = (SELECT id FROM game_wheel_campaigns ORDER BY id DESC LIMIT 1)
+      `).run();
+    } else {
+      db.prepare('UPDATE game_wheel_campaigns SET is_enabled = 0').run();
+    }
+  }
+  if (patch.scratch != null) {
+    if (patch.scratch) {
+      db.prepare(`
+        UPDATE game_scratch_pools SET is_enabled = 1
+        WHERE id = (SELECT id FROM game_scratch_pools ORDER BY id DESC LIMIT 1)
+      `).run();
+    } else {
+      db.prepare('UPDATE game_scratch_pools SET is_enabled = 0').run();
+    }
+  }
+  if (patch.mystery != null) {
+    if (patch.mystery) {
+      db.prepare(`
+        UPDATE game_mystery_pools SET is_enabled = 1
+        WHERE id = (SELECT id FROM game_mystery_pools ORDER BY id DESC LIMIT 1)
+      `).run();
+    } else {
+      db.prepare('UPDATE game_mystery_pools SET is_enabled = 0').run();
+    }
+  }
+  for (const key of ['dice', 'pick', 'vault']) {
+    if (patch[key] != null) {
+      db.prepare('UPDATE game_instant_pools SET is_enabled = ? WHERE game_key = ?').run(patch[key] ? 1 : 0, key);
+    }
+  }
+}
+
+function disableAllGamePools(db) {
+  db.prepare('UPDATE game_wheel_campaigns SET is_enabled = 0').run();
+  db.prepare('UPDATE game_scratch_pools SET is_enabled = 0').run();
+  db.prepare('UPDATE game_mystery_pools SET is_enabled = 0').run();
+  db.prepare('UPDATE game_instant_pools SET is_enabled = 0').run();
+}
+
 function isGameTypeOpen(db, gameType, orderTotal = 0) {
   const enabled = isGamesEnabled(db);
   const now = new Date();
@@ -995,5 +1056,9 @@ module.exports = {
   buildEligibilityHub,
   getGamesRules,
   recordPrizeAward,
-  displayNameForUser
+  displayNameForUser,
+  readGameEnabledState,
+  applyGameEnabledState,
+  disableAllGamePools,
+  isGameTypeOpen
 };

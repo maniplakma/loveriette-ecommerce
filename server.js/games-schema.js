@@ -19,12 +19,6 @@ function seedDefaultGames(db) {
       VALUES (?, ?, ?, ?, ?)
     `);
     prizes.forEach((p, i) => ins.run(r.lastInsertRowid, p[0], p[1], p[2], i));
-  } else {
-    db.prepare(`
-      UPDATE game_wheel_campaigns
-      SET is_enabled = 1, status = 'scheduled', draw_at = ?
-      WHERE id = (SELECT id FROM game_wheel_campaigns ORDER BY id DESC LIMIT 1)
-    `).run(drawAt);
   }
 
   if (!db.prepare('SELECT id FROM game_scratch_pools LIMIT 1').get()) {
@@ -43,8 +37,6 @@ function seedDefaultGames(db) {
       VALUES (?, ?, ?, ?, 1, ?)
     `);
     prizes.forEach((p) => ins.run(r.lastInsertRowid, p[0], p[1], p[2], p[3]));
-  } else {
-    db.prepare(`UPDATE game_scratch_pools SET is_enabled = 1 WHERE id = (SELECT id FROM game_scratch_pools ORDER BY id DESC LIMIT 1)`).run();
   }
 
   if (!db.prepare('SELECT id FROM game_mystery_pools LIMIT 1').get()) {
@@ -62,8 +54,6 @@ function seedDefaultGames(db) {
       VALUES (?, ?, ?, ?, 1)
     `);
     prizes.forEach((p) => ins.run(r.lastInsertRowid, p[0], p[1], p[2]));
-  } else {
-    db.prepare(`UPDATE game_mystery_pools SET is_enabled = 1 WHERE id = (SELECT id FROM game_mystery_pools ORDER BY id DESC LIMIT 1)`).run();
   }
 
   const instantDefaults = [
@@ -112,10 +102,21 @@ function seedDefaultGames(db) {
         VALUES (?, ?, ?, ?, 1, ?)
       `);
       game.prizes.forEach((p) => ins.run(pool.id, p[0], p[1], p[2], p[3]));
-    } else {
-      db.prepare('UPDATE game_instant_pools SET is_enabled = 1 WHERE id = ?').run(pool.id);
     }
   }
+}
+
+function applyGamesClosedMigration(db) {
+  const flag = db.prepare("SELECT value FROM settings WHERE key = 'games_all_closed_v1'").get();
+  if (flag?.value === '1') return;
+  db.prepare('UPDATE game_wheel_campaigns SET is_enabled = 0').run();
+  db.prepare('UPDATE game_scratch_pools SET is_enabled = 0').run();
+  db.prepare('UPDATE game_mystery_pools SET is_enabled = 0').run();
+  db.prepare('UPDATE game_instant_pools SET is_enabled = 0').run();
+  db.prepare(`
+    INSERT INTO settings (key, value) VALUES ('games_all_closed_v1', '1')
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+  `).run();
 }
 
 function initGamesSchema(db) {
@@ -348,6 +349,9 @@ function initGamesSchema(db) {
 
   try { seedDefaultGames(db); } catch (err) {
     console.error('[games] seed defaults failed:', err.message);
+  }
+  try { applyGamesClosedMigration(db); } catch (err) {
+    console.error('[games] closed migration failed:', err.message);
   }
 }
 

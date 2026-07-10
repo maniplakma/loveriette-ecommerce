@@ -1032,6 +1032,56 @@ async function runGamesCheck(adminCookie) {
   db.prepare('DELETE FROM orders WHERE id = ?').run(orderId);
 }
 
+async function runGamesToggleCheck(adminCookie) {
+  console.log('\nShop games per-game off toggles');
+  await request('POST', '/admin/games/scratch', { title: 'Toggle QA Scratch', isEnabled: true, minOrderTotal: 0 }, adminCookie);
+  await request('POST', '/admin/games/mystery', { title: 'Toggle QA Mystery', isEnabled: true, minOrderTotal: 0 }, adminCookie);
+
+  const allOff = await request('PUT', '/admin/games/settings', {
+    gamesEnabled: true,
+    gameEnabled: {
+      wheel: false,
+      scratch: false,
+      mystery: false,
+      dice: false,
+      pick: false,
+      vault: false
+    }
+  }, adminCookie);
+  if (allOff.status === 200) ok('PUT all games off via settings');
+  else fail('PUT all games off via settings', allOff.json?.error || allOff.status);
+
+  const closedHub = await request('GET', '/api/games');
+  const keys = ['wheel', 'scratch', 'mystery', 'dice', 'pick', 'vault'];
+  const allClosed = keys.every((k) => closedHub.json?.[k]?.open === false);
+  const noChoices = !(closedHub.json?.openGamesForChoice || []).length;
+  if (closedHub.status === 200 && allClosed && noChoices) ok('GET /api/games all six games closed');
+  else fail('GET /api/games all six games closed', JSON.stringify({
+    open: keys.map((k) => [k, closedHub.json?.[k]?.open]),
+    openGamesForChoice: closedHub.json?.openGamesForChoice
+  }));
+
+  const scratchOn = await request('PUT', '/admin/games/settings', {
+    gamesEnabled: true,
+    gameEnabled: { scratch: true }
+  }, adminCookie);
+  if (scratchOn.status === 200 && scratchOn.json.gameEnabled?.scratch) ok('PUT scratch game on');
+  else fail('PUT scratch game on', scratchOn.json?.error || scratchOn.status);
+
+  const scratchHub = await request('GET', '/api/games');
+  if (scratchHub.json?.scratch?.open === true
+      && scratchHub.json?.wheel?.open === false
+      && (scratchHub.json?.openGamesForChoice || []).includes('scratch')) {
+    ok('scratch open while others stay closed');
+  } else {
+    fail('scratch open while others stay closed', JSON.stringify({
+      scratch: scratchHub.json?.scratch?.open,
+      wheel: scratchHub.json?.wheel?.open,
+      openGamesForChoice: scratchHub.json?.openGamesForChoice
+    }));
+  }
+}
+
 async function main() {
   console.log('Ecom workflow smoke tests');
   try {
@@ -1042,6 +1092,7 @@ async function main() {
     await runApiChecks(adminCookie);
     await runOrderFlowCheck(adminCookie);
     await runLoyaltyCheck(adminCookie);
+    await runGamesToggleCheck(adminCookie);
     await runGamesCheck(adminCookie);
     await runVariantDescriptionCheck(adminCookie);
     await runUserAdminCheck(adminCookie);
