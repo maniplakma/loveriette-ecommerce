@@ -1324,7 +1324,7 @@ async function runGamesToggleCheck(adminCookie) {
   const closedPageBody = gamesClosedPage.json?.raw || '';
   if (gamesClosedPage.status === 200
       && closedPageBody.includes('games-arena-grid')
-      && closedPageBody.includes('games-page.js?v=20260710prizelogic')) {
+      && closedPageBody.includes('games-page.js?v=20260710perf')) {
     ok('GET /games page loads closed-state assets');
   } else fail('GET /games page loads closed-state assets', gamesClosedPage.status);
 

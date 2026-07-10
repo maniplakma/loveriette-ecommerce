@@ -1,5 +1,6 @@
 /* Games hub — /games */
 (function () {
+  const GAMES_LITE = document.documentElement.classList.contains('lite-ui');
   let hubEligibility = null;
 
   function esc(s) {
@@ -669,7 +670,8 @@
           grid.innerHTML = `<div class="games-scratch-reveal">${esc(label)}</div>`;
           if (msg) { msg.hidden = false; msg.textContent = playResultMessage(result); }
           showPrizeWin(result);
-          setTimeout(() => loadGamesHub(), 2500);
+          if (!GAMES_LITE) setTimeout(() => loadGamesHub(), 2500);
+          else loadGamesHub();
         } catch (err) {
           if (msg) { msg.hidden = false; msg.className = 'games-scratch-msg is-error'; msg.textContent = err.message; }
           revealed = false;
@@ -699,7 +701,8 @@
             ).join('');
             if (msg) { msg.hidden = false; msg.textContent = playResultMessage(result); }
             showPrizeWin(result);
-            setTimeout(() => loadGamesHub(), 2500);
+            if (!GAMES_LITE) setTimeout(() => loadGamesHub(), 2500);
+            else loadGamesHub();
           } catch (err) {
             if (msg) { msg.hidden = false; msg.className = 'games-scratch-msg is-error'; msg.textContent = err.message; }
             delete card.dataset.playing;
@@ -727,7 +730,8 @@
           row.innerHTML = dice.map((d) => dieHtml(d, 'is-rolled')).join('');
           if (msg) { msg.hidden = false; msg.textContent = playResultMessage(result); }
           showPrizeWin(result);
-          setTimeout(() => loadGamesHub(), 2500);
+          if (!GAMES_LITE) setTimeout(() => loadGamesHub(), 2500);
+          else loadGamesHub();
         } catch (err) {
           if (msg) { msg.hidden = false; msg.className = 'games-scratch-msg is-error'; msg.textContent = err.message; }
           btn.disabled = false;
@@ -755,7 +759,8 @@
             ).join('');
             if (msg) { msg.hidden = false; msg.textContent = playResultMessage(result); }
             showPrizeWin(result);
-            setTimeout(() => loadGamesHub(), 2500);
+            if (!GAMES_LITE) setTimeout(() => loadGamesHub(), 2500);
+            else loadGamesHub();
           } catch (err) {
             if (msg) { msg.hidden = false; msg.className = 'games-scratch-msg is-error'; msg.textContent = err.message; }
             delete card.dataset.playing;
@@ -784,7 +789,8 @@
             ).join('');
             if (msg) { msg.hidden = false; msg.textContent = playResultMessage(result); }
             showPrizeWin(result);
-            setTimeout(() => loadGamesHub(), 2500);
+            if (!GAMES_LITE) setTimeout(() => loadGamesHub(), 2500);
+            else loadGamesHub();
           } catch (err) {
             if (msg) { msg.hidden = false; msg.className = 'games-scratch-msg is-error'; msg.textContent = err.message; }
             delete card.dataset.playing;
@@ -795,7 +801,13 @@
   }
 
   function runWheelDrawSequence(wheel) {
-    if (!wheel?.winners?.length || wheel.status !== 'drawn') return;
+    if (GAMES_LITE || !wheel?.winners?.length || wheel.status !== 'drawn') {
+      if (wheel?.winners?.length) {
+        const storageKey = `games-wheel-spins-${wheel.id}-${wheel.drawnAt || wheel.winners.length}`;
+        sessionStorage.setItem(storageKey, '1');
+      }
+      return;
+    }
     const stage = document.querySelector(`.games-play-stage--results[data-wheel-id="${wheel.id}"]`)
       || document.querySelector('.games-arena--wheel .games-play-stage--results');
     if (!stage) return;
@@ -930,6 +942,7 @@
   let arenaMotionObserver = null;
 
   function observeArenaMotion() {
+    if (GAMES_LITE) return;
     if (!('IntersectionObserver' in window)) {
       document.querySelectorAll('.games-arena').forEach((a) => a.classList.add('is-in-view'));
       return;
@@ -972,6 +985,7 @@
     const el = document.getElementById('games-recent-winners');
     if (!el || !list?.length) return;
     el.hidden = false;
+    if (!GAMES_LITE) el.classList.add('is-animated');
     el.innerHTML = `
       <span class="games-recent-label">Recent wins</span>
       <div class="games-recent-track">${list.map((w) =>

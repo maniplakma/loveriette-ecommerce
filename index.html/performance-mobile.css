@@ -1,5 +1,6 @@
 /**
- * Mobile performance + visual stability — load after mobile.css.
+ * Mobile / touch performance — load after mobile.css.
+ * Works with html.lite-ui from theme-boot.js (mobile, coarse pointer, reduced motion).
  */
 @media (max-width: 768px) {
   html {
@@ -63,7 +64,9 @@
   .nav-inner,
   .nav-menu,
   .buyer-dash-sticky-title,
-  .service-card--premium {
+  .service-card--premium,
+  .games-prize-modal,
+  .games-expand-modal {
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
   }
@@ -91,7 +94,8 @@
   .catalog-card,
   .product-card,
   .package-card,
-  .service-card--premium {
+  .service-card--premium,
+  .games-arena {
     transform: none !important;
   }
 
@@ -101,7 +105,8 @@
   .catalog-showcase:hover,
   .variant-showcase:hover,
   .product-card:not(.catalog-card):hover,
-  .service-card--premium:hover {
+  .service-card--premium:hover,
+  .games-arena--open:hover {
     transform: none !important;
   }
 
@@ -123,6 +128,108 @@
   .icon-btn {
     transition-duration: 0.12s !important;
   }
+
+  /* ── Games hub (heaviest page on mobile) ── */
+  .games-arena,
+  .games-arena--listed-closed {
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.26) !important;
+    min-height: 300px;
+    contain-intrinsic-size: auto 300px;
+  }
+
+  .games-arena-glow,
+  .games-closed-shine,
+  .service-card-shine,
+  .platform-closed-glow {
+    display: none !important;
+  }
+
+  .games-arena--listed-closed,
+  .games-closed-panel,
+  .games-card-bg,
+  .page-games .games-hub-intro {
+    background: var(--surface, #1a0a0c) !important;
+  }
+
+  .games-scratch-foil,
+  .games-recent-track,
+  .games-countdown-value.is-due,
+  .games-wheel-visual.is-spin-result .games-wheel-segments,
+  .games-die.is-rolled,
+  .games-die.is-rolled .games-die-cube,
+  .platform-closed-glow {
+    animation: none !important;
+  }
+
+  .games-wheel-segments {
+    background: linear-gradient(
+      135deg,
+      #c49a12 0%,
+      #5c4010 22%,
+      #1a0a0c 44%,
+      #8b6914 66%,
+      #c49a12 100%
+    ) !important;
+  }
+
+  .games-expand-modal {
+    background: rgba(0, 0, 0, 0.94) !important;
+  }
+
+  .games-expand-panel {
+    animation: none !important;
+  }
+
+  .games-scratch-ticket,
+  .games-mystery-box,
+  .games-vault-door,
+  .games-pick-card,
+  .games-die {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28) !important;
+  }
+
+  .games-arena-grid {
+    gap: 0.85rem;
+  }
+
+  .games-recent-winners {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .games-recent-track {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+}
+
+/* lite-ui = mobile / touch / reduced-motion (set in theme-boot.js) */
+html.lite-ui .games-scratch-foil,
+html.lite-ui .games-recent-track,
+html.lite-ui .platform-closed-glow,
+html.lite-ui .hero-decor-panel,
+html.lite-ui .hero-bg-app,
+html.lite-ui .activity-feed-item {
+  animation: none !important;
+}
+
+html.lite-ui .games-arena-glow,
+html.lite-ui .games-closed-shine,
+html.lite-ui .service-card-shine {
+  display: none !important;
+}
+
+html.lite-ui .games-prize-modal,
+html.lite-ui .games-expand-modal,
+html.lite-ui .top-nav {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html.lite-ui .service-card--premium:hover,
+html.lite-ui .games-arena--open:hover {
+  transform: none !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -164,7 +271,8 @@ a,
 .main-content,
 .info-page,
 .service-hero,
-.buyer-dash-main {
+.buyer-dash-main,
+.page-games .games-hub {
   contain: layout style;
 }
 

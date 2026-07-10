@@ -74,6 +74,13 @@
   apply(active);
   window.__loverietteThemeBootKey = `${active.background}|${active.font}|${active.primary}|${active.secondary}`;
 
+  try {
+    const liteUi = window.matchMedia('(max-width: 768px)').matches
+      || window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      || window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+    if (liteUi) document.documentElement.classList.add('lite-ui');
+  } catch (_) { /* ignore */ }
+
   if (!document.getElementById('site-fonts')) {
     const link = document.createElement('link');
     link.id = 'site-fonts';

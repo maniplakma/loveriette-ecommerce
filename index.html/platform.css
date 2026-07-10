@@ -100,14 +100,15 @@
   pointer-events: none;
 }
 
-.service-card--premium:hover {
-  will-change: transform;
-  transform: translateY(-4px);
-  border-color: rgba(255, 120, 130, 0.32);
-  box-shadow:
-    0 18px 44px rgba(0, 0, 0, 0.44),
-    0 0 0 1px rgba(229, 9, 20, 0.12),
-    inset 0 1px 0 rgba(255, 210, 210, 0.14);
+@media (hover: hover) and (pointer: fine) {
+  .service-card--premium:hover {
+    transform: translateY(-4px);
+    border-color: rgba(255, 120, 130, 0.32);
+    box-shadow:
+      0 18px 44px rgba(0, 0, 0, 0.44),
+      0 0 0 1px rgba(229, 9, 20, 0.12),
+      inset 0 1px 0 rgba(255, 210, 210, 0.14);
+  }
 }
 
 .service-card--featured {

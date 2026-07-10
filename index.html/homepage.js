@@ -369,11 +369,31 @@ function domReady(fn) {
   }
 }
 
-setInterval(async () => {
-  try {
-    const items = await fetchJson('/api/activity-feed', 10000);
-    renderActivityFeed(items);
-  } catch (_) { /* ignore */ }
-}, 30000);
-
 domReady(bootHomepage);
+
+(function () {
+  const LITE = document.documentElement.classList.contains('lite-ui');
+  const INTERVAL = LITE ? 90000 : 30000;
+  let timer = null;
+
+  function pollActivity() {
+    if (document.visibilityState === 'hidden') return;
+    fetch('/api/activity-feed', { credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((items) => {
+        if (typeof renderActivityFeed === 'function') renderActivityFeed(items);
+      })
+      .catch(() => {});
+  }
+
+  function startPoll() {
+    if (timer) clearInterval(timer);
+    timer = setInterval(pollActivity, INTERVAL);
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') pollActivity();
+  });
+
+  startPoll();
+})();
