@@ -3,11 +3,34 @@
 const nodemailer = require('nodemailer');
 
 function parseSmtpSettings(getSetting) {
+  let settings = {};
   try {
-    return JSON.parse(getSetting('integration_smtp', '{}') || '{}');
+    settings = JSON.parse(getSetting('integration_smtp', '{}') || '{}');
   } catch (_) {
-    return {};
+    settings = {};
   }
+
+  if (process.env.SMTP_HOST || process.env.SMTP_PASSWORD) {
+    const envSecure = String(process.env.SMTP_SECURE || '').trim().toLowerCase();
+    settings = {
+      ...settings,
+      enabled: process.env.SMTP_ENABLED !== '0' && process.env.SMTP_ENABLED !== 'false',
+      host: String(process.env.SMTP_HOST || settings.host || '').trim(),
+      port: Number(process.env.SMTP_PORT || settings.port || 587) || 587,
+      secure: envSecure === '1' || envSecure === 'true'
+        ? true
+        : (envSecure === '0' || envSecure === 'false' ? false : settings.secure),
+      user: String(process.env.SMTP_USER || settings.user || settings.username || 'api').trim(),
+      password: String(process.env.SMTP_PASSWORD || settings.password || '').trim(),
+      fromEmail: String(process.env.SMTP_FROM_EMAIL || settings.fromEmail || '').trim(),
+      fromName: String(process.env.SMTP_FROM_NAME || settings.fromName || 'loveriette').trim() || 'loveriette'
+    };
+    if (settings.host && settings.password && settings.fromEmail) {
+      settings.enabled = process.env.SMTP_ENABLED !== '0' && process.env.SMTP_ENABLED !== 'false';
+    }
+  }
+
+  return settings;
 }
 
 function isTruthy(value) {
