@@ -26,9 +26,16 @@ const {
   saveFetchedEmail
 } = require('./gmail-schema');
 const { sendHtmlPage } = require('./send-html-page');
+const {
+  createPasswordResetToken,
+  findPasswordResetToken,
+  isPasswordResetTokenValid,
+  markPasswordResetTokenUsed,
+} = require('./password-reset');
 const { domainStatus, gmailOAuthAllowed, isCustomDomainConnected } = require('./domain-setup');
 const {
   sendWelcomeEmail,
+  sendPasswordResetEmail,
   sendPasswordChangedEmail,
   trySendOrderDeliveredEmail,
   queueBuyerEmail,
@@ -2305,6 +2312,102 @@ app.post('/auth/logout', (req, res) => {
   req.session.destroy(() => {
     res.json({ ok: true });
   });
+});
+
+function passwordResetEmailReady() {
+  const settings = parseBuyerEmailSettings(getSetting);
+  if (settings.enabled === false || settings.enabled === 'false') return false;
+  if (settings.passwordReset === false || settings.passwordReset === 'false') return false;
+  return !!getActiveGmailConnection(db)?.access_token_enc;
+}
+
+app.post('/auth/forgot-password', authRateLimit, async (req, res) => {
+  const email = String(req.body?.email || '').trim().toLowerCase();
+  if (!email) {
+    return res.status(400).json({ error: 'Email is required' });
+  }
+
+  if (!passwordResetEmailReady()) {
+    return res.status(503).json({
+      error: 'Password reset email is not available yet. Contact support or try again later.'
+    });
+  }
+
+  const user = db.prepare(`
+    SELECT id, email, name, suspended FROM users WHERE email = ? AND is_admin = 0
+  `).get(email);
+
+  const genericMessage = 'If that email is registered, we sent a password reset link. Check your inbox and spam folder.';
+
+  if (!user || user.suspended) {
+    return res.json({ ok: true, message: genericMessage });
+  }
+
+  try {
+    const siteUrl = String(getSetting('site_public_url', '') || appConfig.publicUrl || '').replace(/\/$/, '')
+      || 'https://loveriette.shop';
+    const { rawToken } = createPasswordResetToken(db, user.id);
+    const resetUrl = `${siteUrl}/reset-password.html?token=${encodeURIComponent(rawToken)}`;
+    await sendPasswordResetEmail(db, getSetting, {
+      userId: user.id,
+      email: user.email,
+      name: user.name,
+      resetUrl
+    });
+    res.json({ ok: true, message: genericMessage });
+  } catch (err) {
+    console.error('[forgot-password]', err.message || err);
+    res.status(500).json({
+      error: formatGmailSendError(err) || 'Could not send reset email. Try again or contact support.'
+    });
+  }
+});
+
+app.get('/auth/reset-password/verify', (req, res) => {
+  const rawToken = String(req.query.token || '').trim();
+  if (!rawToken) return res.json({ valid: false });
+  const row = findPasswordResetToken(db, rawToken);
+  res.json({ valid: isPasswordResetTokenValid(row) });
+});
+
+app.post('/auth/reset-password', authRateLimit, (req, res) => {
+  const rawToken = String(req.body?.token || '').trim();
+  const password = String(req.body?.password || '');
+  const confirmPassword = String(req.body?.confirmPassword || password);
+
+  if (!rawToken) {
+    return res.status(400).json({ error: 'Reset link is invalid or expired' });
+  }
+  if (!password) {
+    return res.status(400).json({ error: 'New password is required' });
+  }
+  if (password !== confirmPassword) {
+    return res.status(400).json({ error: 'Passwords do not match' });
+  }
+  const strengthErr = passwordStrengthError(password);
+  if (strengthErr) return res.status(400).json({ error: strengthErr });
+
+  const row = findPasswordResetToken(db, rawToken);
+  if (!isPasswordResetTokenValid(row)) {
+    return res.status(400).json({ error: 'Reset link is invalid or expired. Request a new one.' });
+  }
+  if (row.suspended) {
+    return res.status(403).json({ error: 'Account suspended. Contact support.' });
+  }
+
+  db.prepare(`
+    UPDATE users SET password_hash = ?, session_version = session_version + 1
+    WHERE id = ?
+  `).run(bcrypt.hashSync(password, 10), row.user_id);
+  markPasswordResetTokenUsed(db, row.id);
+
+  queueBuyerEmail(() => sendPasswordChangedEmail(db, getSetting, {
+    userId: row.user_id,
+    email: row.email,
+    name: row.name
+  }));
+
+  res.json({ ok: true, message: 'Password updated. You can sign in now.' });
 });
 
 app.get('/auth/me', (req, res) => {
@@ -5657,6 +5760,9 @@ function mergeBuyerEmailSettings(existing = {}, incoming = {}) {
     password: Object.prototype.hasOwnProperty.call(incoming, 'password')
       ? bool(incoming.password, true)
       : bool(existing.password, true),
+    passwordReset: Object.prototype.hasOwnProperty.call(incoming, 'passwordReset')
+      ? bool(incoming.passwordReset, true)
+      : bool(existing.passwordReset, true),
     orderDelivered: Object.prototype.hasOwnProperty.call(incoming, 'orderDelivered')
       ? bool(incoming.orderDelivered, true)
       : bool(existing.orderDelivered, true)

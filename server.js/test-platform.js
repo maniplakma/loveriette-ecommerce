@@ -76,6 +76,8 @@ async function runPageRoutes() {
     '/plugging/status',
     '/plugging/workspace',
     '/login.html',
+    '/forgot-password.html',
+    '/reset-password.html',
     '/admin.html',
     '/dashboard.html',
     '/signup.html',

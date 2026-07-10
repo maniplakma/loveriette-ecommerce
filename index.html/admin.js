@@ -2457,6 +2457,7 @@ function renderIntegration(name) {
       <p class="admin-card-meta">Sender status: <strong>${connected}</strong></p>
       ${!d.gmailConnected ? '<p class="admin-card-meta admin-gmail-domain-warn">Save toggles below anytime. Turn the main switch ON only after Gmail is connected.</p>' : ''}
       <label class="admin-toggle admin-gmail-toggle"><input type="checkbox" name="welcome" ${d.welcome !== false ? 'checked' : ''}> <span>Welcome email on sign up</span></label>
+      <label class="admin-toggle admin-gmail-toggle"><input type="checkbox" name="passwordReset" ${d.passwordReset !== false ? 'checked' : ''}> <span>Forgot password reset link email</span></label>
       <label class="admin-toggle admin-gmail-toggle"><input type="checkbox" name="password" ${d.password !== false ? 'checked' : ''}> <span>Password changed email</span></label>
       <label class="admin-toggle admin-gmail-toggle"><input type="checkbox" name="orderDelivered" ${d.orderDelivered !== false ? 'checked' : ''}> <span>Order delivered email (approved + all accounts delivered)</span></label>
       <p class="admin-card-meta">Credentials in order emails show <strong>Check on website</strong> only — buyers open My Purchases on the site.</p>

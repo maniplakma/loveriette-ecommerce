@@ -7,6 +7,7 @@ const { markBuyerEmailSent, wasBuyerEmailSent } = require('./mailer-schema');
 const {
   buildWelcomeEmail,
   buildPasswordChangedEmail,
+  buildPasswordResetEmail,
   buildOrderDeliveredEmail
 } = require('./mailer-templates');
 
@@ -25,6 +26,7 @@ function buyerEmailsEnabled(getSetting, kind) {
   if (settings.enabled === false || settings.enabled === 'false') return false;
   if (kind === 'welcome' && (settings.welcome === false || settings.welcome === 'false')) return false;
   if (kind === 'password' && (settings.password === false || settings.password === 'false')) return false;
+  if (kind === 'password_reset' && (settings.passwordReset === false || settings.passwordReset === 'false')) return false;
   if (kind === 'order_delivered' && (settings.orderDelivered === false || settings.orderDelivered === 'false')) return false;
   return true;
 }
@@ -142,6 +144,31 @@ async function sendWelcomeEmail(db, getSetting, { userId, email, name }) {
   });
 }
 
+async function sendPasswordResetEmail(db, getSetting, { userId, email, name, resetUrl }) {
+  const siteUrl = resolveSiteUrl(getSetting);
+  const storeName = resolveStoreName(getSetting);
+  if (!buyerEmailsEnabled(getSetting, 'password_reset')) {
+    return { skipped: true, reason: 'disabled' };
+  }
+
+  const payload = buildPasswordResetEmail({
+    name,
+    storeName,
+    siteUrl,
+    resetUrl,
+    expiresMinutes: 60
+  });
+
+  await sendBuyerEmail(db, {
+    toEmail: email,
+    subject: payload.subject,
+    html: payload.html,
+    text: payload.text
+  });
+  markBuyerEmailSent(db, 'password_reset', `user:${userId}:${Date.now()}`, String(email).toLowerCase(), payload.subject);
+  return { ok: true };
+}
+
 async function sendPasswordChangedEmail(db, getSetting, { userId, email, name }) {
   const user = db.prepare('SELECT notify_email FROM users WHERE id = ?').get(userId);
   if (user && !user.notify_email) return { skipped: true, reason: 'user_pref' };
@@ -244,6 +271,7 @@ module.exports = {
   parseBuyerEmailSettings,
   sendBuyerEmail,
   sendWelcomeEmail,
+  sendPasswordResetEmail,
   sendPasswordChangedEmail,
   trySendOrderDeliveredEmail,
   queueBuyerEmail,
