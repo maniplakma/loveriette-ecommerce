@@ -902,8 +902,15 @@
   function renderHub(data) {
     hubEligibility = data.eligibility || null;
     const intro = document.getElementById('games-hub-intro');
-    if (intro && data.eligibility?.message) {
-      intro.querySelector('p').textContent = data.eligibility.message;
+    if (intro) {
+      const lead = intro.querySelector('p');
+      if (lead) {
+        if (data.gamesEnabled === false) {
+          lead.textContent = 'Games are paused for now — all rounds below are closed. Join our channel for updates when they reopen.';
+        } else if (data.eligibility?.message) {
+          lead.textContent = data.eligibility.message;
+        }
+      }
     }
     renderRecentWinners(data.recentWinners);
     const grid = document.getElementById('games-arena-grid');

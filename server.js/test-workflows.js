@@ -1034,6 +1034,47 @@ async function runGamesCheck(adminCookie) {
 
 async function runGamesToggleCheck(adminCookie) {
   console.log('\nShop games per-game off toggles');
+  const keys = ['wheel', 'scratch', 'mystery', 'dice', 'pick', 'vault'];
+
+  const globalOff = await request('PUT', '/admin/games/settings', {
+    gamesEnabled: false,
+    gameEnabled: {
+      wheel: false,
+      scratch: false,
+      mystery: false,
+      dice: false,
+      pick: false,
+      vault: false
+    }
+  }, adminCookie);
+  if (globalOff.status === 200) ok('PUT global games disabled');
+  else fail('PUT global games disabled', globalOff.json?.error || globalOff.status);
+
+  const pageGlobalOff = await request('GET', '/games');
+  if (pageGlobalOff.status === 200) ok('GET /games serves page when global games disabled (no shop redirect)');
+  else fail('GET /games serves page when global games disabled', pageGlobalOff.status);
+
+  const hubGlobalOff = await request('GET', '/api/games');
+  const listedWhenGlobalOff = keys.every((k) => hubGlobalOff.json?.[k]?.listed !== false);
+  if (hubGlobalOff.status === 200 && hubGlobalOff.json.gamesEnabled === false && listedWhenGlobalOff) {
+    ok('hub lists all games when globally disabled');
+  } else fail('hub lists all games when globally disabled', JSON.stringify({
+    gamesEnabled: hubGlobalOff.json?.gamesEnabled,
+    listed: keys.map((k) => [k, hubGlobalOff.json?.[k]?.listed])
+  }));
+
+  await request('PUT', '/admin/games/settings', {
+    gamesEnabled: true,
+    gameEnabled: {
+      wheel: false,
+      scratch: false,
+      mystery: false,
+      dice: false,
+      pick: false,
+      vault: false
+    }
+  }, adminCookie);
+
   await request('POST', '/admin/games/scratch', { title: 'Toggle QA Scratch', isEnabled: true, minOrderTotal: 0 }, adminCookie);
   await request('POST', '/admin/games/mystery', { title: 'Toggle QA Mystery', isEnabled: true, minOrderTotal: 0 }, adminCookie);
 
@@ -1052,7 +1093,6 @@ async function runGamesToggleCheck(adminCookie) {
   else fail('PUT all games off via settings', allOff.json?.error || allOff.status);
 
   const closedHub = await request('GET', '/api/games');
-  const keys = ['wheel', 'scratch', 'mystery', 'dice', 'pick', 'vault'];
   const allClosed = keys.every((k) => closedHub.json?.[k]?.open === false);
   const noChoices = !(closedHub.json?.openGamesForChoice || []).length;
   if (closedHub.status === 200 && allClosed && noChoices) ok('GET /api/games all six games closed');
@@ -1069,7 +1109,7 @@ async function runGamesToggleCheck(adminCookie) {
   const closedPageBody = gamesClosedPage.json?.raw || '';
   if (gamesClosedPage.status === 200
       && closedPageBody.includes('games-arena-grid')
-      && closedPageBody.includes('games-page.js?v=20260710closed')) {
+      && closedPageBody.includes('games-page.js?v=20260710gamesfix')) {
     ok('GET /games page loads closed-state assets');
   } else fail('GET /games page loads closed-state assets', gamesClosedPage.status);
 

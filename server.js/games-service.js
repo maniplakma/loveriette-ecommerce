@@ -12,7 +12,6 @@ const {
   playDeniedMessage,
   parseDays,
   buildGamesHubState,
-  isGamesEnabled,
   readGameEnabledState,
   applyGameEnabledState,
   disableAllGamePools
@@ -92,7 +91,6 @@ function mountGamesService(app, db, deps) {
   setInterval(() => processDueWheelDraws(db, engineDeps), 15 * 1000);
 
   app.get('/games', (req, res) => {
-    if (!isGamesEnabled(db)) return res.redirect(302, '/shop');
     trackVisit?.(req);
     sendHtmlPage(res, frontendDir, 'games.html');
   });

@@ -135,6 +135,7 @@ function getRecentPrizeWinners(db, limit = 10) {
 
 function buildGamesHubState(db, userId = null) {
   const enabled = isGamesEnabled(db);
+  const hubListed = true;
   const channelUrl = readSetting(db, 'games_channel_url', 'https://t.me/loveriette');
   const now = new Date();
   const wheelPlayRow = resolveWheelCampaign(db, now);
@@ -239,9 +240,9 @@ function buildGamesHubState(db, userId = null) {
     wheel: wheelDisplayRow ? {
       id: wheelDisplayRow.id,
       title: wheelDisplayRow.title,
-      listed: enabled,
+      listed: hubListed,
       open: wheelOpen,
-      visible: enabled,
+      visible: hubListed,
       status: wheelPlayRow?.status || wheelDisplayRow.status,
       drawAt: wheelDisplayRow.draw_at,
       drawnAt: wheelDisplayRow.drawn_at,
@@ -255,13 +256,13 @@ function buildGamesHubState(db, userId = null) {
       mySlots: wheelSlots,
       canPlay: wheelOpen && wheelSlots.length > 0,
       needsPurchase: wheelOpen && !wheelSlots.length && !hasPendingCredit
-    } : { listed: enabled, open: false, visible: enabled, title: 'Spin the Wheel', prizes: [], needsPurchase: false, canPlay: false },
+    } : { listed: hubListed, open: false, visible: hubListed, title: 'Spin the Wheel', prizes: [], needsPurchase: false, canPlay: false },
     scratch: scratchRow ? {
       id: scratchRow.id,
       title: scratchRow.title,
-      listed: enabled,
+      listed: hubListed,
       open: scratchOpen,
-      visible: enabled,
+      visible: hubListed,
       endsAt: scratchRow.ends_at,
       startsAt: scratchRow.starts_at,
       minOrderTotal: scratchRow.min_order_total,
@@ -270,13 +271,13 @@ function buildGamesHubState(db, userId = null) {
       pending: scratchCards.filter((c) => !c.scratchedAt),
       canPlay: scratchOpen && scratchCards.some((c) => !c.scratchedAt),
       needsPurchase: scratchOpen && !scratchCards.length && !hasPendingCredit
-    } : { listed: enabled, open: false, visible: enabled, title: 'Scratch Cards', prizes: [], needsPurchase: false, canPlay: false },
+    } : { listed: hubListed, open: false, visible: hubListed, title: 'Scratch Cards', prizes: [], needsPurchase: false, canPlay: false },
     mystery: mysteryRow ? {
       id: mysteryRow.id,
       title: mysteryRow.title,
-      listed: enabled,
+      listed: hubListed,
       open: mysteryOpen,
-      visible: enabled,
+      visible: hubListed,
       endsAt: mysteryRow.ends_at,
       startsAt: mysteryRow.starts_at,
       minOrderTotal: mysteryRow.min_order_total,
@@ -285,7 +286,7 @@ function buildGamesHubState(db, userId = null) {
       pending: mysteryPlays.filter((p) => !p.playedAt),
       canPlay: mysteryOpen && mysteryPlays.some((p) => !p.playedAt),
       needsPurchase: mysteryOpen && !mysteryPlays.length && !hasPendingCredit
-    } : { listed: enabled, open: false, visible: enabled, title: 'Mystery Box', prizes: [], needsPurchase: false, canPlay: false },
+    } : { listed: hubListed, open: false, visible: hubListed, title: 'Mystery Box', prizes: [], needsPurchase: false, canPlay: false },
     dice,
     pick,
     vault
@@ -299,14 +300,15 @@ const INSTANT_DEFAULTS = {
 };
 
 function buildInstantHubGame(db, gameKey, userId, enabled, hasPendingCredit = false) {
+  const hubListed = true;
   const pool = db.prepare('SELECT * FROM game_instant_pools WHERE game_key = ?').get(gameKey);
   const fallbackTitle = INSTANT_DEFAULTS[gameKey] || 'Instant Game';
   if (!pool) {
     return {
       gameKey,
-      listed: enabled,
+      listed: hubListed,
       open: false,
-      visible: enabled,
+      visible: hubListed,
       title: fallbackTitle,
       prizes: [],
       needsPurchase: false,
@@ -339,9 +341,9 @@ function buildInstantHubGame(db, gameKey, userId, enabled, hasPendingCredit = fa
     id: pool.id,
     gameKey,
     title: pool.title,
-    listed: enabled,
+    listed: hubListed,
     open,
-    visible: enabled,
+    visible: hubListed,
     endsAt: pool.ends_at,
     startsAt: pool.starts_at,
     minOrderTotal: pool.min_order_total,

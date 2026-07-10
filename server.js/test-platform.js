@@ -126,6 +126,11 @@ async function runHomepageApi() {
   else fail('GET /api/homepage testimonials', 'empty');
   if (!('featured' in res.json) && !('statistics' in res.json)) ok('GET /api/homepage trimmed sections');
   else fail('GET /api/homepage trimmed', 'legacy fields present');
+  const services = (res.json.sections || []).find((s) => s.key === 'service_categories');
+  const items = services?.content?.items || services?.items || [];
+  const hasGames = items.some((i) => String(i.link || '').toLowerCase() === '/games');
+  if (hasGames) ok('homepage services includes Games card');
+  else fail('homepage services includes Games card', items.map((i) => i.link).join(', '));
 }
 
 async function runWebsiteMakingApi() {
