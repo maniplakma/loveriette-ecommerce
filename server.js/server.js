@@ -46,6 +46,7 @@ const {
   formatSendError
 } = require('./mailer');
 const { mergeSmtpSettings, publicSmtpSettings, parseSmtpSettings, isSmtpConfigured, isTruthy } = require('./smtp-mailer');
+const { bootstrapSmtpFromEnv } = require('./smtp-bootstrap');
 const {
   buildOrderActivityMessage,
   buildOrderActivityMeta,
@@ -4253,6 +4254,9 @@ function setSetting(key, value) {
     ON CONFLICT(key) DO UPDATE SET value = excluded.value
   `).run(key, String(value));
 }
+function clearSettingsCache() {
+  if (getSetting._cache) getSetting._cache.clear();
+}
 function notify(type, title, body = '') {
   try {
     db.prepare('INSERT INTO admin_notifications (type, title, body) VALUES (?, ?, ?)')
@@ -6103,6 +6107,10 @@ app.use(express.static(appConfig.frontendDir, {
 }));
 
 app.listen(port, host, () => {
+  const smtpBoot = bootstrapSmtpFromEnv(db, { clearSettingsCache: getSetting._cache });
+  if (smtpBoot.ok) {
+    console.log(`[smtp] Ready — ${smtpBoot.host} from ${smtpBoot.fromEmail}`);
+  }
   if (appConfig.publicUrl) {
     console.log(`Server listening — public URL: ${appConfig.publicUrl}`);
   } else {

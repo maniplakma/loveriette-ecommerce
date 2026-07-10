@@ -63,6 +63,11 @@ if ! node -e "require('./server.js/db.js')" 2>/dev/null; then
   node -e "require('./server.js/db.js')"
 fi
 
+if [[ -f .env ]] && grep -qE '^SMTP_PASSWORD=.+' .env 2>/dev/null; then
+  echo "==> SMTP auto-setup from .env"
+  node --env-file=.env scripts/setup-smtp-settings.js || echo "WARN: SMTP setup skipped"
+fi
+
 echo "==> Restart PM2 ($PM2_NAME)"
 pm2 restart "$PM2_NAME" 2>/dev/null || pm2 start ecosystem.config.cjs --env production
 pm2 save
