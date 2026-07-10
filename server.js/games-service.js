@@ -191,6 +191,7 @@ function mountGamesService(app, db, deps) {
       products: hub.products,
       telegramHandle: hub.telegramHandle,
       guides: hub.guides,
+      shopLinks: hub.shopLinks,
       strictEligibility: hub.strict,
       gameEnabled: readGameEnabledState(db)
     });
@@ -213,6 +214,7 @@ function mountGamesService(app, db, deps) {
       productIds: req.body?.productIds,
       telegramHandle: req.body?.telegramHandle,
       guides: req.body?.guides,
+      shopLinks: req.body?.shopLinks,
       strictEligibility: req.body?.strictEligibility
     });
     if (req.body?.gameEnabled && typeof req.body.gameEnabled === 'object') {

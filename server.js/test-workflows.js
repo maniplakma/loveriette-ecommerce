@@ -988,6 +988,9 @@ async function runGamesCheck(adminCookie) {
   if (hub.json.eligibility?.guides?.wheel) ok('games hub includes guide URLs');
   else fail('games hub guides', JSON.stringify(hub.json.eligibility?.guides || {}));
 
+  if (hub.json.eligibility?.shopLinks?.wheel) ok('games hub includes per-game shop links');
+  else fail('games hub shop links', JSON.stringify(hub.json.eligibility?.shopLinks || {}));
+
   const login = await loginUser(email, 'testpass123');
   if (!login.cookie) { fail('games buyer login', login.status); return; }
 
