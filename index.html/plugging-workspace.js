@@ -173,6 +173,7 @@ function showWorkspace() {
   }
 
   renderAccountList();
+  renderAutoStartPanel();
   if (selectedId) renderAccountDetail(selectedId);
   else renderEmptyDetail();
 }
@@ -196,6 +197,85 @@ function normalizePostLinkClient(link) {
   return raw;
 }
 
+function setAutoStartMessage(text, isError = false) {
+  const msg = document.getElementById('autostart-msg');
+  if (!msg) return;
+  msg.hidden = !text;
+  msg.textContent = text || '';
+  msg.className = isError ? 'plug-form-msg plug-form-error' : 'plug-form-msg plug-form-success';
+}
+
+function renderAutoStartPanel() {
+  const panel = document.getElementById('plug-autostart-panel');
+  if (!panel || !workspace) return;
+
+  const readyCount = (workspace.accounts || []).filter((a) =>
+    a.authStatus === 'authenticated' && a.sourceLink && a.targetCount > 0
+  ).length;
+
+  panel.hidden = !(workspace.accounts || []).length;
+  const enabled = document.getElementById('autostart-enabled');
+  const stagger = document.getElementById('autostart-stagger');
+  const daily = document.getElementById('autostart-daily');
+  const status = document.getElementById('plug-autostart-status');
+  const runBtn = document.getElementById('autostart-run-btn');
+
+  if (enabled) enabled.checked = !!workspace.autoStart?.enabled;
+  if (stagger) stagger.value = workspace.autoStart?.staggerMinutes ?? 10;
+  if (daily) daily.value = workspace.autoStart?.dailyAt || '';
+
+  if (status) {
+    if (workspace.autoStartRunning) {
+      status.hidden = false;
+      status.textContent = 'Staggered start in progress…';
+    } else if (workspace.autoStart?.enabled && workspace.autoStart?.dailyAt) {
+      status.hidden = false;
+      status.textContent = `Daily at ${workspace.autoStart.dailyAt}`;
+    } else {
+      status.hidden = true;
+      status.textContent = '';
+    }
+  }
+
+  if (runBtn) {
+    runBtn.disabled = readyCount < 1 || !!workspace.autoStartRunning;
+    runBtn.title = readyCount < 1
+      ? 'Each account needs login, post link, and target groups'
+      : '';
+  }
+}
+
+async function saveAutoStartSettings() {
+  const payload = {
+    enabled: !!document.getElementById('autostart-enabled')?.checked,
+    staggerMinutes: Number(document.getElementById('autostart-stagger')?.value) || 0,
+    dailyAt: document.getElementById('autostart-daily')?.value || ''
+  };
+  const data = await api('/api/plugging/workspace/auto-start', {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+  workspace.autoStart = data.autoStart;
+  workspace.autoStartRunning = data.autoStartRunning;
+  renderAutoStartPanel();
+  setAutoStartMessage('Auto-start settings saved.');
+}
+
+async function runAutoStartAll() {
+  const staggerMinutes = Number(document.getElementById('autostart-stagger')?.value) || 0;
+  const data = await api('/api/plugging/workspace/auto-start/run', {
+    method: 'POST',
+    body: JSON.stringify({ staggerMinutes })
+  });
+  workspace.autoStartRunning = true;
+  renderAutoStartPanel();
+  const count = data.queued || data.accountIds?.length || 0;
+  const delay = data.staggerMinutes ?? staggerMinutes;
+  setAutoStartMessage(`Starting ${count} account(s) — ${delay} min between each.`);
+  if (selectedId) startActivityPoll(selectedId);
+  setTimeout(() => refreshWorkspace({ soft: true }).then(renderAutoStartPanel), 4000);
+}
+
 function setConfigSaveMessage(text, isError = false) {
   const msg = document.getElementById('cfg-save-msg');
   const banner = document.getElementById('cfg-action-msg');
@@ -214,6 +294,7 @@ function setConfigSaveMessage(text, isError = false) {
 async function refreshWorkspace({ soft = false } = {}) {
   workspace = await api('/api/plugging/workspace');
   renderAccountList();
+  renderAutoStartPanel();
   if (!selectedId) {
     renderEmptyDetail();
     return;
@@ -534,6 +615,33 @@ document.getElementById('logout-btn').addEventListener('click', async () => {
   if (window.clearStoredPlugKey) clearStoredPlugKey();
   await api('/api/plugging/workspace/logout', { method: 'POST' });
   location.reload();
+});
+
+document.getElementById('autostart-save-btn')?.addEventListener('click', async () => {
+  setAutoStartMessage('');
+  const btn = document.getElementById('autostart-save-btn');
+  try {
+    if (btn) btn.disabled = true;
+    await saveAutoStartSettings();
+  } catch (e) {
+    setAutoStartMessage(e.message, true);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+});
+
+document.getElementById('autostart-run-btn')?.addEventListener('click', async () => {
+  setAutoStartMessage('');
+  const btn = document.getElementById('autostart-run-btn');
+  try {
+    if (btn) btn.disabled = true;
+    await runAutoStartAll();
+  } catch (e) {
+    setAutoStartMessage(e.message, true);
+    renderAutoStartPanel();
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 });
 
 bindAccountDetailActions();

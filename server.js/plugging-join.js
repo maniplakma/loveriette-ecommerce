@@ -1,5 +1,5 @@
 /**
- * Join Telegram groups/channels silently — no captcha messages sent.
+ * Join Telegram groups/channels — skip when already a member.
  */
 function loadGramJs() {
   try {
@@ -19,9 +19,57 @@ function extractInviteHash(link) {
   return null;
 }
 
+async function isAlreadyMember(client, entity, link) {
+  const gram = loadGramJs();
+  if (!gram) return { member: false, entity: entity || null };
+
+  const hash = extractInviteHash(link);
+  if (hash) {
+    try {
+      const check = await client.invoke(new gram.Api.messages.CheckChatInvite({ hash }));
+      if (check.className === 'ChatInviteAlready') {
+        return { member: true, entity: check.chat || entity || null };
+      }
+      return { member: false, entity: check.chat || entity || null };
+    } catch (_) {
+      return { member: false, entity: entity || null };
+    }
+  }
+
+  if (!entity) return { member: false, entity: null };
+
+  try {
+    const me = await client.getMe();
+    if (entity.broadcast || entity.megagroup || entity.gigagroup) {
+      await client.invoke(new gram.Api.channels.GetParticipant({
+        channel: entity,
+        participant: me
+      }));
+      return { member: true, entity };
+    }
+    if (entity.className === 'Chat') return { member: true, entity };
+  } catch (err) {
+    const msg = String(err.message || err).toUpperCase();
+    if (msg.includes('USER_NOT_PARTICIPANT') || msg.includes('NOT_PARTICIPANT')) {
+      return { member: false, entity };
+    }
+    if (msg.includes('USER_ALREADY_PARTICIPANT') || msg.includes('ALREADY')) {
+      return { member: true, entity };
+    }
+  }
+
+  return { member: false, entity };
+}
+
 async function joinEntity(client, entity, refLabel, logFn) {
   const gram = loadGramJs();
   if (!gram || !entity) return false;
+
+  const membership = await isAlreadyMember(client, entity, refLabel);
+  if (membership.member) {
+    if (logFn) logFn(`Already in ${refLabel}`);
+    return true;
+  }
 
   try {
     if (entity.broadcast || entity.megagroup || entity.gigagroup) {
@@ -49,6 +97,14 @@ async function joinFromInvite(client, hash, refLabel, logFn) {
   if (!gram || !hash) return null;
 
   try {
+    const check = await client.invoke(new gram.Api.messages.CheckChatInvite({ hash }));
+    if (check.className === 'ChatInviteAlready') {
+      if (logFn) logFn(`Already in invite ${refLabel}`);
+      return check.chat || null;
+    }
+  } catch (_) { /* try import below */ }
+
+  try {
     const result = await client.invoke(new gram.Api.messages.ImportChatInvite({ hash }));
     const chat = result?.chats?.[0] || null;
     if (logFn) logFn(`Joined via invite ${refLabel}`);
@@ -68,6 +124,11 @@ async function joinFromInvite(client, hash, refLabel, logFn) {
 async function joinTarget(client, link, entity, logFn) {
   const hash = extractInviteHash(link);
   if (hash) {
+    const membership = await isAlreadyMember(client, entity, link);
+    if (membership.member && membership.entity) {
+      if (logFn) logFn(`Already in invite ${link}`);
+      return membership.entity;
+    }
     const joined = await joinFromInvite(client, hash, link, logFn);
     if (joined) return joined;
   }
@@ -84,6 +145,7 @@ async function joinSourceChannel(client, source, logFn) {
 
 module.exports = {
   extractInviteHash,
+  isAlreadyMember,
   joinTarget,
   joinSourceChannel
 };
