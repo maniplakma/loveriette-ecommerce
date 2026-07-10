@@ -249,6 +249,22 @@
     }
   }
 
+  function closedTgCopy(state) {
+    const handle = String(state?.eligibility?.telegramHandle || '@loveriette').trim();
+    return `This game is <strong>closed</strong> right now. Follow <strong>${esc(handle)}</strong> on Telegram — we post there when it opens again.`;
+  }
+
+  function isGameAdminClosed(game) {
+    return !game?.campaignOn;
+  }
+
+  function gameArenaBody(game, state, type, demoFn, playHtml) {
+    if (isGameAdminClosed(game)) {
+      return closedBody(state.channelUrl, type, closedTgCopy(state));
+    }
+    return wrapPlay(game, state, type, demoFn, playHtml);
+  }
+
   function wheelCloseCopy(game) {
     switch (game.closeReason) {
       case 'games_off':
@@ -265,18 +281,8 @@
       case 'wrong_day':
         return `Open on: <strong>${esc(game.availableDaysLabel || 'selected days')}</strong>. Check back on those days.`;
       default:
-        return 'Join our channel for updates — we&rsquo;ll announce when this game opens again.';
+        return closedTgCopy({ eligibility: { telegramHandle: '@loveriette' } });
     }
-  }
-
-  function isGameAdminClosed(game) {
-    if (!game) return true;
-    if (game.campaignOn) return false;
-    if (game?.status === 'drawn') return false;
-    if (game?.open) return false;
-    if (['full', 'not_started', 'ended', 'wrong_day'].includes(game?.closeReason)) return false;
-    return ['games_off', 'no_campaign', 'campaign_disabled'].includes(game?.closeReason)
-      || (!game.closeReason && !game.id);
   }
 
   function wheelStatusLabel(game, { drawn, live, rosterFull }) {
@@ -291,11 +297,11 @@
 
   function arenaStatusState({ adminClosed, open, campaignOn, statusLabel }) {
     if (adminClosed) return { state: 'closed', status: 'Closed' };
-    if (open || campaignOn || statusLabel === 'Full' || statusLabel === 'Opens soon' || statusLabel === 'Scheduled') {
-      return { state: 'open', status: statusLabel || 'Open' };
-    }
+    if (open) return { state: 'open', status: statusLabel === 'Full' ? 'Full' : 'Open' };
     if (statusLabel === 'Drawn') return { state: 'results', status: 'Drawn' };
-    return { state: 'results', status: statusLabel || 'Results' };
+    if (statusLabel === 'Full') return { state: 'open', status: 'Full' };
+    if (campaignOn) return { state: 'open', status: statusLabel || 'Open' };
+    return { state: 'closed', status: 'Closed' };
   }
 
   function arenaShell({ type, title, open, visible, statusLabel, body, prizesHtml, guideUrl, metaHtml, expandable, adminClosed, campaignOn }) {
@@ -330,7 +336,7 @@
 
   function closedBody(channelUrl, type, customCopy, badge = 'Closed') {
     const gameType = type || 'lock';
-    const copy = customCopy || 'Join our channel for updates — we&rsquo;ll announce when this game opens again.';
+    const copy = customCopy || 'This game is closed right now. Follow us on Telegram for updates when it opens again.';
     return `
       <div class="games-closed-panel">
         <span class="games-closed-shine" aria-hidden="true"></span>
@@ -339,14 +345,14 @@
         <h3 class="games-closed-title">Game Closed</h3>
         <p class="games-closed-copy">${copy}</p>
         <a href="${esc(channelUrl)}" class="games-closed-cta" target="_blank" rel="noopener noreferrer" data-no-expand>
-          <span>Join channel for updates</span>
+          <span>Go to our Telegram</span>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
         </a>
       </div>`;
   }
 
   function gateBanner(kind, channelUrl, minTotal, elig, type, customCopy) {
-    if (kind === 'closed') return closedBody(channelUrl, type, customCopy);
+    if (kind === 'closed') return closedBody(channelUrl, type, customCopy || closedTgCopy({ eligibility: { telegramHandle: '@loveriette' }, channelUrl }));
     if (kind === 'soon') {
       return `
         <div class="games-arena-gate games-arena-gate--soon games-arena-gate--compact">
@@ -453,7 +459,7 @@
   }
 
   function resolveGate(game, state) {
-    if (isGameAdminClosed(game)) return 'closed';
+    if (!game.campaignOn) return 'closed';
     if (!game.open) {
       if (game.closeReason === 'not_started' || game.closeReason === 'wrong_day') return 'soon';
       if (game.closeReason === 'ended') return 'ended';
@@ -551,19 +557,12 @@
   }
 
   function wrapPlay(game, state, type, demoFn, playHtml) {
-    if (isGameAdminClosed(game)) {
-      if (game.endsAt && new Date(game.endsAt).getTime() < Date.now()) {
-        return `<div class="games-arena-ended"><p>This game has ended.</p>${endsMetaHtml(game.endsAt)}</div>`;
-      }
-      const copy = type === 'wheel' ? wheelCloseCopy(game) : '';
-      return closedBody(state.channelUrl, type, copy);
-    }
     const gate = resolveGate(game, state);
     const parts = [];
     if (state.hasPendingCredit && !game.canPlay) parts.push(pendingChoiceGate(state));
     else if (gate) parts.push(gateBanner(gate, state.channelUrl, game.minOrderTotal, state.eligibility, type, gateCopyFor(game, type)));
     if (game.canPlay && playHtml) parts.push(playHtml);
-    else parts.push(demoFn());
+    else if (game.campaignOn) parts.push(demoFn());
     return parts.join('');
   }
 
@@ -587,7 +586,7 @@
           <p class="games-meta">${game.entryCount || 0} / ${game.maxEntries || '—'} entries joined</p>
         </div>`;
     } else if (adminClosed) {
-      body = closedBody(state.channelUrl, 'wheel', wheelCloseCopy(game));
+      body = closedBody(state.channelUrl, 'wheel', closedTgCopy(state));
     } else if (drawn) {
       body = `
         <div class="games-play-stage games-play-stage--results" data-wheel-id="${game.id || ''}">
@@ -612,7 +611,7 @@
           ${game.mySlots?.length ? `<p class="games-meta">Your slots: <strong>${game.mySlots.length}</strong></p><div class="games-slot-wall">${slots}</div>` : ''}
           ${entriesWall(game.entries, [], game.mySlots)}
         </div>`;
-      body = wrapPlay({ ...game, open: live }, state, 'wheel', demoWheel, play);
+      body = gameArenaBody({ ...game, open: live }, state, 'wheel', demoWheel, play);
     }
 
     return arenaShell({
@@ -623,7 +622,7 @@
       visible: game.listed !== false,
       adminClosed,
       statusLabel,
-      prizesHtml: prizeChips(game.prizes),
+      prizesHtml: adminClosed ? '' : prizeChips(game.prizes),
       guideUrl: guideFor(state, 'wheel'),
       metaHtml,
       body
@@ -656,11 +655,11 @@
       campaignOn,
       visible: game.listed !== false,
       adminClosed,
-      statusLabel: adminClosed ? 'Closed' : (game.open ? 'Open' : (campaignOn ? 'Open' : 'Closed')),
-      prizesHtml: prizeChips(game.prizes),
+      statusLabel: adminClosed ? 'Closed' : (game.open ? 'Open' : 'Open'),
+      prizesHtml: adminClosed ? '' : prizeChips(game.prizes),
       guideUrl: guideFor(state, 'scratch'),
       metaHtml,
-      body: wrapPlay(game, state, 'scratch', demoScratch, play)
+      body: gameArenaBody(game, state, 'scratch', demoScratch, play)
     });
   }
 
@@ -691,11 +690,11 @@
       campaignOn,
       visible: game.listed !== false,
       adminClosed,
-      statusLabel: adminClosed ? 'Closed' : (game.open ? 'Open' : (campaignOn ? 'Open' : 'Closed')),
-      prizesHtml: prizeChips(game.prizes),
+      statusLabel: adminClosed ? 'Closed' : (game.open ? 'Open' : 'Open'),
+      prizesHtml: adminClosed ? '' : prizeChips(game.prizes),
       guideUrl: guideFor(state, 'mystery'),
       metaHtml,
-      body: wrapPlay(game, state, 'mystery', demoMystery, pending.map(mysteryPlay).join(''))
+      body: gameArenaBody(game, state, 'mystery', demoMystery, pending.map(mysteryPlay).join(''))
     });
   }
 
@@ -750,11 +749,11 @@
       campaignOn,
       visible: game.listed !== false,
       adminClosed,
-      statusLabel: adminClosed ? 'Closed' : (game.open ? 'Open' : (campaignOn ? 'Open' : 'Closed')),
-      prizesHtml: prizeChips(game.prizes),
+      statusLabel: adminClosed ? 'Closed' : (game.open ? 'Open' : 'Open'),
+      prizesHtml: adminClosed ? '' : prizeChips(game.prizes),
       guideUrl: guideFor(state, type),
       metaHtml,
-      body: wrapPlay(game, state, type, demoFn, instantPlay(game, state))
+      body: gameArenaBody(game, state, type, demoFn, instantPlay(game, state))
     });
   }
 
