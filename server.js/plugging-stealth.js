@@ -1,10 +1,10 @@
 /**
  * Plugging forward timing:
- * - 3 seconds between each target group within a cycle
- * - configurable delay (minutes) between completed cycles only
+ * - no pause between target groups within a cycle
+ * - configurable delay (minutes) between cycles, measured from cycle start
  */
 
-const GROUP_SEND_DELAY_MS = 3000;
+const GROUP_SEND_DELAY_MS = 0;
 
 function cycleDelayMs(delayMinutes) {
   const min = Number(delayMinutes);
