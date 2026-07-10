@@ -2285,7 +2285,8 @@ async function resetWebsite() {
 let integrationsData = null;
 const INTG_META = {
   gmail: { icon: 'gmail', title: 'Gmail OAuth', sub: 'Connect seller Gmail once. Buyers get Email Access in their dashboard after order approval — OTPs and login emails auto-fetch from this inbox.' },
-  'buyer-emails': { icon: 'gmail', title: 'Buyer Emails', sub: 'Auto-send welcome, password changed, and order delivered emails to buyers via your connected Gmail inbox.' },
+  'buyer-emails': { icon: 'gmail', title: 'Buyer Emails', sub: 'Welcome, forgot password, order delivered, and password changed — sent via SMTP (recommended) or Gmail OAuth.' },
+  smtp: { icon: 'gmail', title: 'SMTP', sub: 'Send buyer emails (welcome, forgot password, order delivered) through your SMTP provider. Gmail OAuth is still used only for OTP fetch.' },
   'chat-seller': { icon: 'headset', title: 'Chat Seller Auto Reply', sub: 'Welcome message and instant reply in buyer Chat Seller — active when enabled.' }
 };
 function fieldTextarea(label, name, value = '', rows = 3, placeholder = '') {
@@ -2309,8 +2310,10 @@ function buildIntegrationPayload(form) {
   if (form.querySelector('[name="unreadOnly"]')) payload.unreadOnly = form.querySelector('[name="unreadOnly"]').checked;
   if (form.querySelector('[name="inboxOnly"]')) payload.inboxOnly = form.querySelector('[name="inboxOnly"]').checked;
   if (form.querySelector('[name="welcome"]')) payload.welcome = form.querySelector('[name="welcome"]').checked;
+  if (form.querySelector('[name="passwordReset"]')) payload.passwordReset = form.querySelector('[name="passwordReset"]').checked;
   if (form.querySelector('[name="password"]')) payload.password = form.querySelector('[name="password"]').checked;
   if (form.querySelector('[name="orderDelivered"]')) payload.orderDelivered = form.querySelector('[name="orderDelivered"]').checked;
+  if (form.querySelector('[name="secure"]')) payload.secure = form.querySelector('[name="secure"]').checked;
   delete payload.testEmail;
   return payload;
 }
@@ -2338,6 +2341,25 @@ function bindIntegrationFormHandlers() {
   });
 
   wrap.addEventListener('click', async (e) => {
+    const testSmtpBtn = e.target.closest('#intg-test-smtp');
+    if (testSmtpBtn) {
+      const form = testSmtpBtn.closest('form[id^="intg-"]');
+      if (!form) return;
+      const fd = new FormData(form);
+      testSmtpBtn.disabled = true;
+      testSmtpBtn.textContent = 'Sending...';
+      try {
+        const r = await api('/admin/integrations/test-smtp', {
+          method: 'POST',
+          body: JSON.stringify(Object.fromEntries(fd))
+        });
+        showToast(r.message, r.ok ? 'approved' : 'error');
+      } catch (err) { showToast(err.message, 'error'); }
+      testSmtpBtn.disabled = false;
+      testSmtpBtn.textContent = 'Send SMTP Test';
+      return;
+    }
+
     const testBuyerBtn = e.target.closest('#intg-test-buyer-email');
     if (testBuyerBtn) {
       const form = testBuyerBtn.closest('form[id^="intg-"]');
@@ -2446,16 +2468,37 @@ function renderIntegration(name) {
       </div>
       </section>
       </div>`;
+  } else if (name === 'smtp') {
+    const passHint = d.hasPassword ? 'Saved — leave blank to keep current password' : 'SMTP password or API key';
+    body = `
+      <section class="admin-gmail-section">
+      <h4 class="admin-gmail-section-title">${icon('gmail')} SMTP server</h4>
+      <p class="admin-card-meta">Recommended for welcome, forgot password, and order emails. Use your provider's SMTP host — e.g. Resend, Brevo, or Zoho. Verify your domain with the provider first.</p>
+      ${field('SMTP host', 'host', d.host || '', 'text', 'smtp.resend.com')}
+      ${field('Port', 'port', d.port || 465, 'number', '465')}
+      <label class="admin-toggle admin-gmail-toggle"><input type="checkbox" name="secure" ${d.secure !== false ? 'checked' : ''}> <span>Use SSL/TLS (port 465 — turn off for port 587 STARTTLS)</span></label>
+      ${field('Username', 'user', d.user || '', 'text', 'resend')}
+      ${field('Password / API key', 'password', '', 'password', passHint)}
+      ${field('From email', 'fromEmail', d.fromEmail || '', 'email', 'noreply@loveriette.shop')}
+      ${field('From name', 'fromName', d.fromName || 'loveriette', 'text', 'loveriette')}
+      ${field('Send test email to', 'testEmail', '', 'email', 'your@gmail.com')}
+      <div class="admin-modal-actions admin-gmail-actions">
+        <button type="button" class="admin-btn admin-btn-ghost admin-btn-lg" id="intg-test-smtp">Send SMTP Test</button>
+        <button type="submit" class="admin-btn admin-btn-primary admin-btn-lg">Save SMTP</button>
+      </div>
+      </section>`;
   } else if (name === 'buyer-emails') {
-    const connected = d.gmailConnected
-      ? esc(d.connectedEmail || 'Gmail connected')
-      : 'Not connected — connect under Gmail OAuth first';
+    const connected = d.smtpEnabled && d.smtpConfigured
+      ? `SMTP — ${esc(d.fromEmail || d.connectedEmail || 'configured')}`
+      : d.gmailConnected
+        ? esc(d.connectedEmail || 'Gmail connected')
+        : 'Not configured — set up SMTP or Gmail OAuth first';
     body = `
       <section class="admin-gmail-section">
       <h4 class="admin-gmail-section-title">${icon('gmail')} Outbound buyer emails</h4>
-      <p class="admin-card-meta">Sends from your connected Gmail inbox. Connect your seller Gmail under <strong>Gmail OAuth</strong>, then reconnect once after deploy so Google grants <strong>send</strong> permission.</p>
+      <p class="admin-card-meta">Uses <strong>SMTP first</strong> if enabled, otherwise connected Gmail. Turn the main switch ON, then choose which emails to send.</p>
       <p class="admin-card-meta">Sender status: <strong>${connected}</strong></p>
-      ${!d.gmailConnected ? '<p class="admin-card-meta admin-gmail-domain-warn">Save toggles below anytime. Turn the main switch ON only after Gmail is connected.</p>' : ''}
+      ${!(d.smtpConfigured || d.gmailConnected) ? '<p class="admin-card-meta admin-gmail-domain-warn">Set up <strong>SMTP</strong> (recommended) or connect Gmail under Gmail OAuth.</p>' : ''}
       <label class="admin-toggle admin-gmail-toggle"><input type="checkbox" name="welcome" ${d.welcome !== false ? 'checked' : ''}> <span>Welcome email on sign up</span></label>
       <label class="admin-toggle admin-gmail-toggle"><input type="checkbox" name="passwordReset" ${d.passwordReset !== false ? 'checked' : ''}> <span>Forgot password reset link email</span></label>
       <label class="admin-toggle admin-gmail-toggle"><input type="checkbox" name="password" ${d.password !== false ? 'checked' : ''}> <span>Password changed email</span></label>

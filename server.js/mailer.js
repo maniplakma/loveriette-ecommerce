@@ -5,6 +5,12 @@ const { getValidAccessToken } = require('./gmail-oauth');
 const { getActiveGmailConnection } = require('./gmail-schema');
 const { markBuyerEmailSent, wasBuyerEmailSent } = require('./mailer-schema');
 const {
+  parseSmtpSettings,
+  isSmtpSendReady,
+  sendViaSmtp,
+  formatSmtpSendError
+} = require('./smtp-mailer');
+const {
   buildWelcomeEmail,
   buildPasswordChangedEmail,
   buildPasswordResetEmail,
@@ -74,13 +80,18 @@ function encodeRawEmail({ fromEmail, fromName, toEmail, subject, html, text }) {
     .replace(/=+$/, '');
 }
 
-async function sendBuyerEmail(db, { toEmail, subject, html, text }) {
+async function sendBuyerEmail(db, getSetting, { toEmail, subject, html, text }) {
   const recipient = String(toEmail || '').trim().toLowerCase();
   if (!recipient) throw new Error('Recipient email is required');
 
+  if (isSmtpSendReady(getSetting)) {
+    const smtp = parseSmtpSettings(getSetting);
+    return sendViaSmtp(smtp, { toEmail: recipient, subject, html, text });
+  }
+
   const conn = getActiveGmailConnection(db);
   if (!conn?.access_token_enc) {
-    throw new Error('Gmail is not connected — connect riettemadzehn@gmail.com in Admin → Integrations');
+    throw new Error('No email sender configured — set up SMTP in Admin → Integrations, or connect Gmail OAuth.');
   }
 
   const accessToken = await getValidAccessToken(db, conn);
@@ -100,7 +111,18 @@ async function sendBuyerEmail(db, { toEmail, subject, html, text }) {
   if (!res.ok) {
     throw new Error(formatGmailSendErrorMessage(json.error?.message || json.error || 'Gmail send failed'));
   }
-  return { ok: true, messageId: json.id || null, fromEmail };
+  return { ok: true, messageId: json.id || null, fromEmail, provider: 'gmail' };
+}
+
+function isOutboundEmailReady(getSetting, db) {
+  if (isSmtpSendReady(getSetting)) return true;
+  return !!getActiveGmailConnection(db)?.access_token_enc;
+}
+
+function formatSendError(err) {
+  const msg = String(err?.message || err || 'Email send failed');
+  if (/SMTP/i.test(msg)) return formatSmtpSendError(err);
+  return formatGmailSendErrorMessage(msg);
 }
 
 function formatGmailSendErrorMessage(raw) {
@@ -123,7 +145,7 @@ async function sendOnce(db, getSetting, { type, referenceKey, toEmail, build }) 
   if (wasBuyerEmailSent(db, type, referenceKey)) return { skipped: true, reason: 'duplicate' };
 
   const payload = build();
-  await sendBuyerEmail(db, {
+  await sendBuyerEmail(db, getSetting, {
     toEmail,
     subject: payload.subject,
     html: payload.html,
@@ -159,7 +181,7 @@ async function sendPasswordResetEmail(db, getSetting, { userId, email, name, res
     expiresMinutes: 60
   });
 
-  await sendBuyerEmail(db, {
+  await sendBuyerEmail(db, getSetting, {
     toEmail: email,
     subject: payload.subject,
     html: payload.html,
@@ -248,7 +270,7 @@ async function trySendOrderDeliveredEmail(db, getSetting, orderId) {
     siteUrl
   });
 
-  await sendBuyerEmail(db, {
+  await sendBuyerEmail(db, getSetting, {
     toEmail,
     subject: payload.subject,
     html: payload.html,
@@ -270,10 +292,13 @@ module.exports = {
   buyerEmailsEnabled,
   parseBuyerEmailSettings,
   sendBuyerEmail,
+  isOutboundEmailReady,
+  isSmtpSendReady,
   sendWelcomeEmail,
   sendPasswordResetEmail,
   sendPasswordChangedEmail,
   trySendOrderDeliveredEmail,
   queueBuyerEmail,
-  formatGmailSendError
+  formatGmailSendError,
+  formatSendError
 };
