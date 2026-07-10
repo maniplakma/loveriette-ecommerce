@@ -312,6 +312,27 @@ function mountGamesService(app, db, deps) {
     res.json({ ok: true });
   });
 
+  app.put('/admin/games/wheel/prizes/:id', requireAdmin, (req, res) => {
+    const row = db.prepare('SELECT * FROM game_wheel_prizes WHERE id = ?').get(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Prize not found' });
+    const b = req.body || {};
+    db.prepare(`
+      UPDATE game_wheel_prizes SET
+        label = COALESCE(?, label),
+        prize_type = COALESCE(?, prize_type),
+        prize_value = COALESCE(?, prize_value),
+        quantity = COALESCE(?, quantity)
+      WHERE id = ?
+    `).run(
+      b.label != null ? String(b.label).trim() : null,
+      b.prizeType != null ? String(b.prizeType) : null,
+      b.prizeValue != null ? String(b.prizeValue) : null,
+      b.quantity != null ? Math.max(1, Number(b.quantity) || 1) : null,
+      req.params.id
+    );
+    res.json({ ok: true });
+  });
+
   app.post('/admin/games/wheel/:id/draw', requireAdmin, (req, res) => {
     const result = runWheelDraw(db, engineDeps, Number(req.params.id));
     if (result.error) return res.status(400).json({ error: result.error });
@@ -409,6 +430,32 @@ function mountGamesService(app, db, deps) {
     res.json({ ok: true });
   });
 
+  app.put('/admin/games/scratch/prizes/:id', requireAdmin, (req, res) => {
+    const row = db.prepare('SELECT * FROM game_scratch_prizes WHERE id = ?').get(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Prize not found' });
+    const b = req.body || {};
+    const prizeType = b.prizeType != null ? String(b.prizeType) : null;
+    db.prepare(`
+      UPDATE game_scratch_prizes SET
+        label = COALESCE(?, label),
+        prize_type = COALESCE(?, prize_type),
+        prize_value = COALESCE(?, prize_value),
+        weight = COALESCE(?, weight),
+        quantity = COALESCE(?, quantity),
+        tile_style = COALESCE(?, tile_style)
+      WHERE id = ?
+    `).run(
+      b.label != null ? String(b.label).trim() : null,
+      prizeType,
+      b.prizeValue != null ? String(b.prizeValue) : null,
+      b.weight != null ? Math.max(1, Number(b.weight) || 1) : null,
+      b.quantity != null ? Number(b.quantity) : null,
+      prizeType && (prizeType === 'none' || prizeType === 'bomb') ? 'gray' : (b.tileStyle || null),
+      req.params.id
+    );
+    res.json({ ok: true });
+  });
+
   // ── Mystery pools ──
   app.get('/admin/games/mystery', requireAdmin, (req, res) => {
     const pools = db.prepare('SELECT * FROM game_mystery_pools ORDER BY id DESC').all();
@@ -498,6 +545,29 @@ function mountGamesService(app, db, deps) {
     res.json({ ok: true });
   });
 
+  app.put('/admin/games/mystery/prizes/:id', requireAdmin, (req, res) => {
+    const row = db.prepare('SELECT * FROM game_mystery_prizes WHERE id = ?').get(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Prize not found' });
+    const b = req.body || {};
+    db.prepare(`
+      UPDATE game_mystery_prizes SET
+        label = COALESCE(?, label),
+        prize_type = COALESCE(?, prize_type),
+        prize_value = COALESCE(?, prize_value),
+        weight = COALESCE(?, weight),
+        quantity = COALESCE(?, quantity)
+      WHERE id = ?
+    `).run(
+      b.label != null ? String(b.label).trim() : null,
+      b.prizeType != null ? String(b.prizeType) : null,
+      b.prizeValue != null ? String(b.prizeValue) : null,
+      b.weight != null ? Math.max(1, Number(b.weight) || 1) : null,
+      b.quantity != null ? Number(b.quantity) : null,
+      req.params.id
+    );
+    res.json({ ok: true });
+  });
+
   // ── Instant games (dice, pick, vault) ──
   app.get('/admin/games/instant', requireAdmin, (req, res) => {
     const pools = db.prepare('SELECT * FROM game_instant_pools ORDER BY game_key ASC').all();
@@ -574,6 +644,32 @@ function mountGamesService(app, db, deps) {
 
   app.delete('/admin/games/instant/prizes/:id', requireAdmin, (req, res) => {
     db.prepare('DELETE FROM game_instant_prizes WHERE id = ?').run(req.params.id);
+    res.json({ ok: true });
+  });
+
+  app.put('/admin/games/instant/prizes/:id', requireAdmin, (req, res) => {
+    const row = db.prepare('SELECT * FROM game_instant_prizes WHERE id = ?').get(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Prize not found' });
+    const b = req.body || {};
+    const prizeType = b.prizeType != null ? String(b.prizeType) : null;
+    db.prepare(`
+      UPDATE game_instant_prizes SET
+        label = COALESCE(?, label),
+        prize_type = COALESCE(?, prize_type),
+        prize_value = COALESCE(?, prize_value),
+        weight = COALESCE(?, weight),
+        quantity = COALESCE(?, quantity),
+        tile_style = COALESCE(?, tile_style)
+      WHERE id = ?
+    `).run(
+      b.label != null ? String(b.label).trim() : null,
+      prizeType,
+      b.prizeValue != null ? String(b.prizeValue) : null,
+      b.weight != null ? Math.max(1, Number(b.weight) || 1) : null,
+      b.quantity != null ? Number(b.quantity) : null,
+      prizeType && (prizeType === 'none' || prizeType === 'bomb') ? 'gray' : (b.tileStyle || null),
+      req.params.id
+    );
     res.json({ ok: true });
   });
 

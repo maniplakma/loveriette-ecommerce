@@ -13,20 +13,23 @@
     { key: 'vault', label: 'Treasure Vault' }
   ];
   const PRIZE_TYPES = [
-    { v: 'wallet', l: 'Wallet credit (₱)' },
-    { v: 'loyalty', l: 'Loyalty points — auto credit + notify' },
-    { v: 'redeem', l: 'Voucher / redeem code — auto issue + copy' },
-    { v: 'product', l: 'Product prize — Telegram screenshot' },
-    { v: 'account', l: 'Account prize — Telegram screenshot' },
-    { v: 'netflix', l: 'Netflix / streaming — Telegram screenshot' },
-    { v: 'plug_access', l: 'Plug access' },
-    { v: 'custom', l: 'Custom prize' },
-    { v: 'none', l: 'No prize' },
-    { v: 'bomb', l: 'Bomb (scratch)' }
+    { v: 'wallet', l: '₱ Wallet credit', help: 'Halagang idadagdag sa wallet (automatic). Sa Value: hal. 500', valueHint: 'Amount sa ₱, hal. 500', wheel: true },
+    { v: 'loyalty', l: 'Loyalty points', help: 'Katulad ng wallet — auto credit + notification.', valueHint: 'Amount sa ₱, hal. 100', wheel: true },
+    { v: 'redeem', l: 'Voucher / discount code', help: 'Auto-generate ng code sa checkout.', valueHint: 'Hal. 50 o {"discountValue":50}', wheel: true },
+    { v: 'product', l: 'Product prize', help: 'Buyer mag-screenshot at mag-Telegram sa iyo.', valueHint: 'Pwede blank — message lang sa buyer', wheel: true },
+    { v: 'account', l: 'Account prize', help: 'Account/credential prize — screenshot + Telegram.', valueHint: 'Pwede blank', wheel: true },
+    { v: 'netflix', l: 'Netflix / streaming', help: 'Streaming subscription — screenshot + Telegram.', valueHint: 'Pwede blank', wheel: true },
+    { v: 'plug_access', l: 'Plugging access', help: 'Access sa plugging (hal. bilang ng araw).', valueHint: 'Bilang ng araw, hal. 7', wheel: true },
+    { v: 'custom', l: 'Custom prize', help: 'Ibang prize — ikaw ang mag-follow up sa buyer.', valueHint: 'Optional notes', wheel: true },
+    { v: 'none', l: 'Walang panalo (Better luck)', help: 'Para sa scratch/dice/box — hindi nanalo. Gamitin ang mataas na weight (25–40).', valueHint: 'Blank lang', wheel: false },
+    { v: 'bomb', l: 'Boom (scratch)', help: 'Visual na “boom” sa scratch — same as talo.', valueHint: 'Blank lang', wheel: false }
   ];
 
   let gamesLoaded = false;
   let catalogProducts = [];
+  let prizeModalBound = false;
+  let prizeModalKind = '';
+  let prizeModalParent = '';
 
   function esc(s) {
     return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
@@ -135,6 +138,242 @@
     });
   }
 
+  function prizeTypesForKind(kind) {
+    if (kind === 'wheel') return PRIZE_TYPES.filter((t) => t.wheel !== false);
+    return PRIZE_TYPES;
+  }
+
+  function findPrizeType(v) {
+    return PRIZE_TYPES.find((t) => t.v === v) || PRIZE_TYPES[0];
+  }
+
+  function prizeListHtml(prizes, kind, parentId) {
+    if (!prizes?.length) return '<li class="admin-muted">Wala pang prize — click Add prize</li>';
+    return prizes.map((pr) => `
+      <li class="admin-prize-li">
+        <span><strong>${esc(pr.label)}</strong>
+          <small class="admin-muted"> · ${esc(pr.prizeType)}
+          ${kind !== 'wheel' ? ` · weight ${pr.weight}` : ''}
+          · ${pr.quantity < 0 ? '∞' : `qty ${pr.quantity}`}
+          · won ${pr.wonCount || 0}</small></span>
+        <span class="admin-inline-actions">
+          <button type="button" class="admin-btn admin-btn-outline admin-btn-sm admin-prize-edit"
+            data-kind="${kind}" data-parent="${parentId}" data-id="${pr.id}"
+            data-label="${esc(pr.label)}" data-type="${esc(pr.prizeType)}"
+            data-value="${esc(pr.prizeValue || '')}" data-weight="${pr.weight ?? 3}"
+            data-quantity="${pr.quantity ?? (kind === 'wheel' ? 1 : -1)}">Edit</button>
+          <button type="button" class="admin-btn admin-btn-ghost admin-btn-sm admin-prize-del"
+            data-kind="${kind}" data-id="${pr.id}">Delete</button>
+        </span>
+      </li>`).join('');
+  }
+
+  function bindPrizeRowActions(root) {
+    root.querySelectorAll('.admin-prize-edit').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        openPrizeModal(btn.dataset.kind, btn.dataset.parent, {
+          id: btn.dataset.id,
+          label: btn.dataset.label,
+          prizeType: btn.dataset.type,
+          prizeValue: btn.dataset.value,
+          weight: Number(btn.dataset.weight),
+          quantity: Number(btn.dataset.quantity)
+        });
+      });
+    });
+    root.querySelectorAll('.admin-prize-del').forEach((btn) => {
+      btn.addEventListener('click', () => deletePrize(btn.dataset.kind, btn.dataset.id));
+    });
+  }
+
+  function refreshPrizeTypeFields() {
+    const kind = document.getElementById('games-prize-kind')?.value || 'scratch';
+    const typeSel = document.getElementById('games-prize-type');
+    const type = typeSel?.value || 'wallet';
+    const meta = findPrizeType(type);
+    const help = document.getElementById('games-prize-type-help');
+    const valueHint = document.getElementById('games-prize-value-hint');
+    const qtyWrap = document.getElementById('games-prize-quantity-wrap');
+    const weightWrap = document.getElementById('games-prize-weight-wrap');
+    const qtyLabel = document.getElementById('games-prize-quantity-label');
+    const qtyHint = document.getElementById('games-prize-quantity-hint');
+    if (help) help.textContent = meta.help || '';
+    if (valueHint) valueHint.textContent = meta.valueHint || '';
+    if (kind === 'wheel') {
+      if (weightWrap) weightWrap.hidden = true;
+      if (qtyLabel) qtyLabel.textContent = 'Ilang nanalo para sa prize na ito?';
+      if (qtyHint) qtyHint.textContent = '1 = isang spin/winner. Hal. 3 prizes × qty 1 = 3 spins.';
+      if (qtyWrap) qtyWrap.hidden = false;
+      const qty = document.getElementById('games-prize-quantity');
+      if (qty && Number(qty.value) < 1) qty.value = '1';
+    } else {
+      if (weightWrap) weightWrap.hidden = false;
+      if (qtyLabel) qtyLabel.textContent = 'Max winners (quantity)';
+      if (qtyHint) qtyHint.textContent = '-1 = unlimited. Hal. 5 = max 5 buyers ang makakakuha ng prize na ito.';
+      if (qtyWrap) qtyWrap.hidden = false;
+    }
+    const isLoser = type === 'none' || type === 'bomb';
+    const weightInput = document.getElementById('games-prize-weight');
+    if (weightInput && kind !== 'wheel' && !weightInput.dataset.touched) {
+      weightInput.value = isLoser ? '30' : '3';
+    }
+  }
+
+  function fillPrizeTypeSelect(kind, selected) {
+    const sel = document.getElementById('games-prize-type');
+    if (!sel) return;
+    const types = prizeTypesForKind(kind);
+    sel.innerHTML = types.map((t) =>
+      `<option value="${t.v}"${t.v === selected ? ' selected' : ''}>${esc(t.l)}</option>`
+    ).join('');
+  }
+
+  function openPrizeModal(kind, parentId, existing = null) {
+    prizeModalKind = kind;
+    prizeModalParent = parentId;
+    const modal = document.getElementById('games-prize-modal');
+    const title = document.getElementById('games-prize-modal-title');
+    const editId = document.getElementById('games-prize-edit-id');
+    const kindInput = document.getElementById('games-prize-kind');
+    const parentInput = document.getElementById('games-prize-parent');
+    const labelInput = document.getElementById('games-prize-label');
+    const valueInput = document.getElementById('games-prize-value');
+    const qtyInput = document.getElementById('games-prize-quantity');
+    const weightInput = document.getElementById('games-prize-weight');
+    if (!modal || !labelInput) return;
+
+    if (title) title.textContent = existing?.id ? 'Edit prize' : 'Add prize';
+    if (editId) editId.value = existing?.id || '';
+    if (kindInput) kindInput.value = kind;
+    if (parentInput) parentInput.value = parentId;
+
+    const type = existing?.prizeType || (kind === 'wheel' ? 'loyalty' : 'wallet');
+    fillPrizeTypeSelect(kind, type);
+    labelInput.value = existing?.label || '';
+    valueInput.value = existing?.prizeValue || '';
+    qtyInput.value = existing?.quantity != null
+      ? String(existing.quantity)
+      : (kind === 'wheel' ? '1' : '-1');
+    if (weightInput) {
+      weightInput.value = existing?.weight != null ? String(existing.weight) : '3';
+      weightInput.dataset.touched = existing?.id ? '1' : '';
+    }
+
+    refreshPrizeTypeFields();
+    modal.hidden = false;
+    labelInput.focus();
+  }
+
+  function closePrizeModal() {
+    const modal = document.getElementById('games-prize-modal');
+    if (modal) modal.hidden = true;
+    document.getElementById('games-prize-form')?.reset();
+    const weightInput = document.getElementById('games-prize-weight');
+    if (weightInput) delete weightInput.dataset.touched;
+  }
+
+  async function savePrizeForm(e) {
+    e.preventDefault();
+    const kind = document.getElementById('games-prize-kind')?.value;
+    const parentId = document.getElementById('games-prize-parent')?.value;
+    const editId = document.getElementById('games-prize-edit-id')?.value;
+    const label = document.getElementById('games-prize-label')?.value.trim();
+    const prizeType = document.getElementById('games-prize-type')?.value;
+    const prizeValue = document.getElementById('games-prize-value')?.value.trim() || '';
+    const quantity = Number(document.getElementById('games-prize-quantity')?.value);
+    const weight = Math.max(1, Number(document.getElementById('games-prize-weight')?.value) || 3);
+    if (!label) { alert('Ilagay ang prize name'); return; }
+
+    const isLoser = prizeType === 'none' || prizeType === 'bomb';
+    let url;
+    let body;
+    if (kind === 'wheel') {
+      url = editId
+        ? `/admin/games/wheel/prizes/${editId}`
+        : `/admin/games/wheel/${parentId}/prizes`;
+      body = { label, prizeType, prizeValue, quantity: Math.max(1, quantity || 1) };
+    } else if (kind === 'instant') {
+      url = editId
+        ? `/admin/games/instant/prizes/${editId}`
+        : `/admin/games/instant/${parentId}/prizes`;
+      body = {
+        label, prizeType, prizeValue, weight,
+        quantity: Number.isFinite(quantity) ? quantity : -1,
+        tileStyle: isLoser ? 'gray' : 'gold'
+      };
+    } else {
+      url = editId
+        ? `/admin/games/${kind}/prizes/${editId}`
+        : `/admin/games/${kind}/${parentId}/prizes`;
+      body = { label, prizeType, prizeValue, weight, quantity: Number.isFinite(quantity) ? quantity : -1 };
+    }
+
+    await api(url, {
+      method: editId ? 'PUT' : 'POST',
+      body: JSON.stringify(body)
+    });
+    closePrizeModal();
+    if (kind === 'wheel') loadWheelAdmin();
+    else if (kind === 'scratch') loadScratchAdmin();
+    else if (kind === 'mystery') loadMysteryAdmin();
+    else loadInstantAdmin();
+  }
+
+  async function deletePrize(kind, id) {
+    if (!confirm('Delete this prize?')) return;
+    const path = kind === 'wheel'
+      ? `/admin/games/wheel/prizes/${id}`
+      : kind === 'instant'
+        ? `/admin/games/instant/prizes/${id}`
+        : `/admin/games/${kind}/prizes/${id}`;
+    await api(path, { method: 'DELETE' });
+    if (kind === 'wheel') loadWheelAdmin();
+    else if (kind === 'scratch') loadScratchAdmin();
+    else if (kind === 'mystery') loadMysteryAdmin();
+    else loadInstantAdmin();
+  }
+
+  function openWheelMaxModal(campaignId, currentMax) {
+    const modal = document.getElementById('games-wheel-max-modal');
+    document.getElementById('games-wheel-max-campaign').value = campaignId;
+    document.getElementById('games-wheel-max-input').value = currentMax || 20;
+    if (modal) modal.hidden = false;
+  }
+
+  function closeWheelMaxModal() {
+    const modal = document.getElementById('games-wheel-max-modal');
+    if (modal) modal.hidden = true;
+  }
+
+  function bindPrizeModal() {
+    if (prizeModalBound) return;
+    prizeModalBound = true;
+    document.getElementById('games-prize-form')?.addEventListener('submit', (e) => {
+      savePrizeForm(e).catch((err) => alert(err.message));
+    });
+    document.getElementById('games-prize-cancel')?.addEventListener('click', closePrizeModal);
+    document.getElementById('games-prize-modal-close')?.addEventListener('click', closePrizeModal);
+    document.getElementById('games-prize-type')?.addEventListener('change', () => {
+      const w = document.getElementById('games-prize-weight');
+      if (w) delete w.dataset.touched;
+      refreshPrizeTypeFields();
+    });
+    document.getElementById('games-prize-weight')?.addEventListener('input', (e) => {
+      e.target.dataset.touched = '1';
+    });
+    document.getElementById('games-wheel-max-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const id = document.getElementById('games-wheel-max-campaign').value;
+      const maxEntries = Math.max(1, Number(document.getElementById('games-wheel-max-input').value) || 0);
+      try {
+        await api(`/admin/games/wheel/${id}`, { method: 'PUT', body: JSON.stringify({ maxEntries }) });
+        closeWheelMaxModal();
+        loadWheelAdmin();
+      } catch (err) { alert(err.message); }
+    });
+    document.getElementById('games-wheel-max-close')?.addEventListener('click', closeWheelMaxModal);
+  }
+
   async function turnAllGamesOff() {
     renderGameOpenToggles({
       wheel: false,
@@ -165,7 +404,8 @@
         ${c.status === 'scheduled' ? `<button type="button" class="admin-btn admin-btn-outline admin-btn-sm admin-wheel-max" data-id="${c.id}" data-max="${c.maxEntries || 20}">Edit max entries</button>` : ''}
         ${c.winner ? `<p class="admin-success-text">Winner: ${esc(c.winner.displayName)} (#${esc(c.winner.orderNumber)})</p>` : ''}
         ${(c.winners || []).length > 1 ? `<p class="admin-muted">All winners: ${c.winners.map((w) => `${esc(w.displayName)} (${esc(w.prizeLabel)})`).join(', ')}</p>` : ''}
-        <p><strong>Prizes:</strong> ${(c.prizes || []).map((p) => `${esc(p.label)} <small>×${p.quantity || 1} (${p.wonCount || 0} won)</small>`).join(', ') || '—'}</p>
+        <p><strong>Prizes:</strong></p>
+        <ul class="admin-prize-list">${prizeListHtml(c.prizes, 'wheel', c.id)}</ul>
         <div class="admin-inline-actions">
           ${c.status === 'scheduled' ? `<button type="button" class="admin-btn admin-btn-primary admin-wheel-draw" data-id="${c.id}">Run draw now</button>` : ''}
           <button type="button" class="admin-btn admin-btn-outline admin-wheel-add-prize" data-id="${c.id}">Add prize</button>
@@ -179,19 +419,7 @@
       </div>`).join('');
 
     list.querySelectorAll('.admin-wheel-max').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        const next = window.prompt('Max entries (orders before auto-draw):', btn.dataset.max || '20');
-        if (next == null) return;
-        const maxEntries = Math.max(1, Number(next) || 0);
-        if (!maxEntries) { alert('Enter at least 1'); return; }
-        try {
-          await api(`/admin/games/wheel/${btn.dataset.id}`, {
-            method: 'PUT',
-            body: JSON.stringify({ maxEntries })
-          });
-          loadWheelAdmin();
-        } catch (err) { alert(err.message); }
-      });
+      btn.addEventListener('click', () => openWheelMaxModal(btn.dataset.id, btn.dataset.max));
     });
     list.querySelectorAll('.admin-wheel-draw').forEach((btn) => {
       btn.addEventListener('click', async () => {
@@ -208,46 +436,7 @@
     list.querySelectorAll('.admin-wheel-add-prize').forEach((btn) => {
       btn.addEventListener('click', () => openPrizeModal('wheel', btn.dataset.id));
     });
-  }
-
-  function openPrizeModal(kind, parentId) {
-    const label = prompt('Prize label (e.g. Loyalty ₱400, Netflix Solo)');
-    if (!label) return;
-    const type = prompt('Type: loyalty, redeem, product, wallet, account, netflix, plug_access, custom, none, bomb', 'loyalty');
-    const value = prompt('Value: amount for loyalty/wallet; {"discountValue":50} for voucher; empty for product', '');
-    const qtyRaw = prompt('How many winners for this prize? (1 = one winner per prize)', kind === 'wheel' ? '1' : '-1');
-    const quantity = qtyRaw != null && qtyRaw !== '' ? Number(qtyRaw) : (kind === 'wheel' ? 1 : -1);
-    let weight = 3;
-    if (kind !== 'wheel') {
-      const isLoser = type === 'none' || type === 'bomb';
-      const weightRaw = prompt(
-        isLoser
-          ? 'Loser weight (higher = more common). Recommended: 25–40'
-          : 'Winner weight (lower = rarer). Recommended: 2–5',
-        isLoser ? '30' : '3'
-      );
-      weight = Math.max(1, Number(weightRaw) || (isLoser ? 30 : 3));
-    }
-    const url = kind === 'wheel'
-      ? `/admin/games/wheel/${parentId}/prizes`
-      : kind === 'scratch'
-        ? `/admin/games/scratch/${parentId}/prizes`
-        : kind === 'mystery'
-          ? `/admin/games/mystery/${parentId}/prizes`
-          : `/admin/games/instant/${parentId}/prizes`;
-    const body = kind === 'wheel'
-      ? { label, prizeType: type || 'custom', prizeValue: value || '', quantity: Math.max(1, quantity || 1) }
-      : kind === 'instant'
-        ? { label, prizeType: type || 'none', prizeValue: value || '', weight, quantity, tileStyle: (type === 'none' || type === 'bomb') ? 'gray' : 'gold' }
-        : { label, prizeType: type || 'none', prizeValue: value || '', weight, quantity };
-    api(url, { method: 'POST', body: JSON.stringify(body) })
-      .then(() => {
-        if (kind === 'wheel') loadWheelAdmin();
-        else if (kind === 'scratch') loadScratchAdmin();
-        else if (kind === 'mystery') loadMysteryAdmin();
-        else loadInstantAdmin();
-      })
-      .catch((e) => alert(e.message));
+    bindPrizeRowActions(list);
   }
 
   async function loadScratchAdmin() {
@@ -266,9 +455,7 @@
         </div>
         <p class="admin-muted">Min order: ₱${p.min_order_total || p.minOrderTotal || 0}${p.endsAt ? ` · Ends: ${esc(p.endsAt)}` : ''}</p>
         <button type="button" class="admin-btn admin-btn-outline admin-btn-sm admin-pool-ends" data-kind="scratch" data-id="${p.id}">Set end date</button>
-        <ul>${(p.prizes || []).map((pr) =>
-    `<li>${esc(pr.label)} <small>(${esc(pr.prizeType)} · weight ${pr.weight} · qty ${pr.quantity < 0 ? '∞' : pr.quantity} · won ${pr.wonCount || 0})</small></li>`
-  ).join('') || '<li>None — add prizes</li>'}</ul>
+        <ul class="admin-prize-list">${prizeListHtml(p.prizes, 'scratch', p.id)}</ul>
         <button type="button" class="admin-btn admin-btn-outline admin-scratch-add-prize" data-id="${p.id}">Add scratch prize</button>
       </div>`).join('');
     list.querySelectorAll('.admin-scratch-add-prize').forEach((btn) => {
@@ -277,6 +464,7 @@
     list.querySelectorAll('.admin-pool-ends').forEach((btn) => {
       btn.addEventListener('click', () => setPoolEndDate(btn.dataset.kind, btn.dataset.id));
     });
+    bindPrizeRowActions(list);
   }
 
   async function loadMysteryAdmin() {
@@ -295,9 +483,7 @@
         </div>
         <p class="admin-muted">Min order: ₱${p.min_order_total || p.minOrderTotal || 0}${p.endsAt ? ` · Ends: ${esc(p.endsAt)}` : ''}</p>
         <button type="button" class="admin-btn admin-btn-outline admin-btn-sm admin-pool-ends" data-kind="mystery" data-id="${p.id}">Set end date</button>
-        <ul>${(p.prizes || []).map((pr) =>
-    `<li>${esc(pr.label)} <small>(${esc(pr.prizeType)} · weight ${pr.weight} · qty ${pr.quantity < 0 ? '∞' : pr.quantity} · won ${pr.wonCount || 0})</small></li>`
-  ).join('') || '<li>None</li>'}</ul>
+        <ul class="admin-prize-list">${prizeListHtml(p.prizes, 'mystery', p.id)}</ul>
         <button type="button" class="admin-btn admin-btn-outline admin-mystery-add-prize" data-id="${p.id}">Add box prize</button>
       </div>`).join('');
     list.querySelectorAll('.admin-mystery-add-prize').forEach((btn) => {
@@ -306,6 +492,7 @@
     list.querySelectorAll('.admin-pool-ends').forEach((btn) => {
       btn.addEventListener('click', () => setPoolEndDate(btn.dataset.kind, btn.dataset.id));
     });
+    bindPrizeRowActions(list);
   }
 
   async function setPoolEndDate(kind, id) {
@@ -340,9 +527,7 @@
         </div>
         <p class="admin-muted">Min order: ₱${p.minOrderTotal || 0}${p.endsAt ? ` · Ends: ${esc(p.endsAt)}` : ''}</p>
         <button type="button" class="admin-btn admin-btn-outline admin-btn-sm admin-pool-ends" data-kind="instant" data-id="${p.gameKey}">Set end date</button>
-        <ul>${(p.prizes || []).map((pr) =>
-    `<li>${esc(pr.label)} <small>(${esc(pr.prizeType)} · qty ${pr.quantity < 0 ? '∞' : pr.quantity} · won ${pr.wonCount || 0})</small></li>`
-  ).join('') || '<li>None</li>'}</ul>
+        <ul class="admin-prize-list">${prizeListHtml(p.prizes, 'instant', p.gameKey)}</ul>
         <button type="button" class="admin-btn admin-btn-outline admin-instant-add-prize" data-key="${p.gameKey}">Add prize</button>
       </div>`).join('');
     list.querySelectorAll('.admin-instant-add-prize').forEach((btn) => {
@@ -351,9 +536,11 @@
     list.querySelectorAll('.admin-pool-ends').forEach((btn) => {
       btn.addEventListener('click', () => setPoolEndDate(btn.dataset.kind, btn.dataset.id));
     });
+    bindPrizeRowActions(list);
   }
 
   function bindGamesForms() {
+    bindPrizeModal();
     document.getElementById('games-enabled-toggle')?.addEventListener('change', () => {
       saveGamesSettings().catch((e) => alert(e.message));
     });

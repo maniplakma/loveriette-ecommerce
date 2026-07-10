@@ -2712,6 +2712,38 @@ a.admin-btn-success:hover { color: #fff; }
   margin-top: 0.65rem;
 }
 
+.admin-prize-list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.admin-prize-li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 8px;
+  background: var(--a-surface-2, rgba(255, 255, 255, 0.04));
+  font-size: 0.88rem;
+}
+
+.admin-prize-li .admin-inline-actions {
+  margin-top: 0;
+  flex-shrink: 0;
+}
+
+.admin-games-prize-guide summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--a-accent);
+}
+
 /* ---------- UI icons (realistic stroke SVG) ---------- */
 .admin-ui-icon,
 .admin-panel-icon,
