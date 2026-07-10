@@ -2,7 +2,7 @@
  * Parse Telegram post links and fetch the exact message to forward.
  * Example: https://t.me/directhererie/4
  */
-const { joinSourceChannel } = require('./plugging-join');
+const { joinSourceChannel, isAlreadyMember } = require('./plugging-join');
 
 function normalizePostLink(link) {
   const raw = String(link || '').trim();
@@ -65,7 +65,10 @@ async function resolvePostMessage(client, postLink, logFn) {
     source = await client.getEntity(parsed.channelRef);
   }
 
-  await joinSourceChannel(client, source, logFn);
+  const membership = await isAlreadyMember(client, source, postLink);
+  if (!membership.member) {
+    await joinSourceChannel(client, source, logFn);
+  }
 
   const messages = await client.getMessages(source, { ids: [parsed.messageId] });
   const msg = messages?.[0];

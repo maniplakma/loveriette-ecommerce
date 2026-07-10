@@ -86,12 +86,14 @@ async function clickInlineButton(client, message, buttonText) {
   return false;
 }
 
-async function handlePostJoinVerification(client, peer, refLabel, logFn, { maxWaitMs = 22000 } = {}) {
+async function handlePostJoinVerification(client, peer, refLabel, logFn, { maxWaitMs = 12000 } = {}) {
   const started = Date.now();
   let answered = false;
+  let firstPass = true;
 
   while (Date.now() - started < maxWaitMs) {
-    await sleep(2500);
+    if (!firstPass) await sleep(800);
+    firstPass = false;
     let messages = [];
     try {
       messages = await client.getMessages(peer, { limit: 8 });
@@ -133,7 +135,7 @@ async function handlePostJoinVerification(client, peer, refLabel, logFn, { maxWa
     }
 
     if (answered) {
-      await sleep(2000);
+      await sleep(500);
       return true;
     }
   }

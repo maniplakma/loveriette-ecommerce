@@ -6,6 +6,7 @@ const {
   waitWhileRunning,
   shouldRun,
   cycleDelayMs,
+  computeNextCycleAt,
   setRunnerForTest,
   clearRunnerForTest
 } = require('./plugging-runner');
@@ -38,10 +39,19 @@ async function testCycleDelayMs() {
   assert.strictEqual(cycleDelayMs(-5), 0);
 }
 
+function testComputeNextCycleAt() {
+  const start = Date.now();
+  const delay = 70 * 60 * 1000;
+  assert.strictEqual(computeNextCycleAt(start, 70), start + delay);
+  assert.strictEqual(computeNextCycleAt(start, 70, start + delay + 1000), 0);
+  assert.strictEqual(computeNextCycleAt(start, 0), 0);
+}
+
 async function main() {
   await testWaitWhileRunningStopsEarly();
   testShouldRunRejectsReplacedHandle();
   await testCycleDelayMs();
+  testComputeNextCycleAt();
   console.log('plugging-runner tests: OK');
 }
 

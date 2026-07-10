@@ -121,18 +121,38 @@ async function joinFromInvite(client, hash, refLabel, logFn) {
   }
 }
 
-async function joinTarget(client, link, entity, logFn) {
+async function joinTarget(client, link, entity, logFn, { skipMemberCheck = false } = {}) {
   const hash = extractInviteHash(link);
   if (hash) {
-    const membership = await isAlreadyMember(client, entity, link);
-    if (membership.member && membership.entity) {
-      if (logFn) logFn(`Already in invite ${link}`);
-      return membership.entity;
+    if (!skipMemberCheck) {
+      const membership = await isAlreadyMember(client, entity, link);
+      if (membership.member && membership.entity) {
+        if (logFn) logFn(`Already in invite ${link}`);
+        return membership.entity;
+      }
     }
     const joined = await joinFromInvite(client, hash, link, logFn);
     if (joined) return joined;
   }
   if (entity) {
+    if (skipMemberCheck) {
+      const gram = loadGramJs();
+      if (!gram) return entity;
+      try {
+        if (entity.broadcast || entity.megagroup || entity.gigagroup) {
+          await client.invoke(new gram.Api.channels.JoinChannel({ channel: entity }));
+          if (logFn) logFn(`Joined ${link}`);
+        }
+      } catch (err) {
+        const msg = String(err.message || err).toUpperCase();
+        if (msg.includes('USER_ALREADY_PARTICIPANT') || msg.includes('ALREADY')) {
+          if (logFn) logFn(`Already in ${link}`);
+        } else {
+          throw err;
+        }
+      }
+      return entity;
+    }
     await joinEntity(client, entity, link, logFn);
     return entity;
   }
