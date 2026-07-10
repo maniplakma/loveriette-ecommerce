@@ -240,14 +240,46 @@
       </div>`;
   }
 
+  function formatGameWhen(iso) {
+    if (!iso) return '';
+    try {
+      return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+    } catch (_) {
+      return String(iso);
+    }
+  }
+
+  function wheelCloseCopy(game) {
+    switch (game.closeReason) {
+      case 'games_off':
+        return 'Shop games are paused in admin. Turn on <strong>Enable game credits after delivery</strong>, then open <strong>Spin the Wheel</strong>.';
+      case 'no_campaign':
+      case 'campaign_disabled':
+        return 'No active wheel campaign. In admin, create a campaign and click <strong>Turn on (live)</strong>.';
+      case 'full':
+        return `All ${game.maxEntries || ''} entry slots are filled. The draw will run automatically.`;
+      case 'not_started':
+        return `This round opens on <strong>${esc(formatGameWhen(game.startsAt))}</strong>.`;
+      case 'ended':
+        return `This round ended on <strong>${esc(formatGameWhen(game.endsAt))}</strong>.`;
+      case 'wrong_day':
+        return `Open on: <strong>${esc(game.availableDaysLabel || 'selected days')}</strong>. Check back on those days.`;
+      default:
+        return 'Join our channel for updates — we&rsquo;ll announce when this game opens again.';
+    }
+  }
+
   function isGameAdminClosed(game) {
-    return game?.open === false && game?.status !== 'drawn';
+    if (game?.status === 'drawn') return false;
+    if (game?.open) return false;
+    if (['full', 'not_started', 'ended', 'wrong_day'].includes(game?.closeReason)) return false;
+    return game?.open === false;
   }
 
   function arenaShell({ type, title, open, visible, statusLabel, body, prizesHtml, guideUrl, metaHtml, expandable, adminClosed }) {
     const listed = visible !== false;
-    const closed = adminClosed || (!open && statusLabel !== 'Drawn');
-    const state = closed ? 'closed' : (open ? 'open' : 'results');
+    const closed = adminClosed || (!open && statusLabel !== 'Drawn' && statusLabel !== 'Full');
+    const state = closed ? 'closed' : (open || statusLabel === 'Full' ? 'open' : 'results');
     const status = closed ? 'Closed' : (statusLabel || (open ? 'Open' : 'Results'));
     const guideHref = guideUrl || `/guide.html#game-${type}`;
     const guide = `<a href="${esc(guideHref)}" class="games-guide-link" target="_blank" rel="noopener noreferrer" data-no-expand>How to play</a>`;
@@ -274,15 +306,16 @@
       </article>`;
   }
 
-  function closedBody(channelUrl, type) {
+  function closedBody(channelUrl, type, customCopy, badge = 'Closed') {
     const gameType = type || 'lock';
+    const copy = customCopy || 'Join our channel for updates — we&rsquo;ll announce when this game opens again.';
     return `
       <div class="games-closed-panel">
         <span class="games-closed-shine" aria-hidden="true"></span>
         <div class="games-closed-icon-wrap">${icon(gameType, 'games-icon--gate')}</div>
-        <span class="games-closed-badge">Closed</span>
+        <span class="games-closed-badge">${esc(badge)}</span>
         <h3 class="games-closed-title">Game Closed</h3>
-        <p class="games-closed-copy">Join our channel for updates — we&rsquo;ll announce when this game opens again.</p>
+        <p class="games-closed-copy">${copy}</p>
         <a href="${esc(channelUrl)}" class="games-closed-cta" target="_blank" rel="noopener noreferrer" data-no-expand>
           <span>Join channel for updates</span>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
@@ -483,13 +516,24 @@
 
   function renderWheel(game, state) {
     const drawn = game.status === 'drawn';
+    const rosterFull = game.closeReason === 'full' && !drawn;
     const adminClosed = isGameAdminClosed(game);
     const live = !!game.open && !drawn;
     let body = '';
     let metaHtml = '';
+    let statusLabel = drawn ? 'Drawn' : (live ? 'Open' : (rosterFull ? 'Full' : 'Closed'));
 
-    if (adminClosed) {
-      body = closedBody(state.channelUrl, 'wheel');
+    if (rosterFull) {
+      metaHtml = `<div class="games-arena-meta">${wheelEntriesMetaHtml(game)}</div>`;
+      body = `
+        <div class="games-play-stage games-play-stage--full">
+          ${wheelVisualHtml('')}
+          <p class="games-meta games-meta--full">Roster full — waiting for the automatic draw.</p>
+          ${entriesWall(game.entries, [], game.mySlots)}
+          <p class="games-meta">${game.entryCount || 0} / ${game.maxEntries || '—'} entries joined</p>
+        </div>`;
+    } else if (adminClosed) {
+      body = closedBody(state.channelUrl, 'wheel', wheelCloseCopy(game));
     } else if (drawn) {
       body = `
         <div class="games-play-stage games-play-stage--results" data-wheel-id="${game.id || ''}">
@@ -519,8 +563,8 @@
       title: game.title || 'Spin the Wheel',
       open: live,
       visible: game.listed !== false,
-      adminClosed,
-      statusLabel: drawn ? 'Drawn' : (live ? 'Open' : 'Full'),
+      adminClosed: adminClosed && !rosterFull,
+      statusLabel,
       prizesHtml: prizeChips(game.prizes),
       guideUrl: guideFor(state, 'wheel'),
       metaHtml,
