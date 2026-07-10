@@ -14,7 +14,10 @@ const {
   buildGamesHubState,
   readGameEnabledState,
   applyGameEnabledState,
-  disableAllGamePools
+  disableAllGamePools,
+  ensureLoserPrizeForPool,
+  defaultPrizeWeight,
+  isLoserPrizeType
 } = require('./games-engine');
 const { sendHtmlPage } = require('./send-html-page');
 const {
@@ -381,18 +384,23 @@ function mountGamesService(app, db, deps) {
     const b = req.body || {};
     const label = String(b.label || '').trim();
     if (!label) return res.status(400).json({ error: 'Label required' });
+    const prizeType = String(b.prizeType || 'none');
+    const weight = Math.max(1, Number(b.weight) || defaultPrizeWeight(prizeType));
     const r = db.prepare(`
       INSERT INTO game_scratch_prizes (pool_id, label, prize_type, prize_value, weight, quantity, tile_style)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(
       pool.id,
       label,
-      String(b.prizeType || 'none'),
+      prizeType,
       String(b.prizeValue || ''),
-      Math.max(1, Number(b.weight) || 1),
+      weight,
       b.quantity != null ? Number(b.quantity) : -1,
-      String(b.tileStyle || 'gold')
+      String(b.tileStyle || (isLoserPrizeType(prizeType) ? 'gray' : 'gold'))
     );
+    if (!isLoserPrizeType(prizeType)) {
+      ensureLoserPrizeForPool(db, { prizeTable: 'game_scratch_prizes', poolColumn: 'pool_id', poolId: pool.id, extra: { tileStyle: true } });
+    }
     res.status(201).json({ id: r.lastInsertRowid });
   });
 
@@ -466,17 +474,22 @@ function mountGamesService(app, db, deps) {
     const b = req.body || {};
     const label = String(b.label || '').trim();
     if (!label) return res.status(400).json({ error: 'Label required' });
+    const prizeType = String(b.prizeType || 'none');
+    const weight = Math.max(1, Number(b.weight) || defaultPrizeWeight(prizeType));
     const r = db.prepare(`
       INSERT INTO game_mystery_prizes (pool_id, label, prize_type, prize_value, weight, quantity)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(
       pool.id,
       label,
-      String(b.prizeType || 'none'),
+      prizeType,
       String(b.prizeValue || ''),
-      Math.max(1, Number(b.weight) || 1),
+      weight,
       b.quantity != null ? Number(b.quantity) : -1
     );
+    if (!isLoserPrizeType(prizeType)) {
+      ensureLoserPrizeForPool(db, { prizeTable: 'game_mystery_prizes', poolColumn: 'pool_id', poolId: pool.id });
+    }
     res.status(201).json({ id: r.lastInsertRowid });
   });
 
@@ -539,18 +552,23 @@ function mountGamesService(app, db, deps) {
     const b = req.body || {};
     const label = String(b.label || '').trim();
     if (!label) return res.status(400).json({ error: 'Label required' });
+    const prizeType = String(b.prizeType || 'none');
+    const weight = Math.max(1, Number(b.weight) || defaultPrizeWeight(prizeType));
     const r = db.prepare(`
       INSERT INTO game_instant_prizes (pool_id, label, prize_type, prize_value, weight, quantity, tile_style)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(
       pool.id,
       label,
-      String(b.prizeType || 'none'),
+      prizeType,
       String(b.prizeValue || ''),
-      Math.max(1, Number(b.weight) || 1),
+      weight,
       b.quantity != null ? Number(b.quantity) : -1,
-      String(b.tileStyle || 'gold')
+      String(b.tileStyle || (isLoserPrizeType(prizeType) ? 'gray' : 'gold'))
     );
+    if (!isLoserPrizeType(prizeType)) {
+      ensureLoserPrizeForPool(db, { prizeTable: 'game_instant_prizes', poolColumn: 'pool_id', poolId: pool.id, extra: { tileStyle: true } });
+    }
     res.status(201).json({ id: r.lastInsertRowid });
   });
 

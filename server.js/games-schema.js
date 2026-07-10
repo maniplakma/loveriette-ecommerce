@@ -9,16 +9,16 @@ function seedDefaultGames(db) {
       VALUES ('Weekend Spin Giveaway', 1, '0,1,2,3,4,5,6', ?, 0, 20, 'scheduled')
     `).run(drawAt);
     const prizes = [
-      ['Grand Prize — Netflix 1 Month', 'netflix', ''],
-      ['₱500 Wallet Credit', 'wallet', '500'],
-      ['₱100 Loyalty Points', 'loyalty', '100'],
-      ['Plug Access 7 Days', 'plug_access', '7']
+      ['Grand Prize — Netflix 1 Month', 'netflix', '', 3, 1],
+      ['₱500 Wallet Credit', 'wallet', '500', 3, 1],
+      ['₱100 Loyalty Points', 'loyalty', '100', 3, 1],
+      ['Plug Access 7 Days', 'plug_access', '7', 3, 1]
     ];
     const ins = db.prepare(`
-      INSERT INTO game_wheel_prizes (campaign_id, label, prize_type, prize_value, sort_order)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO game_wheel_prizes (campaign_id, label, prize_type, prize_value, sort_order, quantity)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
-    prizes.forEach((p, i) => ins.run(r.lastInsertRowid, p[0], p[1], p[2], i));
+    prizes.forEach((p, i) => ins.run(r.lastInsertRowid, p[0], p[1], p[2], i, p[4]));
   }
 
   if (!db.prepare('SELECT id FROM game_scratch_pools LIMIT 1').get()) {
@@ -26,17 +26,17 @@ function seedDefaultGames(db) {
       INSERT INTO game_scratch_pools (title, is_enabled, min_order_total) VALUES ('Golden Scratch Cards', 1, 0)
     `).run();
     const prizes = [
-      ['₱200 Wallet', 'wallet', '200', 'gold'],
-      ['₱50 Credit', 'wallet', '50', 'gold'],
-      ['Free Plug Day', 'plug_access', '1', 'gold'],
-      ['Better luck!', 'none', '', 'gray'],
-      ['Boom!', 'bomb', '', 'gray']
+      ['₱200 Wallet', 'wallet', '200', 3, 'gold'],
+      ['₱50 Credit', 'wallet', '50', 3, 'gold'],
+      ['Free Plug Day', 'plug_access', '1', 3, 'gold'],
+      ['Better luck!', 'none', '', 30, 'gray'],
+      ['Boom!', 'bomb', '', 25, 'gray']
     ];
     const ins = db.prepare(`
       INSERT INTO game_scratch_prizes (pool_id, label, prize_type, prize_value, weight, tile_style)
-      VALUES (?, ?, ?, ?, 1, ?)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
-    prizes.forEach((p) => ins.run(r.lastInsertRowid, p[0], p[1], p[2], p[3]));
+    prizes.forEach((p) => ins.run(r.lastInsertRowid, p[0], p[1], p[2], p[3], p[4]));
   }
 
   if (!db.prepare('SELECT id FROM game_mystery_pools LIMIT 1').get()) {
@@ -44,16 +44,16 @@ function seedDefaultGames(db) {
       INSERT INTO game_mystery_pools (title, is_enabled, min_order_total) VALUES ('Mystery Box', 1, 0)
     `).run();
     const prizes = [
-      ['Premium Account', 'account', ''],
-      ['₱300 Wallet', 'wallet', '300'],
-      ['₱75 Loyalty', 'loyalty', '75'],
-      ['Empty box', 'none', '']
+      ['Premium Account', 'account', '', 3],
+      ['₱300 Wallet', 'wallet', '300', 3],
+      ['₱75 Loyalty', 'loyalty', '75', 3],
+      ['Empty box', 'none', '', 30]
     ];
     const ins = db.prepare(`
       INSERT INTO game_mystery_prizes (pool_id, label, prize_type, prize_value, weight)
-      VALUES (?, ?, ?, ?, 1)
+      VALUES (?, ?, ?, ?, ?)
     `);
-    prizes.forEach((p) => ins.run(r.lastInsertRowid, p[0], p[1], p[2]));
+    prizes.forEach((p) => ins.run(r.lastInsertRowid, p[0], p[1], p[2], p[3]));
   }
 
   const instantDefaults = [
@@ -61,30 +61,30 @@ function seedDefaultGames(db) {
       key: 'dice',
       title: 'Lucky Dice',
       prizes: [
-        ['Jackpot — ₱1000', 'wallet', '1000', 'gold'],
-        ['Double Six — ₱200', 'wallet', '200', 'gold'],
-        ['₱50 Credit', 'wallet', '50', 'gold'],
-        ['Roll again next order', 'none', '', 'gray']
+        ['Jackpot — ₱1000', 'wallet', '1000', 2, 'gold'],
+        ['Double Six — ₱200', 'wallet', '200', 3, 'gold'],
+        ['₱50 Credit', 'wallet', '50', 3, 'gold'],
+        ['Roll again next order', 'none', '', 30, 'gray']
       ]
     },
     {
       key: 'pick',
       title: 'Card Flip',
       prizes: [
-        ['Ace — ₱500', 'wallet', '500', 'gold'],
-        ['King — ₱150', 'wallet', '150', 'gold'],
-        ['Queen — Plug Access', 'plug_access', '3', 'gold'],
-        ['Joker — No prize', 'none', '', 'gray']
+        ['Ace — ₱500', 'wallet', '500', 2, 'gold'],
+        ['King — ₱150', 'wallet', '150', 3, 'gold'],
+        ['Queen — Plug Access', 'plug_access', '3', 3, 'gold'],
+        ['Joker — No prize', 'none', '', 30, 'gray']
       ]
     },
     {
       key: 'vault',
       title: 'Treasure Vault',
       prizes: [
-        ['Vault Jackpot ₱800', 'wallet', '800', 'gold'],
-        ['Silver Key ₱100', 'wallet', '100', 'gold'],
-        ['Bronze Key ₱25', 'wallet', '25', 'gold'],
-        ['Empty vault', 'none', '', 'gray']
+        ['Vault Jackpot ₱800', 'wallet', '800', 2, 'gold'],
+        ['Silver Key ₱100', 'wallet', '100', 3, 'gold'],
+        ['Bronze Key ₱25', 'wallet', '25', 3, 'gold'],
+        ['Empty vault', 'none', '', 30, 'gray']
       ]
     }
   ];
@@ -99,10 +99,58 @@ function seedDefaultGames(db) {
       pool = { id: r.lastInsertRowid };
       const ins = db.prepare(`
         INSERT INTO game_instant_prizes (pool_id, label, prize_type, prize_value, weight, tile_style)
-        VALUES (?, ?, ?, ?, 1, ?)
+        VALUES (?, ?, ?, ?, ?, ?)
       `);
-      game.prizes.forEach((p) => ins.run(pool.id, p[0], p[1], p[2], p[3]));
+      game.prizes.forEach((p) => ins.run(pool.id, p[0], p[1], p[2], p[3], p[4]));
     }
+  }
+}
+
+function applyLoserWeightsMigration(db) {
+  const flag = db.prepare("SELECT value FROM settings WHERE key = 'games_loser_weights_v1'").get();
+  if (flag?.value === '1') return;
+
+  for (const table of ['game_scratch_prizes', 'game_mystery_prizes', 'game_instant_prizes']) {
+    db.prepare(`UPDATE ${table} SET weight = 30 WHERE prize_type IN ('none', 'bomb')`).run();
+    db.prepare(`UPDATE ${table} SET weight = 3 WHERE prize_type NOT IN ('none', 'bomb')`).run();
+  }
+
+  const scratchPools = db.prepare('SELECT id FROM game_scratch_pools').all();
+  for (const p of scratchPools) {
+    insertDefaultLoserPrize(db, { prizeTable: 'game_scratch_prizes', poolId: p.id, withTile: true });
+  }
+  const mysteryPools = db.prepare('SELECT id FROM game_mystery_pools').all();
+  for (const p of mysteryPools) {
+    insertDefaultLoserPrize(db, { prizeTable: 'game_mystery_prizes', poolId: p.id, withTile: false });
+  }
+  const instantPools = db.prepare('SELECT id FROM game_instant_pools').all();
+  for (const p of instantPools) {
+    insertDefaultLoserPrize(db, { prizeTable: 'game_instant_prizes', poolId: p.id, withTile: true });
+  }
+
+  db.prepare(`
+    INSERT INTO settings (key, value) VALUES ('games_loser_weights_v1', '1')
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+  `).run();
+}
+
+function insertDefaultLoserPrize(db, { prizeTable, poolId, withTile }) {
+  const hasLoser = db.prepare(`
+    SELECT id FROM ${prizeTable}
+    WHERE pool_id = ? AND prize_type IN ('none', 'bomb')
+    LIMIT 1
+  `).get(poolId);
+  if (hasLoser) return;
+  if (withTile) {
+    db.prepare(`
+      INSERT INTO ${prizeTable} (pool_id, label, prize_type, prize_value, weight, quantity, tile_style)
+      VALUES (?, 'Better luck next time!', 'none', '', 30, -1, 'gray')
+    `).run(poolId);
+  } else {
+    db.prepare(`
+      INSERT INTO ${prizeTable} (pool_id, label, prize_type, prize_value, weight, quantity)
+      VALUES (?, 'Better luck next time!', 'none', '', 30, -1)
+    `).run(poolId);
   }
 }
 
@@ -352,6 +400,9 @@ function initGamesSchema(db) {
   }
   try { applyGamesClosedMigration(db); } catch (err) {
     console.error('[games] closed migration failed:', err.message);
+  }
+  try { applyLoserWeightsMigration(db); } catch (err) {
+    console.error('[games] loser weights migration failed:', err.message);
   }
 }
 

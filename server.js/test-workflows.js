@@ -1145,6 +1145,108 @@ async function runWheelAutoDrawCheck(adminCookie) {
   }
 }
 
+function runPrizeOddsCheck() {
+  console.log('\nPrize odds (losers should dominate)');
+  const { pickWeightedPrize, isLoserPrizeType } = require('./games-engine');
+  const prizes = [
+    { id: 1, label: 'Win', prize_type: 'wallet', weight: 3, quantity: -1, won_count: 0 },
+    { id: 2, label: 'Lose', prize_type: 'none', weight: 30, quantity: -1, won_count: 0 }
+  ];
+  let losses = 0;
+  const trials = 240;
+  for (let i = 0; i < trials; i++) {
+    const p = pickWeightedPrize(prizes);
+    if (isLoserPrizeType(p?.prize_type)) losses += 1;
+  }
+  if (losses / trials >= 0.55) ok('weighted picks favor losers');
+  else fail('weighted picks favor losers', `${losses}/${trials} losses`);
+}
+
+async function runWheelMultiPrizeCheck(adminCookie) {
+  console.log('\nWheel multi-prize draw (3 spins)');
+
+  await request('PUT', '/admin/games/settings', {
+    gamesEnabled: true,
+    strictEligibility: false,
+    requiredQuantity: 1,
+    productIds: [],
+    gameEnabled: { wheel: true, scratch: true, mystery: true, dice: true, pick: true, vault: true }
+  }, adminCookie);
+
+  const wheel = await request('POST', '/admin/games/wheel', {
+    title: 'QA Wheel Triple',
+    maxEntries: 3,
+    isEnabled: true,
+    availableDays: [0, 1, 2, 3, 4, 5, 6],
+    minOrderTotal: 0
+  }, adminCookie);
+  if (wheel.status !== 201) { fail('wheel triple campaign', wheel.json?.error || wheel.status); return; }
+
+  for (const label of ['Prize A', 'Prize B', 'Prize C']) {
+    await request('POST', `/admin/games/wheel/${wheel.json.id}/prizes`, {
+      label,
+      prizeType: 'loyalty',
+      prizeValue: '10',
+      quantity: 1
+    }, adminCookie);
+  }
+
+  const pm = db.prepare('SELECT id FROM payment_methods WHERE is_active = 1 LIMIT 1').get();
+  const product = db.prepare('SELECT id FROM products ORDER BY id LIMIT 1').get();
+  const variant = db.prepare('SELECT id FROM product_variants WHERE product_id = ? ORDER BY id LIMIT 1').get(product.id);
+  for (let i = 0; i < 3; i++) {
+    await request('POST', '/admin/inventory', {
+      variant_id: variant.id,
+      email: `wheel-triple-stock-${Date.now()}-${i}@test.local`,
+      password: 'testpass',
+      profiles: [`Triple ${i + 1}`]
+    }, adminCookie);
+  }
+
+  const orderIds = [];
+  for (let i = 0; i < 3; i++) {
+    const email = `wheel-triple-${i}-${Date.now()}@test.local`;
+    await request('POST', '/auth/register', { email, password: 'testpass123', name: `Triple ${i}` });
+    const buyer = db.prepare('SELECT id FROM users WHERE LOWER(email) = ?').get(email.toLowerCase());
+    const seq = db.prepare('SELECT COALESCE(MAX(order_seq), 0) + 1 AS n FROM orders').get().n;
+    const orderNumber = String(seq);
+    const ins = db.prepare(`
+      INSERT INTO orders (
+        order_number, order_seq, email, user_id, payment_method_id,
+        subtotal, discount, total, status, tingi_drop_enabled, fulfillment_mode, receipt_url
+      ) VALUES (?, ?, ?, ?, ?, 200, 0, 200, 'pending', 0, 'auto', '/uploads/receipts/test.png')
+    `).run(orderNumber, seq, email, buyer.id, pm.id);
+    const orderId = ins.lastInsertRowid;
+    orderIds.push(orderId);
+    db.prepare(`INSERT INTO order_items (order_id, product_id, product_name, quantity, price) VALUES (?, ?, 'Wheel Triple', 1, 200)`)
+      .run(orderId, product.id);
+    await request('POST', `/admin/orders/${orderNumber}/approve`, {}, adminCookie);
+    const credit = db.prepare('SELECT id FROM game_order_credits WHERE order_id = ?').get(orderId);
+    const login = await loginUser(email, 'testpass123');
+    const choose = await request('POST', `/account/games/credits/${credit.id}/choose`, { gameType: 'wheel' }, login.cookie);
+    if (choose.status !== 200) { fail(`wheel triple entry ${i + 1}`, choose.json?.error || choose.status); return; }
+  }
+  ok('three wheel entries joined');
+
+  const winnerCount = db.prepare('SELECT COUNT(*) AS c FROM game_wheel_winners WHERE campaign_id = ?').get(wheel.json.id).c;
+  if (winnerCount === 3) ok('wheel drew 3 winners for 3 prizes');
+  else fail('wheel drew 3 winners for 3 prizes', winnerCount);
+
+  const hub = await request('GET', '/api/games');
+  if (hub.json?.wheel?.winners?.length === 3) ok('hub exposes all 3 wheel winners publicly');
+  else fail('hub wheel winners public', hub.json?.wheel?.winners?.length);
+
+  const spinIndexes = (hub.json?.wheel?.winners || []).map((w) => w.spinIndex);
+  if (spinIndexes.join(',') === '1,2,3') ok('wheel winners include spin order');
+  else fail('wheel spin order', spinIndexes.join(','));
+
+  for (const orderId of orderIds) {
+    purgeGameRowsForOrder(orderId);
+    db.prepare('DELETE FROM order_items WHERE order_id = ?').run(orderId);
+    db.prepare('DELETE FROM orders WHERE id = ?').run(orderId);
+  }
+}
+
 async function runGamesToggleCheck(adminCookie) {
   console.log('\nShop games per-game off toggles');
   const keys = ['wheel', 'scratch', 'mystery', 'dice', 'pick', 'vault'];
@@ -1222,7 +1324,7 @@ async function runGamesToggleCheck(adminCookie) {
   const closedPageBody = gamesClosedPage.json?.raw || '';
   if (gamesClosedPage.status === 200
       && closedPageBody.includes('games-arena-grid')
-      && closedPageBody.includes('games-page.js?v=20260710wheelmax')) {
+      && closedPageBody.includes('games-page.js?v=20260710prizelogic')) {
     ok('GET /games page loads closed-state assets');
   } else fail('GET /games page loads closed-state assets', gamesClosedPage.status);
 
@@ -1260,6 +1362,8 @@ async function main() {
     await runGamesToggleCheck(adminCookie);
     await runGamesCheck(adminCookie);
     await runWheelAutoDrawCheck(adminCookie);
+    await runWheelMultiPrizeCheck(adminCookie);
+    runPrizeOddsCheck();
     await runVariantDescriptionCheck(adminCookie);
     await runUserAdminCheck(adminCookie);
     await runRefundReportCheck(adminCookie);

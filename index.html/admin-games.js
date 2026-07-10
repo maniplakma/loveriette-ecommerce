@@ -215,8 +215,19 @@
     if (!label) return;
     const type = prompt('Type: loyalty, redeem, product, wallet, account, netflix, plug_access, custom, none, bomb', 'loyalty');
     const value = prompt('Value: amount for loyalty/wallet; {"discountValue":50} for voucher; empty for product', '');
-    const qtyRaw = prompt('How many winners for this prize? (1 = one winner only)', kind === 'wheel' ? '1' : '-1');
+    const qtyRaw = prompt('How many winners for this prize? (1 = one winner per prize)', kind === 'wheel' ? '1' : '-1');
     const quantity = qtyRaw != null && qtyRaw !== '' ? Number(qtyRaw) : (kind === 'wheel' ? 1 : -1);
+    let weight = 3;
+    if (kind !== 'wheel') {
+      const isLoser = type === 'none' || type === 'bomb';
+      const weightRaw = prompt(
+        isLoser
+          ? 'Loser weight (higher = more common). Recommended: 25–40'
+          : 'Winner weight (lower = rarer). Recommended: 2–5',
+        isLoser ? '30' : '3'
+      );
+      weight = Math.max(1, Number(weightRaw) || (isLoser ? 30 : 3));
+    }
     const url = kind === 'wheel'
       ? `/admin/games/wheel/${parentId}/prizes`
       : kind === 'scratch'
@@ -227,8 +238,8 @@
     const body = kind === 'wheel'
       ? { label, prizeType: type || 'custom', prizeValue: value || '', quantity: Math.max(1, quantity || 1) }
       : kind === 'instant'
-        ? { label, prizeType: type || 'none', prizeValue: value || '', weight: 10, quantity, tileStyle: 'gold' }
-        : { label, prizeType: type || 'none', prizeValue: value || '', weight: 10, quantity };
+        ? { label, prizeType: type || 'none', prizeValue: value || '', weight, quantity, tileStyle: (type === 'none' || type === 'bomb') ? 'gray' : 'gold' }
+        : { label, prizeType: type || 'none', prizeValue: value || '', weight, quantity };
     api(url, { method: 'POST', body: JSON.stringify(body) })
       .then(() => {
         if (kind === 'wheel') loadWheelAdmin();

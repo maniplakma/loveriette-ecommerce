@@ -210,14 +210,32 @@
       </div>`;
   }
 
+  function isRealPrizeWin(result) {
+    const t = result?.prize?.prizeType || result?.fulfillment?.type;
+    return t && t !== 'none' && t !== 'bomb';
+  }
+
+  function playResultMessage(result) {
+    return isRealPrizeWin(result)
+      ? `You won: ${result.prize?.label || 'Prize'}`
+      : (result.prize?.label || 'Better luck next time!');
+  }
+
   function winnersPanel(winners) {
     if (!winners?.length) return '';
+    const count = winners.length;
     return `
-      <div class="games-winners-panel">
-        <h4 class="games-arena-sub">Winners</h4>
-        <ul class="games-winners-list">${winners.map((w) =>
-    `<li><strong>${esc(w.displayName)}</strong><span>${esc(w.prizeLabel || 'Prize')}</span></li>`
-  ).join('')}</ul>
+      <div class="games-winners-panel games-winners-panel--public">
+        <h4 class="games-winners-title">Draw results — ${count} winner${count === 1 ? '' : 's'}</h4>
+        <p class="games-winners-note">Visible to everyone · one spin per prize</p>
+        <ol class="games-winners-list">${winners.map((w) =>
+    `<li class="games-winner-row">
+      <span class="games-winner-spin">Spin ${w.spinIndex || ''}</span>
+      <strong class="games-winner-name">${esc(w.displayName)}</strong>
+      <span class="games-winner-order">Order #${esc(w.orderNumber)}</span>
+      <span class="games-winner-prize">${esc(w.prizeLabel || 'Prize')}</span>
+    </li>`
+  ).join('')}</ol>
       </div>`;
   }
 
@@ -473,8 +491,10 @@
       body = closedBody(state.channelUrl, 'wheel');
     } else if (drawn) {
       body = `
-        <div class="games-play-stage games-play-stage--results">
-          ${wheelVisualHtml('is-spin-result')}
+        <div class="games-play-stage games-play-stage--results" data-wheel-id="${game.id || ''}">
+          <div class="games-wheel-spin-live" aria-live="polite"></div>
+          ${wheelVisualHtml('')}
+          <div class="games-wheel-reveal-mount"></div>
           ${winnersPanel(game.winners)}
           ${entriesWall(game.entries, game.winners, game.mySlots)}
           <p class="games-meta">${game.entryCount || 0} total entries · Draw complete</p>
@@ -647,7 +667,7 @@
           const result = await gamesApi(`/account/games/scratch/${id}/play`, { method: 'POST', body: '{}' });
           const label = result.prize?.label || 'No prize';
           grid.innerHTML = `<div class="games-scratch-reveal">${esc(label)}</div>`;
-          if (msg) { msg.hidden = false; msg.textContent = `You won: ${label}`; }
+          if (msg) { msg.hidden = false; msg.textContent = playResultMessage(result); }
           showPrizeWin(result);
           setTimeout(() => loadGamesHub(), 2500);
         } catch (err) {
@@ -677,7 +697,7 @@
             card.querySelector('.games-mystery-row').innerHTML = (result.boxes || []).map((b) =>
               revealedMysteryBoxHtml(b)
             ).join('');
-            if (msg) { msg.hidden = false; msg.textContent = result.prize ? `You won: ${result.prize.label}` : 'No prize'; }
+            if (msg) { msg.hidden = false; msg.textContent = playResultMessage(result); }
             showPrizeWin(result);
             setTimeout(() => loadGamesHub(), 2500);
           } catch (err) {
@@ -705,7 +725,7 @@
           const dice = result.result?.dice || [1, 1];
           const row = card.querySelector('.games-dice-row');
           row.innerHTML = dice.map((d) => dieHtml(d, 'is-rolled')).join('');
-          if (msg) { msg.hidden = false; msg.textContent = result.prize ? `You won: ${result.prize.label}` : 'No prize'; }
+          if (msg) { msg.hidden = false; msg.textContent = playResultMessage(result); }
           showPrizeWin(result);
           setTimeout(() => loadGamesHub(), 2500);
         } catch (err) {
@@ -733,7 +753,7 @@
             card.querySelector('.games-pick-row').innerHTML = (result.result?.cards || []).map((c, i) =>
               revealedPickCardHtml(c, i)
             ).join('');
-            if (msg) { msg.hidden = false; msg.textContent = result.prize ? `You won: ${result.prize.label}` : 'No prize'; }
+            if (msg) { msg.hidden = false; msg.textContent = playResultMessage(result); }
             showPrizeWin(result);
             setTimeout(() => loadGamesHub(), 2500);
           } catch (err) {
@@ -762,7 +782,7 @@
             card.querySelector('.games-vault-row').innerHTML = (result.result?.vaults || []).map((v, i) =>
               revealedVaultDoorHtml(v, i)
             ).join('');
-            if (msg) { msg.hidden = false; msg.textContent = result.prize ? `You won: ${result.prize.label}` : 'No prize'; }
+            if (msg) { msg.hidden = false; msg.textContent = playResultMessage(result); }
             showPrizeWin(result);
             setTimeout(() => loadGamesHub(), 2500);
           } catch (err) {
@@ -772,6 +792,57 @@
         });
       });
     });
+  }
+
+  function runWheelDrawSequence(wheel) {
+    if (!wheel?.winners?.length || wheel.status !== 'drawn') return;
+    const stage = document.querySelector(`.games-play-stage--results[data-wheel-id="${wheel.id}"]`)
+      || document.querySelector('.games-arena--wheel .games-play-stage--results');
+    if (!stage) return;
+
+    const storageKey = `games-wheel-spins-${wheel.id}-${wheel.drawnAt || wheel.winners.length}`;
+    if (sessionStorage.getItem(storageKey)) return;
+
+    const visual = stage.querySelector('.games-wheel-visual');
+    const live = stage.querySelector('.games-wheel-spin-live');
+    const mount = stage.querySelector('.games-wheel-reveal-mount');
+    if (!visual || !live) return;
+
+    const winners = wheel.winners;
+    let step = 0;
+
+    function revealCard(w) {
+      if (!mount) return;
+      const card = document.createElement('div');
+      card.className = 'games-wheel-reveal-card';
+      card.innerHTML = `
+        <span class="games-wheel-reveal-kicker">Spin ${w.spinIndex || step} — Winner</span>
+        <strong>${esc(w.displayName)}</strong>
+        <span class="games-wheel-reveal-order">Order #${esc(w.orderNumber)}</span>
+        <span class="games-wheel-reveal-prize">${esc(w.prizeLabel || 'Prize')}</span>`;
+      mount.appendChild(card);
+      requestAnimationFrame(() => card.classList.add('is-visible'));
+    }
+
+    function spinNext() {
+      if (step >= winners.length) {
+        live.innerHTML = '<strong>All spins complete!</strong> See full results below.';
+        sessionStorage.setItem(storageKey, '1');
+        return;
+      }
+      const w = winners[step];
+      live.innerHTML = `<strong>Spin ${step + 1} of ${winners.length}</strong> — drawing…`;
+      visual.classList.remove('is-spin-result');
+      void visual.offsetWidth;
+      visual.classList.add('is-spin-result');
+      step += 1;
+      setTimeout(() => {
+        revealCard(w);
+        spinNext();
+      }, 2600);
+    }
+
+    spinNext();
   }
 
   let countdownTimer = null;
@@ -942,6 +1013,7 @@
     bindExpand();
     bindGameChoices();
     startCountdowns();
+    runWheelDrawSequence(data.wheel);
 
     const wheel = data.wheel || {};
     if (wheel.myWin) {

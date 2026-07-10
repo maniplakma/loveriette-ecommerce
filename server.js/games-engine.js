@@ -69,17 +69,24 @@ function latestWheelCampaign(db) {
 }
 
 function resolveWheelCampaign(db, now = new Date()) {
-  const active = activeWheelCampaign(db, now);
-  if (active) {
-    const entries = db.prepare('SELECT COUNT(*) AS c FROM game_wheel_slots WHERE campaign_id = ?').get(active.id).c;
-    if (entries > 0) return active;
-  }
+  return activeWheelCampaign(db, now) || resolveWheelDisplayCampaign(db, now);
+}
+
+function resolveWheelDisplayCampaign(db, now = new Date()) {
   const drawn = db.prepare(`
     SELECT * FROM game_wheel_campaigns
     WHERE is_enabled = 1 AND status = 'drawn'
-    ORDER BY datetime(drawn_at) DESC, id DESC
+    ORDER BY datetime(COALESCE(drawn_at, updated_at)) DESC, id DESC
     LIMIT 1
   `).get();
+
+  const active = activeWheelCampaign(db, now);
+  if (active) {
+    const entries = countWheelEntries(db, active.id);
+    if (drawn && Number(drawn.id) > Number(active.id)) return drawn;
+    if (entries > 0) return active;
+    if (!isWheelFull(db, active) && (!drawn || Number(active.id) > Number(drawn.id))) return active;
+  }
   if (drawn) return drawn;
   return active || latestWheelCampaign(db);
 }
@@ -118,14 +125,23 @@ function isInstantPoolOpen(pool, enabled, now = new Date()) {
 }
 
 function getWheelWinners(db, campaignId) {
-  return db.prepare(`
+  const rows = db.prepare(`
     SELECT w.display_name AS displayName, w.order_number AS orderNumber,
-           p.label AS prizeLabel, p.prize_type AS prizeType, w.created_at AS wonAt
+           p.label AS prizeLabel, p.prize_type AS prizeType, w.created_at AS wonAt,
+           p.sort_order AS prizeSort
     FROM game_wheel_winners w
     JOIN game_wheel_prizes p ON p.id = w.prize_id
     WHERE w.campaign_id = ?
     ORDER BY w.id ASC
   `).all(campaignId);
+  return rows.map((r, i) => ({
+    displayName: r.displayName,
+    orderNumber: r.orderNumber,
+    prizeLabel: r.prizeLabel,
+    prizeType: r.prizeType,
+    wonAt: r.wonAt,
+    spinIndex: i + 1
+  }));
 }
 
 function getRecentPrizeWinners(db, limit = 10) {
@@ -150,14 +166,15 @@ function buildGamesHubState(db, userId = null) {
   const hubListed = true;
   const channelUrl = readSetting(db, 'games_channel_url', 'https://t.me/loveriette');
   const now = new Date();
-  const wheelPlayRow = resolveWheelCampaign(db, now);
-  const wheelDisplayRow = wheelPlayRow
+  const wheelPlayRow = activeWheelCampaign(db, now);
+  const wheelDisplayRow = resolveWheelDisplayCampaign(db, now)
+    || wheelPlayRow
     || db.prepare('SELECT * FROM game_wheel_campaigns ORDER BY id DESC LIMIT 1').get();
   const scratchRow = db.prepare('SELECT * FROM game_scratch_pools ORDER BY id DESC LIMIT 1').get();
   const mysteryRow = db.prepare('SELECT * FROM game_mystery_pools ORDER BY id DESC LIMIT 1').get();
 
-  const wheelOpen = enabled && isWheelCampaignOpen(wheelPlayRow, now, db);
-  const wheelDrawn = wheelPlayRow?.status === 'drawn';
+  const wheelOpen = !!(enabled && wheelPlayRow && isWheelCampaignOpen(wheelPlayRow, now, db));
+  const wheelDrawn = wheelDisplayRow?.status === 'drawn';
   const scratchOpen = isScratchPoolOpen(scratchRow, enabled, now);
   const mysteryOpen = isMysteryPoolOpen(mysteryRow, enabled, now);
 
@@ -175,11 +192,12 @@ function buildGamesHubState(db, userId = null) {
   let scratchCards = [];
   let mysteryPlays = [];
   if (userId) {
-    if (wheelPlayRow) {
+    const slotCampaignId = wheelPlayRow?.id || wheelDisplayRow?.id;
+    if (slotCampaignId) {
       wheelSlots = db.prepare(`
         SELECT id, order_number AS orderNumber, display_name AS displayName, created_at AS createdAt
         FROM game_wheel_slots WHERE campaign_id = ? AND user_id = ?
-      `).all(wheelPlayRow.id, userId);
+      `).all(slotCampaignId, userId);
     }
     scratchCards = db.prepare(`
       SELECT sc.id, sc.order_number AS orderNumber, sc.scratched_at AS scratchedAt, sc.created_at AS createdAt,
@@ -276,7 +294,7 @@ function buildGamesHubState(db, userId = null) {
       listed: hubListed,
       open: wheelOpen,
       visible: hubListed,
-      status: wheelPlayRow?.status || wheelDisplayRow.status,
+      status: wheelDisplayRow.status,
       drawAt: wheelDisplayRow.draw_at,
       maxEntries: wheelDisplayRow.max_entries != null ? Number(wheelDisplayRow.max_entries) : null,
       entriesRemaining: wheelDisplayRow.max_entries != null
@@ -449,20 +467,84 @@ function genToken() {
   return crypto.randomBytes(16).toString('hex');
 }
 
+/** Minimum collective loser weight vs winner weight (~80% lose when pool is balanced). */
+const HOUSE_LOSER_RATIO = 4;
+
+function isLoserPrizeType(prizeType) {
+  const t = String(prizeType || 'none');
+  return t === 'none' || t === 'bomb';
+}
+
+function isLoserPrize(prize) {
+  return isLoserPrizeType(prize?.prize_type);
+}
+
+function defaultPrizeWeight(prizeType) {
+  return isLoserPrizeType(prizeType) ? 25 : 3;
+}
+
 function pickWeightedPrize(prizes) {
-  const available = prizes.filter((p) => {
+  const available = (prizes || []).filter((p) => {
     const qty = Number(p.quantity);
     const won = Number(p.won_count || 0);
     return qty < 0 || won < qty;
   });
   if (!available.length) return null;
-  const total = available.reduce((sum, p) => sum + Math.max(1, Number(p.weight) || 1), 0);
-  let roll = Math.random() * total;
-  for (const prize of available) {
-    roll -= Math.max(1, Number(prize.weight) || 1);
-    if (roll <= 0) return prize;
+
+  const entries = available.map((p) => ({
+    prize: p,
+    weight: Math.max(1, Number(p.weight) || defaultPrizeWeight(p.prize_type))
+  }));
+
+  let winWeight = 0;
+  let loseWeight = 0;
+  for (const e of entries) {
+    if (isLoserPrize(e.prize)) loseWeight += e.weight;
+    else winWeight += e.weight;
   }
-  return available[available.length - 1];
+
+  const minLoseWeight = Math.max(loseWeight, winWeight * HOUSE_LOSER_RATIO);
+  const extraLose = minLoseWeight - loseWeight;
+
+  if (extraLose > 0) {
+    if (loseWeight > 0) {
+      const boost = minLoseWeight / loseWeight;
+      for (const e of entries) {
+        if (isLoserPrize(e.prize)) e.weight *= boost;
+      }
+    } else {
+      entries.push({
+        prize: { prize_type: 'none', label: 'Better luck next time!', __virtual: true },
+        weight: extraLose
+      });
+    }
+  }
+
+  const total = entries.reduce((sum, e) => sum + e.weight, 0);
+  let roll = Math.random() * total;
+  for (const e of entries) {
+    roll -= e.weight;
+    if (roll <= 0) return e.prize;
+  }
+  return entries[entries.length - 1].prize;
+}
+
+function ensureLoserPrizeForPool(db, { prizeTable, poolColumn, poolId, extra }) {
+  const hasLoser = db.prepare(`
+    SELECT id FROM ${prizeTable}
+    WHERE ${poolColumn} = ? AND prize_type IN ('none', 'bomb')
+    LIMIT 1
+  `).get(poolId);
+  if (hasLoser) return;
+
+  const cols = extra?.tileStyle != null
+    ? `(pool_id, label, prize_type, prize_value, weight, quantity, tile_style)`
+    : `(pool_id, label, prize_type, prize_value, weight, quantity)`;
+  const vals = extra?.tileStyle != null
+    ? `(?, 'Better luck next time!', 'none', '', 30, -1, 'gray')`
+    : `(?, 'Better luck next time!', 'none', '', 30, -1)`;
+
+  db.prepare(`INSERT INTO ${prizeTable} ${cols} VALUES ${vals}`).run(poolId);
 }
 
 function recordPrizeAward(db, { userId, prize, orderRef, source, fulfillment }) {
@@ -709,7 +791,7 @@ function isGameTypeOpen(db, gameType, orderTotal = 0) {
   const now = new Date();
   const total = Number(orderTotal) || 0;
   if (gameType === 'wheel') {
-    const wheel = resolveWheelCampaign(db, now);
+    const wheel = activeWheelCampaign(db, now);
     return enabled && isWheelCampaignOpen(wheel, now, db) && total >= Number(wheel?.min_order_total || 0);
   }
   if (gameType === 'scratch') {
@@ -975,14 +1057,16 @@ function scratchCard(db, deps, { cardId, userId }) {
   const prizes = db.prepare('SELECT * FROM game_scratch_prizes WHERE pool_id = ?').all(card.pool_id);
   const prize = pickWeightedPrize(prizes);
   const now = new Date().toISOString();
+  const isVirtual = prize?.__virtual;
+  const prizeId = prize?.id && !isVirtual ? prize.id : null;
 
   db.prepare(`
     UPDATE game_scratch_cards SET prize_id = ?, scratched_at = ? WHERE id = ? AND scratched_at IS NULL
-  `).run(prize?.id || null, now, card.id);
+  `).run(prizeId, now, card.id);
 
   let fulfilled = { fulfillment: { type: 'none' } };
   if (prize) {
-    db.prepare('UPDATE game_scratch_prizes SET won_count = won_count + 1 WHERE id = ?').run(prize.id);
+    if (prizeId) db.prepare('UPDATE game_scratch_prizes SET won_count = won_count + 1 WHERE id = ?').run(prizeId);
     fulfilled = fulfillPrize(db, deps, { userId, prize, orderRef: card.order_number, source: 'scratch' });
   }
 
@@ -1010,22 +1094,28 @@ function playMysteryBox(db, deps, { playId, userId, boxIndex }) {
   const prize = pickWeightedPrize(prizes);
   const now = new Date().toISOString();
   const pickedBox = Math.max(0, Math.min(2, Number(boxIndex) || 0));
+  const isVirtual = prize?.__virtual;
+  const prizeId = prize?.id && !isVirtual ? prize.id : null;
+  const isRealWin = prize && !isLoserPrize(prize);
 
   db.prepare(`
     UPDATE game_mystery_plays SET prize_id = ?, played_at = ? WHERE id = ? AND played_at IS NULL
-  `).run(prize?.id || null, now, play.id);
+  `).run(prizeId, now, play.id);
 
   let fulfilled = { fulfillment: { type: 'none' } };
   if (prize) {
-    db.prepare('UPDATE game_mystery_prizes SET won_count = won_count + 1 WHERE id = ?').run(prize.id);
+    if (prizeId) db.prepare('UPDATE game_mystery_prizes SET won_count = won_count + 1 WHERE id = ?').run(prizeId);
     fulfilled = fulfillPrize(db, deps, { userId, prize, orderRef: play.order_number, source: 'mystery' });
   }
 
   const decoys = ['Empty box', 'Try again', 'No luck'];
   const boxes = [0, 1, 2].map((i) => {
     if (i === pickedBox) {
-      return prize ? { label: prize.label, prizeType: prize.prize_type, winner: true }
-        : { label: 'No prize', prizeType: 'none', winner: true };
+      return {
+        label: prize?.label || 'No prize',
+        prizeType: prize?.prize_type || 'none',
+        winner: isRealWin
+      };
     }
     return { label: decoys[i % decoys.length], prizeType: 'none', winner: false };
   });
@@ -1055,11 +1145,21 @@ function playInstantGame(db, deps, { playId, userId, gameKey, choice }) {
   const prizes = db.prepare('SELECT * FROM game_instant_prizes WHERE pool_id = ?').all(play.pool_id);
   const prize = pickWeightedPrize(prizes);
   const now = new Date().toISOString();
+  const isVirtual = prize?.__virtual;
+  const prizeId = prize?.id && !isVirtual ? prize.id : null;
+  const isRealWin = prize && !isLoserPrize(prize);
   let result = { choice: Number(choice) || 0 };
 
   if (play.gameKey === 'dice') {
-    const d1 = Math.floor(Math.random() * 6) + 1;
-    const d2 = Math.floor(Math.random() * 6) + 1;
+    let d1;
+    let d2;
+    if (isRealWin) {
+      d1 = 5 + Math.floor(Math.random() * 2);
+      d2 = 5 + Math.floor(Math.random() * 2);
+    } else {
+      d1 = Math.floor(Math.random() * 4) + 1;
+      d2 = Math.floor(Math.random() * 4) + 1;
+    }
     result = { dice: [d1, d2], sum: d1 + d2, choice: Number(choice) || 0 };
   } else if (play.gameKey === 'pick') {
     const idx = Math.max(0, Math.min(2, Number(choice) || 0));
@@ -1068,10 +1168,8 @@ function playInstantGame(db, deps, { playId, userId, gameKey, choice }) {
       pickedCard: idx,
       cards: [0, 1, 2].map((i) => ({
         index: i,
-        label: i === idx
-          ? (prize?.label || 'No prize')
-          : suits[i % suits.length],
-        winner: i === idx
+        label: i === idx ? (prize?.label || 'No prize') : suits[i % suits.length],
+        winner: i === idx && isRealWin
       }))
     };
   } else if (play.gameKey === 'vault') {
@@ -1080,19 +1178,19 @@ function playInstantGame(db, deps, { playId, userId, gameKey, choice }) {
       pickedVault: idx,
       vaults: [0, 1, 2].map((i) => ({
         index: i,
-        label: i === idx ? (prize?.label || 'Empty') : ['Bronze', 'Silver', 'Gold'][i],
-        winner: i === idx
+        label: i === idx ? (prize?.label || 'Empty vault') : ['Bronze', 'Silver', 'Gold'][i],
+        winner: i === idx && isRealWin
       }))
     };
   }
 
   db.prepare(`
     UPDATE game_instant_plays SET prize_id = ?, played_at = ?, result_json = ? WHERE id = ? AND played_at IS NULL
-  `).run(prize?.id || null, now, JSON.stringify(result), play.id);
+  `).run(prizeId, now, JSON.stringify(result), play.id);
 
   let fulfilled = { fulfillment: { type: 'none' } };
   if (prize) {
-    db.prepare('UPDATE game_instant_prizes SET won_count = won_count + 1 WHERE id = ?').run(prize.id);
+    if (prizeId) db.prepare('UPDATE game_instant_prizes SET won_count = won_count + 1 WHERE id = ?').run(prizeId);
     fulfilled = fulfillPrize(db, deps, { userId, prize, orderRef: play.order_number, source: play.gameKey });
   }
 
@@ -1112,8 +1210,14 @@ function playInstantGame(db, deps, { playId, userId, gameKey, choice }) {
 
 module.exports = {
   PRIZE_TYPES,
+  HOUSE_LOSER_RATIO,
   parseDays,
   isGamesEnabled,
+  isLoserPrizeType,
+  isLoserPrize,
+  defaultPrizeWeight,
+  pickWeightedPrize,
+  ensureLoserPrizeForPool,
   buildGamesHubState,
   activeWheelCampaign,
   grantGamesForApprovedOrder,
