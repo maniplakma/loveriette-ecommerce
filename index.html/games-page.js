@@ -603,7 +603,9 @@
     const gate = resolveGate(game, state);
     const parts = [];
     if (state.hasPendingCredit && !game.canPlay) parts.push(pendingChoiceGate(state));
-    else if (gate) parts.push(gateBanner(gate, state.channelUrl, game.minOrderTotal, state.eligibility, type, gateCopyFor(game, type)));
+    else if (gate && gate !== 'signin' && gate !== 'purchase') {
+      parts.push(gateBanner(gate, state.channelUrl, game.minOrderTotal, state.eligibility, type, gateCopyFor(game, type)));
+    }
     if (game.canPlay && playHtml) parts.push(playHtml);
     else if (game.campaignOn) parts.push(demoFn());
     return parts.join('');
