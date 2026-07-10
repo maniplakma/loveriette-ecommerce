@@ -317,6 +317,7 @@
     if (!game?.campaignOn || isGameAdminClosed(game)) return '';
     if (game.status === 'drawn' || game.closeReason === 'full') return '';
     const copy = GAME_JOIN_COPY[type] || { hook: 'Wanna join?', sub: 'Order now and play after delivery.' };
+    const shopHref = shopLinkFor(state, type);
     if (game.canPlay) {
       return `
         <div class="games-join-promo games-join-promo--ready">
@@ -342,16 +343,21 @@
           <strong>${esc(copy.hook)}</strong>
           <span>${esc(copy.sub)}</span>
         </div>
-        <a href="/shop" class="games-shop-btn games-join-promo-btn" data-no-expand>Order now!</a>
+        <a href="${esc(shopHref)}" class="games-shop-btn games-join-promo-btn" data-no-expand>Order now!</a>
       </div>`;
   }
 
-  function arenaShell({ type, title, open, visible, statusLabel, body, prizesHtml, guideUrl, metaHtml, expandable, adminClosed, campaignOn, joinPromoHtml }) {
+  function arenaShell({ type, title, open, visible, statusLabel, body, prizesHtml, guideUrl, metaHtml, expandable, adminClosed, campaignOn, joinPromoHtml, hubState }) {
     const listed = visible !== false;
     const { state, status } = arenaStatusState({ adminClosed, open, campaignOn, statusLabel });
     const closed = state === 'closed';
-    const guideHref = guideUrl || `/guide.html#game-${type}`;
+    const guideHref = guideUrl || guideFor(hubState, type);
+    const shopHref = shopLinkFor(hubState, type);
     const guide = `<a href="${esc(guideHref)}" class="games-guide-link" target="_blank" rel="noopener noreferrer" data-no-expand>How to play</a>`;
+    const orderHere = campaignOn && !adminClosed
+      ? `<a href="${esc(shopHref)}" class="games-guide-link games-guide-link--shop" data-no-expand>Order here</a>`
+      : '';
+    const copyLink = `<button type="button" class="games-copy-link" data-game-link="${esc(gamePageLink(type))}" data-no-expand title="Copy direct link to this game">Copy link</button>`;
     const canExpand = expandable !== false && !closed;
     const expandBtn = canExpand
       ? '<button type="button" class="games-open-full" aria-label="Open full screen">⛶ Full screen</button>'
@@ -361,14 +367,14 @@
       : '';
     const statusClass = closed ? 'closed' : (state === 'open' ? 'open' : 'closed');
     return `
-      <article class="games-arena games-arena--${state} games-arena--${type}${closed ? ' games-arena--listed-closed' : ''}" data-game-type="${esc(type)}" data-expandable="${canExpand ? '1' : '0'}" tabindex="0">
+      <article id="game-${esc(type)}" class="games-arena games-arena--${state} games-arena--${type}${closed ? ' games-arena--listed-closed' : ''}" data-game-type="${esc(type)}" data-expandable="${canExpand ? '1' : '0'}" tabindex="0">
         <div class="games-arena-glow" aria-hidden="true"></div>
         <header class="games-arena-head">
           ${icon(type, 'games-icon--head')}
           <h2>${esc(title)}</h2>
           <span class="games-arena-status games-arena-status--${statusClass}">${esc(status)}</span>
         </header>
-        <div class="games-arena-guide-row">${guide}${expandBtn}</div>
+        <div class="games-arena-guide-row">${guide}${orderHere}${copyLink}${expandBtn}</div>
         ${joinPromoHtml || ''}
         ${metaHtml || ''}
         ${listed && prizesHtml && !closed ? `<div class="games-arena-prizes"><h3 class="games-arena-sub">Prizes</h3>${prizesHtml}</div>` : ''}
@@ -528,6 +534,15 @@
     return state?.eligibility?.guides?.[type] || `/guide.html#game-${type}`;
   }
 
+  function shopLinkFor(state, type) {
+    const raw = String(state?.eligibility?.shopLinks?.[type] || '/shop').trim();
+    return raw || '/shop';
+  }
+
+  function gamePageLink(type) {
+    return `/games#game-${type}`;
+  }
+
   function wheelEntriesMetaHtml(game) {
     const max = Number(game.maxEntries);
     const count = Number(game.entryCount) || 0;
@@ -671,6 +686,7 @@
       guideUrl: guideFor(state, 'wheel'),
       metaHtml,
       joinPromoHtml: joinPromoBanner('wheel', { ...game, open: live }, state),
+      hubState: state,
       body
     });
   }
@@ -706,6 +722,7 @@
       guideUrl: guideFor(state, 'scratch'),
       metaHtml,
       joinPromoHtml: joinPromoBanner('scratch', game, state),
+      hubState: state,
       body: gameArenaBody(game, state, 'scratch', demoScratch, play)
     });
   }
@@ -742,6 +759,7 @@
       guideUrl: guideFor(state, 'mystery'),
       metaHtml,
       joinPromoHtml: joinPromoBanner('mystery', game, state),
+      hubState: state,
       body: gameArenaBody(game, state, 'mystery', demoMystery, pending.map(mysteryPlay).join(''))
     });
   }
@@ -802,6 +820,7 @@
       guideUrl: guideFor(state, type),
       metaHtml,
       joinPromoHtml: joinPromoBanner(type, game, state),
+      hubState: state,
       body: gameArenaBody(game, state, type, demoFn, instantPlay(game, state))
     });
   }
@@ -1134,7 +1153,7 @@
         openArenaExpand(arena);
       });
       const open = (e) => {
-        if (e.target.closest('[data-no-expand], .games-open-full, a.games-guide-link, .games-scratch-tile, .games-mystery-box, .games-pick-card, .games-vault-door, .games-action-btn')) return;
+        if (e.target.closest('[data-no-expand], .games-open-full, a.games-guide-link, .games-copy-link, .games-scratch-tile, .games-mystery-box, .games-pick-card, .games-vault-door, .games-action-btn')) return;
         openArenaExpand(arena);
       };
       arena.addEventListener('click', open);
@@ -1143,6 +1162,37 @@
       });
     });
     observeArenaMotion();
+  }
+
+  function bindCopyGameLinks() {
+    document.querySelectorAll('.games-copy-link:not([data-bound])').forEach((btn) => {
+      btn.dataset.bound = '1';
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const path = btn.dataset.gameLink || '';
+        const url = path.startsWith('http') ? path : `${window.location.origin}${path.startsWith('/') ? '' : '/'}${path}`;
+        try {
+          await navigator.clipboard.writeText(url);
+          const prev = btn.textContent;
+          btn.textContent = 'Copied!';
+          setTimeout(() => { btn.textContent = prev; }, 1600);
+        } catch (_) {
+          btn.textContent = url.replace(/^https?:\/\/[^/]+/, '');
+        }
+      });
+    });
+  }
+
+  function scrollToGameFromHash() {
+    const hash = window.location.hash.replace('#', '');
+    if (!hash || !hash.startsWith('game-')) return;
+    const el = document.getElementById(hash);
+    if (!el) return;
+    requestAnimationFrame(() => {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      el.classList.add('games-arena--linked');
+      setTimeout(() => el.classList.remove('games-arena--linked'), 2200);
+    });
   }
 
   function renderRecentWinners(list) {
@@ -1189,9 +1239,11 @@
     bindMystery();
     bindInstant();
     bindExpand();
+    bindCopyGameLinks();
     bindGameChoices();
     startCountdowns();
     runWheelDrawSequence(data.wheel);
+    scrollToGameFromHash();
 
     const wheel = data.wheel || {};
     if (wheel.myWin) {
@@ -1223,6 +1275,7 @@
 
   function init() {
     if (typeof initPlatformNav === 'function') initPlatformNav('games');
+    window.addEventListener('hashchange', scrollToGameFromHash);
     loadGamesHub();
   }
 

@@ -9,6 +9,17 @@ const DEFAULT_GUIDES = {
   vault: '/guide.html#game-vault'
 };
 
+const DEFAULT_SHOP_LINKS = {
+  wheel: '/shop',
+  scratch: '/shop',
+  mystery: '/shop',
+  dice: '/shop',
+  pick: '/shop',
+  vault: '/shop'
+};
+
+const GAME_KEYS = Object.keys(DEFAULT_GUIDES);
+
 function readSetting(db, key, fallback) {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
   return row?.value ?? fallback;
@@ -35,12 +46,14 @@ function getGamesRules(db) {
   const requiredQuantity = Math.max(1, Number(readSetting(db, 'games_required_quantity', '3')) || 3);
   const telegramHandle = readSetting(db, 'games_telegram_handle', '@loveriette').trim() || '@loveriette';
   const guides = { ...DEFAULT_GUIDES, ...parseJson(readSetting(db, 'games_guides', '{}'), {}) };
+  const shopLinks = { ...DEFAULT_SHOP_LINKS, ...parseJson(readSetting(db, 'games_shop_links', '{}'), {}) };
   const strict = readSetting(db, 'games_strict_eligibility', '1') === '1';
   return {
     productIds: productIds.map((id) => Number(id)).filter((id) => id > 0),
     requiredQuantity,
     telegramHandle,
     guides,
+    shopLinks,
     strict
   };
 }
@@ -111,6 +124,7 @@ function buildEligibilityHub(db) {
     products: products.map((p) => ({ id: p.id, name: p.name })),
     telegramHandle: rules.telegramHandle,
     guides: rules.guides,
+    shopLinks: rules.shopLinks,
     message: eligibilityMessage(db),
     oneGamePerPurchase: true
   };
@@ -131,6 +145,14 @@ function saveGamesRules(db, body) {
   if (body.guides != null && typeof body.guides === 'object') {
     writeSetting(db, 'games_guides', JSON.stringify({ ...DEFAULT_GUIDES, ...body.guides }));
   }
+  if (body.shopLinks != null && typeof body.shopLinks === 'object') {
+    const merged = { ...DEFAULT_SHOP_LINKS };
+    for (const key of GAME_KEYS) {
+      const raw = String(body.shopLinks[key] || '').trim();
+      if (raw) merged[key] = raw;
+    }
+    writeSetting(db, 'games_shop_links', JSON.stringify(merged));
+  }
   if (body.strictEligibility != null) {
     writeSetting(db, 'games_strict_eligibility', body.strictEligibility ? '1' : '0');
   }
@@ -138,6 +160,8 @@ function saveGamesRules(db, body) {
 
 module.exports = {
   DEFAULT_GUIDES,
+  DEFAULT_SHOP_LINKS,
+  GAME_KEYS,
   getGamesRules,
   getEligibleProducts,
   getQualifyingOrderItems,

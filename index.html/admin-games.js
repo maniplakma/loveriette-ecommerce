@@ -58,6 +58,18 @@
       </div>`).join('');
   }
 
+  function renderShopLinkFields(shopLinks = {}) {
+    const wrap = document.getElementById('games-shop-link-fields');
+    if (!wrap) return;
+    wrap.innerHTML = GAME_KEYS.map((g) => `
+      <div class="admin-field">
+        <label>${esc(g.label)} shop link</label>
+        <input type="text" class="admin-modal-input games-shop-link-input" data-shop-key="${g.key}"
+          value="${esc(shopLinks[g.key] || '/shop')}" placeholder="/shop or /product/your-product">
+        <small class="admin-card-meta">Direct link for Order now on /games#game-${g.key}</small>
+      </div>`).join('');
+  }
+
   function fillProductSelect(selectedIds) {
     const sel = document.getElementById('games-required-products');
     if (!sel) return;
@@ -110,6 +122,7 @@
     if (tg) tg.value = data.telegramHandle || '@loveriette';
     fillProductSelect(data.productIds || []);
     renderGuideFields(data.guides || {});
+    renderShopLinkFields(data.shopLinks || {});
     renderGameOpenToggles(data.gameEnabled || {});
   }
 
@@ -124,6 +137,10 @@
     document.querySelectorAll('.games-guide-input').forEach((inp) => {
       guides[inp.dataset.guideKey] = inp.value.trim();
     });
+    const shopLinks = {};
+    document.querySelectorAll('.games-shop-link-input').forEach((inp) => {
+      shopLinks[inp.dataset.shopKey] = inp.value.trim();
+    });
     await api('/admin/games/settings', {
       method: 'PUT',
       body: JSON.stringify({
@@ -134,6 +151,7 @@
         telegramHandle: tg?.value || '@loveriette',
         productIds: [...(sel?.selectedOptions || [])].map((o) => Number(o.value)),
         guides,
+        shopLinks,
         gameEnabled: readGameOpenToggles()
       })
     });
