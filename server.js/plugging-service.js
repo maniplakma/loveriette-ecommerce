@@ -8,6 +8,13 @@ const appConfig = require('./config');
 const { sendHtmlPage } = require('./send-html-page');
 const { sendLoginCode, verifyLoginCode } = require('./plugging-telegram');
 const { startRunner, stopRunner, stopRunnerGracefully, isRunning, resumeRunnersOnBoot } = require('./plugging-runner');
+const {
+  runStaggeredStart,
+  isStaggeredStartRunning,
+  readAutoStartSettings,
+  initAutoStartSchedulers,
+  refreshAutoStartSchedule
+} = require('./plugging-autostart');
 const { isPostLink, normalizePostLink } = require('./plugging-post');
 const { extractInviteHash } = require('./plugging-join');
 const { pickProxyForNewAccount, listPluggingProxies, autoEnableProxySetting, ensureAccountProxy } = require('./plugging-proxy');
@@ -412,6 +419,8 @@ function mountPluggingService(app, db, deps) {
       expiresAt: req.plugOrder.expiresAt || null,
       isMaster: !!req.plugOrder.isMaster,
       loyalty,
+      autoStart: readAutoStartSettings(req.plugOrder),
+      autoStartRunning: isStaggeredStartRunning(req.plugOrder.id),
       accounts: accounts.map(mapAccount)
     });
   });
@@ -517,6 +526,54 @@ function mountPluggingService(app, db, deps) {
       .run('stopped', req.params.id);
     logPlugActivity(db, account.id, 'stopped', 'Forwarder stopped manually');
     res.json({ ok: true, runnerStatus: 'stopped' });
+  });
+
+  app.put('/api/plugging/workspace/auto-start', requirePlugWorkspace, (req, res) => {
+    const body = req.body || {};
+    const enabled = body.enabled != null ? (body.enabled ? 1 : 0) : undefined;
+    const staggerMinutes = body.staggerMinutes != null ? Math.max(0, Math.round(Number(body.staggerMinutes) || 0)) : undefined;
+    const dailyAt = body.dailyAt != null ? String(body.dailyAt || '').trim() : undefined;
+
+    const order = db.prepare('SELECT * FROM plugging_orders WHERE id = ?').get(req.plugOrder.id);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    db.prepare(`
+      UPDATE plugging_orders SET
+        auto_start_enabled = COALESCE(?, auto_start_enabled),
+        auto_start_stagger_minutes = COALESCE(?, auto_start_stagger_minutes),
+        auto_start_daily_at = COALESCE(?, auto_start_daily_at),
+        updated_at = datetime('now')
+      WHERE id = ?
+    `).run(enabled, staggerMinutes, dailyAt, order.id);
+
+    const updated = db.prepare('SELECT * FROM plugging_orders WHERE id = ?').get(order.id);
+    refreshAutoStartSchedule(db, order.id, getPluggingSettings);
+    res.json({
+      ok: true,
+      autoStart: readAutoStartSettings(updated),
+      autoStartRunning: isStaggeredStartRunning(order.id)
+    });
+  });
+
+  app.post('/api/plugging/workspace/auto-start/run', requirePlugWorkspace, async (req, res) => {
+    const order = db.prepare('SELECT * FROM plugging_orders WHERE id = ?').get(req.plugOrder.id);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    const settings = readAutoStartSettings(order);
+    const staggerMinutes = req.body?.staggerMinutes != null
+      ? Math.max(0, Math.round(Number(req.body.staggerMinutes) || 0))
+      : settings.staggerMinutes;
+
+    try {
+      const result = await runStaggeredStart(db, order.id, getPluggingSettings, {
+        staggerMinutes,
+        source: 'manual'
+      });
+      if (!result.ok) return res.status(400).json({ error: result.error || 'Could not start accounts' });
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({ error: err.message || 'Could not start accounts' });
+    }
   });
 
   app.get('/api/plugging/workspace/accounts/:id/activity', requirePlugWorkspace, (req, res) => {
@@ -685,6 +742,7 @@ function mountPluggingService(app, db, deps) {
     resumeRunnersOnBoot(db, getPluggingSettings).catch((err) => {
       console.error('[plugging] resume runners failed:', err.message);
     });
+    initAutoStartSchedulers(db, getPluggingSettings);
   });
 }
 

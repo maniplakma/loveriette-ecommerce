@@ -6,7 +6,8 @@ const { withAuthorizedClient } = require('./plugging-telegram');
 const { logPlugActivity } = require('./plugging-activity');
 const { ensureAccountProxy } = require('./plugging-proxy');
 const { cycleDelayMs, groupSendDelayMs, formatDelayLabel } = require('./plugging-stealth');
-const { joinTarget, extractInviteHash } = require('./plugging-join');
+const { joinTarget, extractInviteHash, isAlreadyMember } = require('./plugging-join');
+const { handlePostJoinVerification } = require('./plugging-verify');
 const { isPostLink, resolvePostMessage } = require('./plugging-post');
 const { forwardPostWithRetries } = require('./plugging-forward');
 
@@ -108,15 +109,26 @@ function createTargetTracker() {
 function getTargetState(tracker, ref) {
   const key = normalizeRef(ref);
   if (!tracker.has(key)) {
-    tracker.set(key, { attempts: 0, failCycles: 0, failed: false, entity: null, lastError: '' });
+    tracker.set(key, {
+      attempts: 0,
+      failCycles: 0,
+      failed: false,
+      joined: false,
+      entity: null,
+      lastError: ''
+    });
   }
   return tracker.get(key);
 }
 
-async function resolveOneTarget(client, ref, tracker, db, accountId, handle) {
+async function ensureTargetJoined(client, ref, tracker, db, accountId, handle) {
   const key = normalizeRef(ref);
   const state = getTargetState(tracker, key);
-  if (state.entity) return { ref: key, entity: state.entity };
+
+  if (state.entity && state.joined) {
+    return { ref: key, entity: state.entity };
+  }
+
   if (state.failed && state.failCycles >= TARGET_RESOLVE_MAX_ATTEMPTS) return null;
   if (state.failed) return null;
   if (state.attempts >= TARGET_RESOLVE_MAX_ATTEMPTS) {
@@ -128,20 +140,50 @@ async function resolveOneTarget(client, ref, tracker, db, accountId, handle) {
 
   state.attempts += 1;
   try {
-    let entity = null;
-    const hash = extractInviteHash(key);
-    if (hash) {
-      entity = await joinTarget(client, key, null, (msg) => {
-        logPlugActivity(db, accountId, 'info', msg, key);
-      });
-    }
+    let entity = state.entity;
+    let wasMember = false;
+
     if (!entity) {
-      entity = await resolveEntityFromLink(client, key);
-      await joinTarget(client, key, entity, (msg) => {
+      const hash = extractInviteHash(key);
+      if (hash) {
+        const membership = await isAlreadyMember(client, null, key);
+        if (membership.member && membership.entity) {
+          entity = membership.entity;
+          wasMember = true;
+          logPlugActivity(db, accountId, 'info', `Already in invite ${key}`, key);
+        }
+      }
+      if (!entity) {
+        entity = await resolveEntityFromLink(client, key);
+      }
+    }
+
+    if (!wasMember) {
+      const membership = await isAlreadyMember(client, entity, key);
+      if (membership.member) {
+        wasMember = true;
+        entity = membership.entity || entity;
+        logPlugActivity(db, accountId, 'info', `Already in ${entityLabel(entity) || key}`, key);
+      }
+    }
+
+    if (!wasMember) {
+      const beforeJoin = entity;
+      const joined = await joinTarget(client, key, entity, (msg) => {
         logPlugActivity(db, accountId, 'info', msg, key);
       });
+      entity = joined || beforeJoin || entity;
+      if (entity) {
+        await handlePostJoinVerification(client, entity, entityLabel(entity) || key, (msg) => {
+          logPlugActivity(db, accountId, 'info', msg, key);
+        });
+      }
     }
+
+    if (!entity) throw new Error('Could not resolve target group');
+
     state.entity = entity;
+    state.joined = true;
     state.failed = false;
     state.attempts = 0;
     state.failCycles = 0;
@@ -160,11 +202,11 @@ async function resolveOneTarget(client, ref, tracker, db, accountId, handle) {
   }
 }
 
-async function buildTargetEntries(client, refs, tracker, db, accountId, handle) {
+async function prepareAllTargets(client, refs, tracker, db, accountId, handle) {
   const entries = [];
   for (const ref of refs) {
     if (!shouldRun(handle, accountId)) break;
-    const entry = await resolveOneTarget(client, ref, tracker, db, accountId, handle);
+    const entry = await ensureTargetJoined(client, ref, tracker, db, accountId, handle);
     if (entry) entries.push(entry);
   }
   return entries;
@@ -256,9 +298,13 @@ async function runForwardCycle(client, db, accountId, account, handle, { logTarg
   }
 
   pruneTargetTracker(handle.targetTracker, targetRefs);
-  const targetEntries = await buildTargetEntries(client, targetRefs, handle.targetTracker, db, accountId, handle);
+  if (logTargetReady && targetRefs.length) {
+    logPlugActivity(db, accountId, 'info', `Joining target groups before forward…`);
+  }
+  const targetEntries = await prepareAllTargets(client, targetRefs, handle.targetTracker, db, accountId, handle);
+  if (!shouldRun(handle, accountId)) return { cancelled: true };
   if (logTargetReady && targetEntries.length) {
-    logPlugActivity(db, accountId, 'info', `Targets ready — ${targetEntries.length} group(s)`);
+    logPlugActivity(db, accountId, 'info', `All targets ready — ${targetEntries.length} group(s), starting forward`);
   }
 
   return forwardPostToTargets(

@@ -466,6 +466,57 @@ body.plug-body {
   color: #fff;
 }
 
+.plug-autostart-panel {
+  margin-top: 0.85rem;
+}
+
+.plug-autostart-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 0.85rem;
+}
+
+.plug-autostart-head h3 {
+  margin: 0 0 0.25rem;
+  font-size: 0.95rem;
+  color: #fff;
+}
+
+.plug-autostart-status {
+  font-size: 0.75rem;
+  color: #7dffb0;
+  white-space: nowrap;
+}
+
+.plug-form-grid-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.plug-checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--font-color, #f5f0eb);
+  padding-top: 1.4rem;
+}
+
+.plug-checkbox-field input {
+  width: 16px;
+  height: 16px;
+}
+
+@media (max-width: 900px) {
+  .plug-form-grid-3 {
+    grid-template-columns: 1fr;
+  }
+  .plug-checkbox-field {
+    padding-top: 0;
+  }
+}
+
 .plug-accounts-head p {
   margin: 0;
   font-size: 0.78rem;

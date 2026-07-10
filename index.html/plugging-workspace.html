@@ -75,8 +75,9 @@
             <li><span class="plug-guide-num">2</span><div><strong>Verify OTP</strong><p>Enter the code from your Telegram app.</p></div></li>
           <li><span class="plug-guide-num">3</span><div><strong>Set post link &amp; targets</strong><p>Add the exact post URL and @group targets, then Start.</p></div></li>
           <li><span class="plug-guide-num">4</span><div><strong>Monitor activity</strong><p>Live logs show forwards, cycles, and errors.</p></div></li>
+          <li><span class="plug-guide-num">5</span><div><strong>Auto-start all</strong><p>Use the panel below to start every account in order with a delay between each.</p></div></li>
         </ol>
-        <div class="plug-guide-tip"><strong>Tip</strong><p>Only the saved post link is forwarded — the bot does not watch for new channel posts.</p></div>
+        <div class="plug-guide-tip"><strong>Tip</strong><p>Groups you are already in are skipped. New groups are joined first (with captcha answers) before forwarding starts.</p></div>
         </aside>
 
         <section class="plug-add-panel" id="plug-add-panel">
@@ -112,6 +113,35 @@
         <ul class="plug-account-list" id="account-list"></ul>
       </section>
 
+      <section class="plug-panel plug-autostart-panel" id="plug-autostart-panel" hidden>
+        <div class="plug-autostart-head">
+          <div>
+            <h3>Auto-start all accounts</h3>
+            <p class="plug-panel-desc">Start every ready account in order — account 1 first, then the next after the delay you set.</p>
+          </div>
+          <span class="plug-autostart-status" id="plug-autostart-status" hidden></span>
+        </div>
+        <div class="plug-form-grid plug-form-grid-3">
+          <label class="plug-checkbox-field">
+            <input type="checkbox" id="autostart-enabled">
+            <span>Enable daily auto-start</span>
+          </label>
+          <div class="plug-form-field">
+            <label for="autostart-stagger">Delay between accounts (minutes)</label>
+            <input id="autostart-stagger" class="plug-field-input" type="number" min="0" value="10">
+          </div>
+          <div class="plug-form-field">
+            <label for="autostart-daily">Daily start time <span class="plug-optional">optional, 24h</span></label>
+            <input id="autostart-daily" class="plug-field-input" type="time" placeholder="09:00">
+          </div>
+        </div>
+        <div class="plug-config-actions">
+          <button type="button" class="btn-primary-platform plug-btn-compact" id="autostart-run-btn">Start all now</button>
+          <button type="button" class="btn-outline-platform plug-btn-compact" id="autostart-save-btn">Save auto-start</button>
+        </div>
+        <p id="autostart-msg" class="plug-form-msg" hidden></p>
+      </section>
+
       <main class="plug-main" id="account-detail">
         <div class="plug-empty-detail">
           <p>Select an account above to configure forwarding and view live activity.</p>
@@ -121,6 +151,6 @@
   </div>
 
   <script src="/plug-session.js?v=20260709a"></script>
-  <script src="/plugging-workspace.js?v=20"></script>
+  <script src="/plugging-workspace.js?v=21"></script>
 </body>
 </html>
