@@ -2,15 +2,34 @@
  * Plugging runner timing tests (no Telegram network).
  */
 const assert = require('assert');
-const { waitWhileRunning, cycleDelayMs } = require('./plugging-runner');
+const {
+  waitWhileRunning,
+  shouldRun,
+  cycleDelayMs,
+  setRunnerForTest,
+  clearRunnerForTest
+} = require('./plugging-runner');
 
 async function testWaitWhileRunningStopsEarly() {
-  const state = { running: true };
+  const accountId = 999001;
+  const handle = { running: true, generation: 1 };
+  setRunnerForTest(accountId, handle);
   const started = Date.now();
-  setTimeout(() => { state.running = false; }, 80);
-  await waitWhileRunning(state, 5000);
+  setTimeout(() => { handle.running = false; }, 80);
+  await waitWhileRunning(handle, accountId, 5000);
+  clearRunnerForTest(accountId);
   const elapsed = Date.now() - started;
   assert(elapsed < 800, `expected early stop, took ${elapsed}ms`);
+}
+
+function testShouldRunRejectsReplacedHandle() {
+  const accountId = 999002;
+  const oldHandle = { running: true, generation: 1 };
+  const newHandle = { running: true, generation: 2 };
+  setRunnerForTest(accountId, newHandle);
+  assert.strictEqual(shouldRun(oldHandle, accountId), false);
+  assert.strictEqual(shouldRun(newHandle, accountId), true);
+  clearRunnerForTest(accountId);
 }
 
 async function testCycleDelayMs() {
@@ -21,6 +40,7 @@ async function testCycleDelayMs() {
 
 async function main() {
   await testWaitWhileRunningStopsEarly();
+  testShouldRunRejectsReplacedHandle();
   await testCycleDelayMs();
   console.log('plugging-runner tests: OK');
 }

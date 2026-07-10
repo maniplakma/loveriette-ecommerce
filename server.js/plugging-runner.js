@@ -1,5 +1,6 @@
 /**
  * In-process forwarding runners — forwards one exact post link to target groups.
+ * One active loop per account; overlapping starts are cancelled before a new loop runs.
  */
 const { withAuthorizedClient } = require('./plugging-telegram');
 const { logPlugActivity } = require('./plugging-activity');
@@ -32,11 +33,16 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-async function waitWhileRunning(state, ms) {
+function shouldRun(handle, accountId) {
+  const current = runners.get(accountId);
+  return !!(current && current === handle && handle.running);
+}
+
+async function waitWhileRunning(handle, accountId, ms) {
   if (!ms || ms <= 0) return;
   const endAt = Date.now() + ms;
-  while (state.running && Date.now() < endAt) {
-    await sleep(Math.min(WAIT_POLL_MS, endAt - Date.now()));
+  while (shouldRun(handle, accountId) && Date.now() < endAt) {
+    await sleep(Math.min(WAIT_POLL_MS, Math.max(0, endAt - Date.now())));
   }
 }
 
@@ -107,7 +113,7 @@ function getTargetState(tracker, ref) {
   return tracker.get(key);
 }
 
-async function resolveOneTarget(client, ref, tracker, db, accountId) {
+async function resolveOneTarget(client, ref, tracker, db, accountId, handle) {
   const key = normalizeRef(ref);
   const state = getTargetState(tracker, key);
   if (state.entity) return { ref: key, entity: state.entity };
@@ -154,10 +160,11 @@ async function resolveOneTarget(client, ref, tracker, db, accountId) {
   }
 }
 
-async function buildTargetEntries(client, refs, tracker, db, accountId) {
+async function buildTargetEntries(client, refs, tracker, db, accountId, handle) {
   const entries = [];
   for (const ref of refs) {
-    const entry = await resolveOneTarget(client, ref, tracker, db, accountId);
+    if (!shouldRun(handle, accountId)) break;
+    const entry = await resolveOneTarget(client, ref, tracker, db, accountId, handle);
     if (entry) entries.push(entry);
   }
   return entries;
@@ -170,10 +177,10 @@ function pruneTargetTracker(tracker, refs) {
   }
 }
 
-async function forwardPostToTargets(client, db, accountId, account, source, msg, targetEntries) {
+async function forwardPostToTargets(client, db, accountId, account, source, msg, targetEntries, handle) {
   if (!targetEntries.length) {
     logPlugActivity(db, accountId, 'error', 'No valid target groups — add your test group links');
-    return { okCount: 0, failCount: 0 };
+    return { okCount: 0, failCount: 0, cancelled: false };
   }
 
   let okCount = 0;
@@ -183,6 +190,10 @@ async function forwardPostToTargets(client, db, accountId, account, source, msg,
   logPlugActivity(db, accountId, 'cycle', `Cycle started — forwarding post #${msg.id}`);
 
   for (let i = 0; i < targetEntries.length; i++) {
+    if (!shouldRun(handle, accountId)) {
+      logPlugActivity(db, accountId, 'info', 'Forward cancelled — runner stopped or replaced');
+      return { okCount, failCount, cancelled: true };
+    }
     if (i > 0) await sleep(groupSendDelayMs());
     const { entity: target } = targetEntries[i];
     const targetName = entityLabel(target) || targetEntries[i].ref;
@@ -190,6 +201,9 @@ async function forwardPostToTargets(client, db, accountId, account, source, msg,
       client, source, target, msg, targetName,
       (retryMsg) => logPlugActivity(db, accountId, 'error', retryMsg, targetName)
     );
+    if (!shouldRun(handle, accountId)) {
+      return { okCount, failCount, cancelled: true };
+    }
     if (result.ok) {
       okCount += 1;
       db.prepare('UPDATE plugging_accounts SET success_count = success_count + 1, updated_at = datetime(\'now\') WHERE id = ?')
@@ -204,6 +218,10 @@ async function forwardPostToTargets(client, db, accountId, account, source, msg,
     }
   }
 
+  if (!shouldRun(handle, accountId)) {
+    return { okCount, failCount, cancelled: true };
+  }
+
   if (okCount > 0 && failCount === 0) {
     logPlugActivity(db, accountId, 'complete', `Cycle complete — post #${msg.id} forwarded to ${okCount} group(s)`);
   } else if (okCount > 0) {
@@ -212,10 +230,12 @@ async function forwardPostToTargets(client, db, accountId, account, source, msg,
     logPlugActivity(db, accountId, 'complete', `Cycle complete — post #${msg.id} failed on all groups`);
   }
 
-  return { okCount, failCount };
+  return { okCount, failCount, cancelled: false };
 }
 
-async function runForwardCycle(client, db, accountId, account, state, { logTargetReady = false } = {}) {
+async function runForwardCycle(client, db, accountId, account, handle, { logTargetReady = false } = {}) {
+  if (!shouldRun(handle, accountId)) return { cancelled: true };
+
   const postLinkNow = String(account.source_link || '').trim();
   if (!isPostLink(postLinkNow)) {
     throw new Error('Invalid post link — use https://t.me/channel/123');
@@ -226,6 +246,8 @@ async function runForwardCycle(client, db, accountId, account, state, { logTarge
     logPlugActivity(db, accountId, 'info', msg);
   });
 
+  if (!shouldRun(handle, accountId)) return { cancelled: true };
+
   if (logTargetReady) {
     logPlugActivity(
       db, accountId, 'info',
@@ -233,20 +255,47 @@ async function runForwardCycle(client, db, accountId, account, state, { logTarge
     );
   }
 
-  pruneTargetTracker(state.targetTracker, targetRefs);
-  const targetEntries = await buildTargetEntries(client, targetRefs, state.targetTracker, db, accountId);
+  pruneTargetTracker(handle.targetTracker, targetRefs);
+  const targetEntries = await buildTargetEntries(client, targetRefs, handle.targetTracker, db, accountId, handle);
   if (logTargetReady && targetEntries.length) {
     logPlugActivity(db, accountId, 'info', `Targets ready — ${targetEntries.length} group(s)`);
   }
 
   return forwardPostToTargets(
     client, db, accountId, account,
-    resolved.source, resolved.message, targetEntries
+    resolved.source, resolved.message, targetEntries, handle
   );
 }
 
-function startRunner(db, accountId, getSettings) {
-  stopRunner(accountId);
+function createRunnerHandle(accountId, previous) {
+  let doneResolve;
+  const handle = {
+    accountId,
+    running: true,
+    generation: (previous?.generation || 0) + 1,
+    targetTracker: createTargetTracker(),
+    done: new Promise((resolve) => { doneResolve = resolve; }),
+    doneResolve
+  };
+  return handle;
+}
+
+async function stopRunnerGracefully(accountId) {
+  const handle = runners.get(accountId);
+  if (!handle) return;
+  handle.running = false;
+  handle.generation += 1;
+  try {
+    await Promise.race([
+      handle.done,
+      sleep(15000)
+    ]);
+  } catch (_) { /* ignore */ }
+}
+
+async function startRunner(db, accountId, getSettings) {
+  await stopRunnerGracefully(accountId);
+
   let account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ?').get(accountId);
   if (!account || !account.session_string) {
     throw new Error('Account is not logged in to Telegram yet');
@@ -269,11 +318,8 @@ function startRunner(db, accountId, getSettings) {
   `).get(account.order_id);
   if (!order) throw new Error('Plugging subscription is not active');
 
-  const state = {
-    running: true,
-    targetTracker: createTargetTracker()
-  };
-  runners.set(accountId, state);
+  const handle = createRunnerHandle(accountId, null);
+  runners.set(accountId, handle);
 
   db.prepare('UPDATE plugging_accounts SET runner_status = ?, last_error = ?, updated_at = datetime(\'now\') WHERE id = ?')
     .run('running', '', accountId);
@@ -281,57 +327,79 @@ function startRunner(db, accountId, getSettings) {
   logPlugActivity(db, accountId, 'started', 'Connecting to Telegram…');
 
   (async () => {
+    let nextCycleAt = 0;
     let firstCycle = true;
 
-    while (state.running) {
-      account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ?').get(accountId);
-      if (!account) break;
+    try {
+      while (shouldRun(handle, accountId)) {
+        account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ?').get(accountId);
+        if (!account) break;
 
-      if (!firstCycle) {
-        const waitMs = cycleDelayMs(account.delay_minutes);
-        if (waitMs > 0) {
+        const now = Date.now();
+        if (nextCycleAt > now) {
+          const waitMs = nextCycleAt - now;
           logPlugActivity(db, accountId, 'info', `Next cycle in ${formatDelayLabel(waitMs)}`);
-          await waitWhileRunning(state, waitMs);
+          await waitWhileRunning(handle, accountId, waitMs);
+        }
+        if (!shouldRun(handle, accountId)) break;
+
+        let cycleCompleted = false;
+        try {
+          account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ?').get(accountId);
+          await withAuthorizedClient(settings, account.session_string, async (client) => {
+            if (!shouldRun(handle, accountId)) return;
+            logPlugActivity(db, accountId, 'info', 'Telegram connected — forwarding saved post link');
+            const result = await runForwardCycle(client, db, accountId, account, handle, { logTargetReady: firstCycle });
+            cycleCompleted = !result?.cancelled;
+          }, account.proxy_url);
+        } catch (err) {
+          if (!shouldRun(handle, accountId)) break;
+          const errMsg = String(err.message || err).slice(0, 500);
+          db.prepare('UPDATE plugging_accounts SET last_error = ?, updated_at = datetime(\'now\') WHERE id = ?')
+            .run(errMsg, accountId);
+          logPlugActivity(db, accountId, 'error', `Connection issue (retrying in ${Math.round(RETRY_DELAY_MS / 1000)}s): ${errMsg}`);
+          await waitWhileRunning(handle, accountId, RETRY_DELAY_MS);
+          continue;
+        }
+
+        if (!shouldRun(handle, accountId)) break;
+
+        if (cycleCompleted) {
+          account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ?').get(accountId);
+          const delayMs = cycleDelayMs(account?.delay_minutes);
+          nextCycleAt = delayMs > 0 ? Date.now() + delayMs : 0;
+          if (delayMs > 0) {
+            logPlugActivity(
+              db, accountId, 'info',
+              `Cycle finished — next send scheduled in ${formatDelayLabel(delayMs)}`
+            );
+          }
+          firstCycle = false;
         }
       }
-      if (!state.running) break;
-
-      try {
-        account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ?').get(accountId);
-        await withAuthorizedClient(settings, account.session_string, async (client) => {
-          logPlugActivity(db, accountId, 'info', 'Telegram connected — forwarding saved post link');
-          await runForwardCycle(client, db, accountId, account, state, { logTargetReady: firstCycle });
-        }, account.proxy_url);
-      } catch (err) {
-        if (!state.running) break;
-        const errMsg = String(err.message || err).slice(0, 500);
-        db.prepare('UPDATE plugging_accounts SET last_error = ?, updated_at = datetime(\'now\') WHERE id = ?')
-          .run(errMsg, accountId);
-        logPlugActivity(db, accountId, 'error', `Connection issue (retrying in ${Math.round(RETRY_DELAY_MS / 1000)}s): ${errMsg}`);
-        await waitWhileRunning(state, RETRY_DELAY_MS);
-        continue;
+    } finally {
+      if (runners.get(accountId) === handle) {
+        runners.delete(accountId);
+        db.prepare('UPDATE plugging_accounts SET runner_status = ?, updated_at = datetime(\'now\') WHERE id = ?')
+          .run('stopped', accountId);
+        logPlugActivity(db, accountId, 'stopped', 'Forwarder stopped');
       }
-
-      firstCycle = false;
+      handle.doneResolve?.();
     }
-
-    db.prepare('UPDATE plugging_accounts SET runner_status = ?, updated_at = datetime(\'now\') WHERE id = ?')
-      .run('stopped', accountId);
-    logPlugActivity(db, accountId, 'stopped', 'Forwarder stopped');
-    runners.delete(accountId);
   })();
 
   return { ok: true };
 }
 
 function stopRunner(accountId) {
-  const state = runners.get(accountId);
-  if (state) state.running = false;
+  const handle = runners.get(accountId);
+  if (!handle) return;
+  handle.running = false;
+  handle.generation += 1;
 }
 
 function isRunning(accountId) {
-  const state = runners.get(accountId);
-  return !!(state && state.running);
+  return shouldRun(runners.get(accountId), accountId);
 }
 
 function resumeRunnersOnBoot(db, getSettings) {
@@ -344,28 +412,40 @@ function resumeRunnersOnBoot(db, getSettings) {
       AND po.status = 'approved'
   `).all();
 
-  for (const row of rows) {
-    if (isRunning(row.id)) continue;
-    if (!isPostLink(row.source_link)) continue;
-    if (!parseTargets(row.targets_text).length) continue;
+  return Promise.all(rows.map(async (row) => {
+    if (isRunning(row.id)) return;
+    if (!isPostLink(row.source_link)) return;
+    if (!parseTargets(row.targets_text).length) return;
     try {
-      startRunner(db, row.id, getSettings);
+      await startRunner(db, row.id, getSettings);
       logPlugActivity(db, row.id, 'info', 'Forwarder resumed after server restart');
     } catch (err) {
       db.prepare('UPDATE plugging_accounts SET runner_status = ?, last_error = ?, updated_at = datetime(\'now\') WHERE id = ?')
         .run('stopped', String(err.message || err).slice(0, 500), row.id);
       logPlugActivity(db, row.id, 'error', `Could not resume forwarder: ${String(err.message || err).slice(0, 200)}`);
     }
-  }
+  }));
+}
+
+function setRunnerForTest(accountId, handle) {
+  runners.set(accountId, handle);
+}
+
+function clearRunnerForTest(accountId) {
+  runners.delete(accountId);
 }
 
 module.exports = {
   startRunner,
   stopRunner,
+  stopRunnerGracefully,
   isRunning,
   resumeRunnersOnBoot,
   parseTargets,
   resolveEntityFromLink,
   waitWhileRunning,
-  cycleDelayMs
+  shouldRun,
+  cycleDelayMs,
+  setRunnerForTest,
+  clearRunnerForTest
 };

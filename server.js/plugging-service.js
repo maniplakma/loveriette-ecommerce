@@ -7,7 +7,7 @@ const crypto = require('crypto');
 const appConfig = require('./config');
 const { sendHtmlPage } = require('./send-html-page');
 const { sendLoginCode, verifyLoginCode } = require('./plugging-telegram');
-const { startRunner, stopRunner, isRunning, resumeRunnersOnBoot } = require('./plugging-runner');
+const { startRunner, stopRunner, stopRunnerGracefully, isRunning, resumeRunnersOnBoot } = require('./plugging-runner');
 const { isPostLink, normalizePostLink } = require('./plugging-post');
 const { extractInviteHash } = require('./plugging-join');
 const { pickProxyForNewAccount, listPluggingProxies, autoEnableProxySetting, ensureAccountProxy } = require('./plugging-proxy');
@@ -482,7 +482,7 @@ function mountPluggingService(app, db, deps) {
     }
   });
 
-  app.post('/api/plugging/workspace/accounts/:id/start', requirePlugWorkspace, (req, res) => {
+  app.post('/api/plugging/workspace/accounts/:id/start', requirePlugWorkspace, async (req, res) => {
     let account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ? AND order_id = ?')
       .get(req.params.id, req.plugOrder.id);
     if (!account) return res.status(404).json({ error: 'Account not found' });
@@ -501,18 +501,18 @@ function mountPluggingService(app, db, deps) {
 
       ensureAccountProxy(db, account.id, getPluggingSettings());
       clearAccountActivity(db, account.id);
-      startRunner(db, account.id, getPluggingSettings);
+      await startRunner(db, account.id, getPluggingSettings);
       res.json({ ok: true, runnerStatus: 'running' });
     } catch (err) {
       res.status(400).json({ error: err.message || 'Could not start forwarder' });
     }
   });
 
-  app.post('/api/plugging/workspace/accounts/:id/stop', requirePlugWorkspace, (req, res) => {
+  app.post('/api/plugging/workspace/accounts/:id/stop', requirePlugWorkspace, async (req, res) => {
     const account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ? AND order_id = ?')
       .get(req.params.id, req.plugOrder.id);
     if (!account) return res.status(404).json({ error: 'Account not found' });
-    stopRunner(Number(req.params.id));
+    await stopRunnerGracefully(Number(req.params.id));
     db.prepare('UPDATE plugging_accounts SET runner_status = ?, updated_at = datetime(\'now\') WHERE id = ?')
       .run('stopped', req.params.id);
     logPlugActivity(db, account.id, 'stopped', 'Forwarder stopped manually');
@@ -536,8 +536,8 @@ function mountPluggingService(app, db, deps) {
     res.json({ ok: true });
   });
 
-  app.delete('/api/plugging/workspace/accounts/:id', requirePlugWorkspace, (req, res) => {
-    stopRunner(Number(req.params.id));
+  app.delete('/api/plugging/workspace/accounts/:id', requirePlugWorkspace, async (req, res) => {
+    await stopRunnerGracefully(Number(req.params.id));
     db.prepare('DELETE FROM plugging_accounts WHERE id = ? AND order_id = ?').run(req.params.id, req.plugOrder.id);
     res.json({ ok: true });
   });
@@ -682,11 +682,9 @@ function mountPluggingService(app, db, deps) {
   });
 
   setImmediate(() => {
-    try {
-      resumeRunnersOnBoot(db, getPluggingSettings);
-    } catch (err) {
+    resumeRunnersOnBoot(db, getPluggingSettings).catch((err) => {
       console.error('[plugging] resume runners failed:', err.message);
-    }
+    });
   });
 }
 
