@@ -14,6 +14,7 @@ const {
   buildGamesHubState,
   readGameEnabledState,
   applyGameEnabledState,
+  ensureGamesMasterEnabled,
   disableAllGamePools,
   ensureLoserPrizeForPool,
   defaultPrizeWeight,
@@ -336,9 +337,10 @@ function mountGamesService(app, db, deps) {
   app.post('/admin/games/wheel/:id/activate', requireAdmin, (req, res) => {
     const row = db.prepare('SELECT id FROM game_wheel_campaigns WHERE id = ?').get(req.params.id);
     if (!row) return res.status(404).json({ error: 'Campaign not found' });
+    ensureGamesMasterEnabled(db);
     db.prepare('UPDATE game_wheel_campaigns SET is_enabled = 0').run();
     db.prepare(`UPDATE game_wheel_campaigns SET is_enabled = 1, updated_at = datetime('now') WHERE id = ?`).run(req.params.id);
-    res.json({ ok: true });
+    res.json({ ok: true, gamesEnabled: true });
   });
 
   app.delete('/admin/games/wheel/:id', requireAdmin, (req, res) => {
@@ -417,9 +419,10 @@ function mountGamesService(app, db, deps) {
   app.post('/admin/games/scratch/:id/activate', requireAdmin, (req, res) => {
     const row = db.prepare('SELECT id FROM game_scratch_pools WHERE id = ?').get(req.params.id);
     if (!row) return res.status(404).json({ error: 'Pool not found' });
+    ensureGamesMasterEnabled(db);
     db.prepare('UPDATE game_scratch_pools SET is_enabled = 0').run();
     db.prepare(`UPDATE game_scratch_pools SET is_enabled = 1, updated_at = datetime('now') WHERE id = ?`).run(req.params.id);
-    res.json({ ok: true });
+    res.json({ ok: true, gamesEnabled: true });
   });
 
   app.delete('/admin/games/scratch/:id', requireAdmin, (req, res) => {
@@ -548,9 +551,10 @@ function mountGamesService(app, db, deps) {
   app.post('/admin/games/mystery/:id/activate', requireAdmin, (req, res) => {
     const row = db.prepare('SELECT id FROM game_mystery_pools WHERE id = ?').get(req.params.id);
     if (!row) return res.status(404).json({ error: 'Pool not found' });
+    ensureGamesMasterEnabled(db);
     db.prepare('UPDATE game_mystery_pools SET is_enabled = 0').run();
     db.prepare(`UPDATE game_mystery_pools SET is_enabled = 1, updated_at = datetime('now') WHERE id = ?`).run(req.params.id);
-    res.json({ ok: true });
+    res.json({ ok: true, gamesEnabled: true });
   });
 
   app.delete('/admin/games/mystery/:id', requireAdmin, (req, res) => {
@@ -641,6 +645,7 @@ function mountGamesService(app, db, deps) {
     const pool = db.prepare('SELECT * FROM game_instant_pools WHERE game_key = ?').get(req.params.key);
     if (!pool) return res.status(404).json({ error: 'Game not found' });
     const b = req.body || {};
+    if (b.isEnabled) ensureGamesMasterEnabled(db);
     db.prepare(`
       UPDATE game_instant_pools SET
         title = COALESCE(?, title),
