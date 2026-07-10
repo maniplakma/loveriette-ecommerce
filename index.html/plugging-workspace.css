@@ -222,6 +222,13 @@ body.plug-body {
   opacity: 0.75;
 }
 
+.plug-field-hint {
+  margin: -0.15rem 0 0.65rem;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--text-muted, #a4907c);
+}
+
 .plug-field-input,
 .plug-field-textarea {
   width: 100%;

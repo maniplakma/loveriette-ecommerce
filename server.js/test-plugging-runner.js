@@ -40,11 +40,11 @@ async function testCycleDelayMs() {
 }
 
 function testComputeNextCycleAt() {
-  const start = Date.now();
+  const end = Date.now();
   const delay = 70 * 60 * 1000;
-  assert.strictEqual(computeNextCycleAt(start, 70), start + delay);
-  assert.strictEqual(computeNextCycleAt(start, 70, start + delay + 1000), 0);
-  assert.strictEqual(computeNextCycleAt(start, 0), 0);
+  assert.strictEqual(computeNextCycleAt(end, 70), end + delay);
+  assert.strictEqual(computeNextCycleAt(end, 0), 0);
+  assert.strictEqual(computeNextCycleAt(null, 70), 0);
 }
 
 async function main() {

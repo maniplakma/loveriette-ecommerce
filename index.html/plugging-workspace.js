@@ -436,7 +436,7 @@ async function saveAccountConfig(id, { silent = false } = {}) {
       const delay = document.getElementById('cfg-delay');
       const targets = document.getElementById('cfg-targets');
       if (source) source.value = saved.sourceLink || '';
-      if (delay) delay.value = saved.delayMinutes ?? 70;
+      if (delay) delay.value = saved.delayMinutes ?? 40;
       if (targets) targets.value = saved.targetsText || '';
     }
     if (!silent) setConfigSaveMessage('Settings saved.');
@@ -562,7 +562,8 @@ function renderAccountDetail(id) {
       <label>Post link</label>
       <input id="cfg-source" class="plug-field-input" value="${esc(a.sourceLink)}" placeholder="https://t.me/channel/123">
       <label>Delay between cycles (minutes)</label>
-      <input id="cfg-delay" class="plug-field-input" type="number" min="0" value="${a.delayMinutes}" placeholder="70">
+      <input id="cfg-delay" class="plug-field-input" type="number" min="0" value="${a.delayMinutes}" placeholder="40">
+      <p class="plug-field-hint">Wait this long after each cycle finishes before plugging again. Save settings, then Start.</p>
       <label>Target groups</label>
       <textarea id="cfg-targets" class="plug-field-textarea" placeholder="@group1&#10;@group2">${esc(a.targetsText)}</textarea>
       <div class="plug-config-actions">

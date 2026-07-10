@@ -30,11 +30,10 @@ function parseTargets(text) {
     .filter(Boolean);
 }
 
-function computeNextCycleAt(cycleStartedAt, delayMinutes, now = Date.now()) {
+function computeNextCycleAt(cycleEndedAt, delayMinutes) {
   const delayMs = cycleDelayMs(delayMinutes);
-  if (!delayMs || delayMs <= 0) return 0;
-  const next = cycleStartedAt + delayMs;
-  return next > now ? next : 0;
+  if (!delayMs || delayMs <= 0 || !cycleEndedAt) return 0;
+  return cycleEndedAt + delayMs;
 }
 
 function sleep(ms) {
@@ -217,20 +216,19 @@ function pruneTargetTracker(tracker, refs) {
 }
 
 async function runForwardCycle(client, db, accountId, account, handle) {
-  if (!shouldRun(handle, accountId)) return { cancelled: true, cycleStartedAt: null };
+  if (!shouldRun(handle, accountId)) return { cancelled: true, cycleEndedAt: null };
 
   const postLinkNow = String(account.source_link || '').trim();
   if (!isPostLink(postLinkNow)) {
     throw new Error('Invalid post link — use https://t.me/channel/123');
   }
 
-  const cycleStartedAt = Date.now();
   const targetRefs = parseTargets(account.targets_text);
   pruneTargetTracker(handle.targetTracker, targetRefs);
 
   const resolved = await resolvePostMessage(client, postLinkNow, null);
 
-  if (!shouldRun(handle, accountId)) return { cancelled: true, cycleStartedAt };
+  if (!shouldRun(handle, accountId)) return { cancelled: true, cycleEndedAt: Date.now() };
 
   let okCount = 0;
   let failCount = 0;
@@ -241,7 +239,7 @@ async function runForwardCycle(client, db, accountId, account, handle) {
 
   for (let i = 0; i < targetRefs.length; i++) {
     if (!shouldRun(handle, accountId)) {
-      return { okCount, failCount, cancelled: true, cycleStartedAt };
+      return { okCount, failCount, cancelled: true, cycleEndedAt: Date.now() };
     }
 
     const ref = targetRefs[i];
@@ -260,7 +258,7 @@ async function runForwardCycle(client, db, accountId, account, handle) {
     );
 
     if (!shouldRun(handle, accountId)) {
-      return { okCount, failCount, cancelled: true, cycleStartedAt };
+      return { okCount, failCount, cancelled: true, cycleEndedAt: Date.now() };
     }
 
     if (result.ok) {
@@ -287,7 +285,7 @@ async function runForwardCycle(client, db, accountId, account, handle) {
     logPlugActivity(db, accountId, 'complete', `Cycle complete — post #${resolved.messageId} failed on all groups`);
   }
 
-  return { okCount, failCount, cancelled: false, cycleStartedAt };
+  return { okCount, failCount, cancelled: false, cycleEndedAt: Date.now() };
 }
 
 function createRunnerHandle(accountId, previous) {
@@ -363,26 +361,31 @@ async function startRunner(db, accountId, getSettings) {
         }
         if (!shouldRun(handle, accountId)) break;
 
-        let cycleStartedAt = null;
+        let cycleEndedAt = null;
         try {
           account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ?').get(accountId);
           await withAuthorizedClient(settings, account.session_string, async (client) => {
             if (!shouldRun(handle, accountId)) return;
             const result = await runForwardCycle(client, db, accountId, account, handle);
-            cycleStartedAt = result?.cycleStartedAt || null;
+            cycleEndedAt = result?.cycleEndedAt || null;
             if (result?.cancelled) return;
             account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ?').get(accountId);
-            const delayMs = cycleDelayMs(account?.delay_minutes);
-            if (delayMs > 0 && cycleStartedAt) {
-              nextCycleAt = computeNextCycleAt(cycleStartedAt, account?.delay_minutes);
-              if (nextCycleAt > Date.now()) {
+            const delayMin = Number(account?.delay_minutes) || 0;
+            const delayMs = cycleDelayMs(delayMin);
+            if (delayMs > 0 && cycleEndedAt) {
+              nextCycleAt = computeNextCycleAt(cycleEndedAt, delayMin);
+              const waitMs = nextCycleAt - Date.now();
+              if (waitMs > 0) {
                 logPlugActivity(
                   db, accountId, 'info',
-                  `Next cycle at ${new Date(nextCycleAt).toLocaleTimeString()} (${formatDelayLabel(nextCycleAt - Date.now())})`
+                  `Cycle delay — waiting ${formatDelayLabel(waitMs)} (${delayMin} min after cycle end). Next at ${new Date(nextCycleAt).toLocaleTimeString()}`
                 );
               }
             } else {
               nextCycleAt = 0;
+              if (cycleEndedAt && delayMin <= 0) {
+                logPlugActivity(db, accountId, 'info', 'Cycle delay is 0 — next cycle runs immediately');
+              }
             }
           }, account.proxy_url);
         } catch (err) {
