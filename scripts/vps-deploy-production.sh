@@ -95,5 +95,7 @@ fi
 echo ""
 echo "==> Deploy complete. Hard refresh browser: Ctrl+Shift+R"
 echo "    Games page should load games-page.js?v=20260710smooth"
+echo "    Admin games: per-game off toggles (admin-games.js?v=20260710gameoff)"
+echo "    First boot after this deploy auto-closes all 6 games (games_all_closed_v1)"
 echo "    Live: https://loveriette.shop/games"
 pm2 list
