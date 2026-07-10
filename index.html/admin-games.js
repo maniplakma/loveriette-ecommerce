@@ -13,16 +13,16 @@
     { key: 'vault', label: 'Treasure Vault' }
   ];
   const PRIZE_TYPES = [
-    { v: 'wallet', l: '₱ Wallet credit', help: 'Halagang idadagdag sa wallet (automatic). Sa Value: hal. 500', valueHint: 'Amount sa ₱, hal. 500', wheel: true },
-    { v: 'loyalty', l: 'Loyalty points', help: 'Katulad ng wallet — auto credit + notification.', valueHint: 'Amount sa ₱, hal. 100', wheel: true },
-    { v: 'redeem', l: 'Voucher / discount code', help: 'Auto-generate ng code sa checkout.', valueHint: 'Hal. 50 o {"discountValue":50}', wheel: true },
-    { v: 'product', l: 'Product prize', help: 'Buyer mag-screenshot at mag-Telegram sa iyo.', valueHint: 'Pwede blank — message lang sa buyer', wheel: true },
-    { v: 'account', l: 'Account prize', help: 'Account/credential prize — screenshot + Telegram.', valueHint: 'Pwede blank', wheel: true },
-    { v: 'netflix', l: 'Netflix / streaming', help: 'Streaming subscription — screenshot + Telegram.', valueHint: 'Pwede blank', wheel: true },
-    { v: 'plug_access', l: 'Plugging access', help: 'Access sa plugging (hal. bilang ng araw).', valueHint: 'Bilang ng araw, hal. 7', wheel: true },
-    { v: 'custom', l: 'Custom prize', help: 'Ibang prize — ikaw ang mag-follow up sa buyer.', valueHint: 'Optional notes', wheel: true },
-    { v: 'none', l: 'Walang panalo (Better luck)', help: 'Para sa scratch/dice/box — hindi nanalo. Gamitin ang mataas na weight (25–40).', valueHint: 'Blank lang', wheel: false },
-    { v: 'bomb', l: 'Boom (scratch)', help: 'Visual na “boom” sa scratch — same as talo.', valueHint: 'Blank lang', wheel: false }
+    { v: 'wallet', l: '₱ Wallet credit', help: 'Amount auto-credited to the buyer wallet. Value = amount in ₱, e.g. 500', valueHint: 'Amount in ₱, e.g. 500', wheel: true },
+    { v: 'loyalty', l: 'Loyalty points', help: 'Same as wallet — auto credit plus notification.', valueHint: 'Amount in ₱, e.g. 100', wheel: true },
+    { v: 'redeem', l: 'Voucher / discount code', help: 'Auto-generates a checkout discount code.', valueHint: 'e.g. 50 or {"discountValue":50}', wheel: true },
+    { v: 'product', l: 'Product prize', help: 'Buyer sends a screenshot via Telegram.', valueHint: 'Optional — message shown to buyer', wheel: true },
+    { v: 'account', l: 'Account prize', help: 'Account/credential prize — screenshot plus Telegram.', valueHint: 'Optional', wheel: true },
+    { v: 'netflix', l: 'Netflix / streaming', help: 'Streaming subscription — screenshot plus Telegram.', valueHint: 'Optional', wheel: true },
+    { v: 'plug_access', l: 'Plugging access', help: 'Plugging service access (days).', valueHint: 'Number of days, e.g. 7', wheel: true },
+    { v: 'custom', l: 'Custom prize', help: 'Other prize — you follow up with the buyer manually.', valueHint: 'Optional notes', wheel: true },
+    { v: 'none', l: 'No win (Better luck)', help: 'For scratch/dice/box — player loses. Use high weight (25–40).', valueHint: 'Leave blank', wheel: false },
+    { v: 'bomb', l: 'Boom (scratch)', help: 'Visual “boom” on scratch — same as a loss.', valueHint: 'Leave blank', wheel: false }
   ];
 
   let gamesLoaded = false;
@@ -163,13 +163,13 @@
     const defaultType = preset.prizeType || (isWheel ? 'loyalty' : 'wallet');
     row.innerHTML = `
       <div class="admin-prize-inline-fields">
-        <input type="text" class="admin-modal-input prize-inline-label" placeholder="Pangalan (hal. Loyalty ₱400)" value="${esc(preset.label || '')}">
-        <select class="admin-modal-input prize-inline-type" title="Uri ng prize">${prizeTypeSelectHtml(kind, defaultType)}</select>
+        <input type="text" class="admin-modal-input prize-inline-label" placeholder="Name (e.g. Loyalty ₱400)" value="${esc(preset.label || '')}">
+        <select class="admin-modal-input prize-inline-type" title="Prize type">${prizeTypeSelectHtml(kind, defaultType)}</select>
         <input type="text" class="admin-modal-input prize-inline-value" placeholder="Value" value="${esc(preset.prizeValue || '')}">
         <input type="number" class="admin-modal-input prize-inline-qty" min="-1" value="${preset.quantity ?? (isWheel ? 1 : -1)}" title="${isWheel ? 'Winners' : 'Max winners'}">
         <input type="number" class="admin-modal-input prize-inline-weight" min="1" value="${preset.weight ?? 3}" title="Weight (chance)"${isWheel ? ' hidden' : ''}>
       </div>
-      <button type="button" class="admin-btn admin-btn-ghost admin-btn-sm prize-inline-remove" title="Alisin">×</button>`;
+      <button type="button" class="admin-btn admin-btn-ghost admin-btn-sm prize-inline-remove" title="Remove">×</button>`;
     row.querySelector('.prize-inline-remove')?.addEventListener('click', () => row.remove());
     listEl.appendChild(row);
   }
@@ -264,7 +264,7 @@
   }
 
   function prizeListHtml(prizes, kind, parentId) {
-    if (!prizes?.length) return '<li class="admin-muted">Wala pang prize — click Add prize</li>';
+    if (!prizes?.length) return '<li class="admin-muted">No prizes yet — click Add prize</li>';
     return prizes.map((pr) => `
       <li class="admin-prize-li">
         <span><strong>${esc(pr.label)}</strong>
@@ -317,15 +317,15 @@
     if (valueHint) valueHint.textContent = meta.valueHint || '';
     if (kind === 'wheel') {
       if (weightWrap) weightWrap.hidden = true;
-      if (qtyLabel) qtyLabel.textContent = 'Ilang nanalo para sa prize na ito?';
-      if (qtyHint) qtyHint.textContent = '1 = isang spin/winner. Hal. 3 prizes × qty 1 = 3 spins.';
+      if (qtyLabel) qtyLabel.textContent = 'How many winners for this prize?';
+      if (qtyHint) qtyHint.textContent = '1 = one spin/winner. e.g. 3 prizes × qty 1 = 3 spins.';
       if (qtyWrap) qtyWrap.hidden = false;
       const qty = document.getElementById('games-prize-quantity');
       if (qty && Number(qty.value) < 1) qty.value = '1';
     } else {
       if (weightWrap) weightWrap.hidden = false;
       if (qtyLabel) qtyLabel.textContent = 'Max winners (quantity)';
-      if (qtyHint) qtyHint.textContent = '-1 = unlimited. Hal. 5 = max 5 buyers ang makakakuha ng prize na ito.';
+      if (qtyHint) qtyHint.textContent = '-1 = unlimited. e.g. 5 = max 5 buyers can win this prize.';
       if (qtyWrap) qtyWrap.hidden = false;
     }
     const isLoser = type === 'none' || type === 'bomb';
@@ -398,7 +398,7 @@
     const prizeValue = document.getElementById('games-prize-value')?.value.trim() || '';
     const quantity = Number(document.getElementById('games-prize-quantity')?.value);
     const weight = Math.max(1, Number(document.getElementById('games-prize-weight')?.value) || 3);
-    if (!label) { alert('Ilagay ang prize name'); return; }
+    if (!label) { alert('Enter a prize name'); return; }
 
     const isLoser = prizeType === 'none' || prizeType === 'bomb';
     let url;
@@ -447,6 +447,117 @@
     else if (kind === 'scratch') loadScratchAdmin();
     else if (kind === 'mystery') loadMysteryAdmin();
     else loadInstantAdmin();
+  }
+
+  async function activateCampaign(kind, id) {
+    await api(`/admin/games/${kind}/${id}/activate`, { method: 'POST', body: '{}' });
+    await syncGameToggleForKind(kind, true);
+    if (kind === 'wheel') loadWheelAdmin();
+    else if (kind === 'scratch') loadScratchAdmin();
+    else loadMysteryAdmin();
+  }
+
+  async function deactivateCampaign(kind, id) {
+    const path = kind === 'instant'
+      ? `/admin/games/instant/${id}`
+      : `/admin/games/${kind}/${id}`;
+    await api(path, { method: 'PUT', body: JSON.stringify({ isEnabled: false }) });
+    await syncGameToggleForKind(kind, false);
+    if (kind === 'wheel') loadWheelAdmin();
+    else if (kind === 'scratch') loadScratchAdmin();
+    else if (kind === 'mystery') loadMysteryAdmin();
+    else loadInstantAdmin();
+  }
+
+  async function deleteCampaign(kind, id, title) {
+    const label = kind === 'wheel' ? 'campaign' : (kind === 'instant' ? 'game pool' : 'pool');
+    if (!confirm(`Delete ${label} “${title}”? This cannot be undone.`)) return;
+    const path = kind === 'instant'
+      ? null
+      : `/admin/games/${kind}/${id}`;
+    if (!path) return;
+    await api(path, { method: 'DELETE' });
+    if (kind === 'wheel') loadWheelAdmin();
+    else if (kind === 'scratch') loadScratchAdmin();
+    else loadMysteryAdmin();
+  }
+
+  async function syncGameToggleForKind(kind, on) {
+    const keyMap = { wheel: 'wheel', scratch: 'scratch', mystery: 'mystery' };
+    const gameKey = keyMap[kind];
+    if (!gameKey) return;
+    const inp = document.querySelector(`.games-open-toggle[data-game-key="${gameKey}"]`);
+    if (inp && inp.checked !== on) {
+      inp.checked = on;
+      const stateEl = inp.closest('.admin-games-open-item')?.querySelector('.admin-games-open-state');
+      if (stateEl) stateEl.textContent = on ? 'Open' : 'Closed';
+    }
+    await saveGamesSettings();
+  }
+
+  async function toggleInstantGame(gameKey, enabled) {
+    await api(`/admin/games/instant/${gameKey}`, {
+      method: 'PUT',
+      body: JSON.stringify({ isEnabled: enabled })
+    });
+    const inp = document.querySelector(`.games-open-toggle[data-game-key="${gameKey}"]`);
+    if (inp) {
+      inp.checked = enabled;
+      const stateEl = inp.closest('.admin-games-open-item')?.querySelector('.admin-games-open-state');
+      if (stateEl) stateEl.textContent = enabled ? 'Open' : 'Closed';
+    }
+    await saveGamesSettings();
+    loadInstantAdmin();
+  }
+
+  function campaignActionButtons(kind, item) {
+    const id = item.id;
+    const key = item.gameKey;
+    const title = item.title || '';
+    const on = !!item.isEnabled;
+    if (kind === 'instant') {
+      return `
+        <div class="admin-inline-actions admin-campaign-actions">
+          ${on
+    ? `<button type="button" class="admin-btn admin-btn-outline admin-btn-sm admin-instant-off" data-key="${esc(key)}">Turn off</button>`
+    : `<button type="button" class="admin-btn admin-btn-primary admin-btn-sm admin-instant-on" data-key="${esc(key)}">Turn on</button>`}
+        </div>`;
+    }
+    return `
+      <div class="admin-inline-actions admin-campaign-actions">
+        ${on
+    ? `<button type="button" class="admin-btn admin-btn-outline admin-btn-sm admin-campaign-off" data-kind="${kind}" data-id="${id}">Turn off</button>`
+    : `<button type="button" class="admin-btn admin-btn-primary admin-btn-sm admin-campaign-activate" data-kind="${kind}" data-id="${id}">Turn on (live)</button>`}
+        <button type="button" class="admin-btn admin-btn-ghost admin-btn-sm admin-campaign-delete" data-kind="${kind}" data-id="${id}" data-title="${esc(title)}">Delete</button>
+      </div>`;
+  }
+
+  function bindCampaignActions(root) {
+    root.querySelectorAll('.admin-campaign-activate').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        activateCampaign(btn.dataset.kind, btn.dataset.id).catch((e) => alert(e.message));
+      });
+    });
+    root.querySelectorAll('.admin-campaign-off').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        deactivateCampaign(btn.dataset.kind, btn.dataset.id).catch((e) => alert(e.message));
+      });
+    });
+    root.querySelectorAll('.admin-campaign-delete').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        deleteCampaign(btn.dataset.kind, btn.dataset.id, btn.dataset.title).catch((e) => alert(e.message));
+      });
+    });
+    root.querySelectorAll('.admin-instant-on').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        toggleInstantGame(btn.dataset.key, true).catch((e) => alert(e.message));
+      });
+    });
+    root.querySelectorAll('.admin-instant-off').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        toggleInstantGame(btn.dataset.key, false).catch((e) => alert(e.message));
+      });
+    });
   }
 
   function openWheelMaxModal(campaignId, currentMax) {
@@ -527,6 +638,7 @@
           <span class="admin-badge">${c.isEnabled ? 'ON' : 'OFF'} · ${esc(c.status)}</span>
         </div>
         <p class="admin-muted">Max entries: ${c.maxEntries || '—'} · Joined: ${c.entryCount || 0}${c.maxEntries ? ` / ${c.maxEntries}` : ''} · Min order: ₱${c.minOrderTotal || 0}</p>
+        ${campaignActionButtons('wheel', c)}
         ${c.status === 'scheduled' ? `<button type="button" class="admin-btn admin-btn-outline admin-btn-sm admin-wheel-max" data-id="${c.id}" data-max="${c.maxEntries || 20}">Edit max entries</button>` : ''}
         ${c.winner ? `<p class="admin-success-text">Winner: ${esc(c.winner.displayName)} (#${esc(c.winner.orderNumber)})</p>` : ''}
         ${(c.winners || []).length > 1 ? `<p class="admin-muted">All winners: ${c.winners.map((w) => `${esc(w.displayName)} (${esc(w.prizeLabel)})`).join(', ')}</p>` : ''}
@@ -563,6 +675,7 @@
       btn.addEventListener('click', () => openPrizeModal('wheel', btn.dataset.id));
     });
     bindPrizeRowActions(list);
+    bindCampaignActions(list);
   }
 
   async function loadScratchAdmin() {
@@ -580,6 +693,7 @@
           <span class="admin-badge">${p.isEnabled ? 'ON' : 'OFF'}</span>
         </div>
         <p class="admin-muted">Min order: ₱${p.min_order_total || p.minOrderTotal || 0}${p.endsAt ? ` · Ends: ${esc(p.endsAt)}` : ''}</p>
+        ${campaignActionButtons('scratch', p)}
         <button type="button" class="admin-btn admin-btn-outline admin-btn-sm admin-pool-ends" data-kind="scratch" data-id="${p.id}" data-ends="${esc(p.endsAt || '')}">Set end date</button>
         <ul class="admin-prize-list">${prizeListHtml(p.prizes, 'scratch', p.id)}</ul>
         <button type="button" class="admin-btn admin-btn-outline admin-scratch-add-prize" data-id="${p.id}">Add scratch prize</button>
@@ -591,6 +705,7 @@
       btn.addEventListener('click', () => setPoolEndDate(btn.dataset.kind, btn.dataset.id, btn.dataset.ends));
     });
     bindPrizeRowActions(list);
+    bindCampaignActions(list);
   }
 
   async function loadMysteryAdmin() {
@@ -608,6 +723,7 @@
           <span class="admin-badge">${p.isEnabled ? 'ON' : 'OFF'}</span>
         </div>
         <p class="admin-muted">Min order: ₱${p.min_order_total || p.minOrderTotal || 0}${p.endsAt ? ` · Ends: ${esc(p.endsAt)}` : ''}</p>
+        ${campaignActionButtons('mystery', p)}
         <button type="button" class="admin-btn admin-btn-outline admin-btn-sm admin-pool-ends" data-kind="mystery" data-id="${p.id}" data-ends="${esc(p.endsAt || '')}">Set end date</button>
         <ul class="admin-prize-list">${prizeListHtml(p.prizes, 'mystery', p.id)}</ul>
         <button type="button" class="admin-btn admin-btn-outline admin-mystery-add-prize" data-id="${p.id}">Add box prize</button>
@@ -619,6 +735,7 @@
       btn.addEventListener('click', () => setPoolEndDate(btn.dataset.kind, btn.dataset.id, btn.dataset.ends));
     });
     bindPrizeRowActions(list);
+    bindCampaignActions(list);
   }
 
   async function setPoolEndDate(kind, id, currentEndsAt) {
@@ -656,6 +773,7 @@
           <span class="admin-badge">${p.isEnabled ? 'ON' : 'OFF'} · ${esc(p.gameKey)}</span>
         </div>
         <p class="admin-muted">Min order: ₱${p.minOrderTotal || 0}${p.endsAt ? ` · Ends: ${esc(p.endsAt)}` : ''}</p>
+        ${campaignActionButtons('instant', p)}
         <button type="button" class="admin-btn admin-btn-outline admin-btn-sm admin-pool-ends" data-kind="instant" data-id="${p.gameKey}" data-ends="${esc(p.endsAt || '')}">Set end date</button>
         <ul class="admin-prize-list">${prizeListHtml(p.prizes, 'instant', p.gameKey)}</ul>
         <button type="button" class="admin-btn admin-btn-outline admin-instant-add-prize" data-key="${p.gameKey}">Add prize</button>
@@ -667,6 +785,7 @@
       btn.addEventListener('click', () => setPoolEndDate(btn.dataset.kind, btn.dataset.id, btn.dataset.ends));
     });
     bindPrizeRowActions(list);
+    bindCampaignActions(list);
   }
 
   function bindGamesForms() {

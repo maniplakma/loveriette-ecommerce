@@ -659,7 +659,17 @@
             <h2>Shop Games</h2>
             <label class="admin-toggle"><input type="checkbox" id="games-enabled-toggle"> <span>Enable game credits after delivery</span></label>
           </div>
-          <p class="admin-card-meta" style="margin:0 0 .65rem">The <strong>/games</strong> page always stays visible. Unchecking this pauses new game credits; use per-game toggles below to show closed games.</p>
+          <p class="admin-card-meta" style="margin:0 0 .65rem">The <strong>/games</strong> page always stays visible. Unchecking the master toggle pauses new game credits; use per-game toggles below to show games as open or closed.</p>
+          <details class="admin-games-howto" open>
+            <summary>How to open a game on /games</summary>
+            <ol class="admin-card-meta admin-games-howto-list">
+              <li>Turn on <strong>Enable game credits after delivery</strong> (top right).</li>
+              <li>Set the game to <strong>Open</strong> in the per-game toggles below (e.g. Spin the Wheel).</li>
+              <li>Create a campaign/pool, add prizes, then click <strong>Turn on (live)</strong> on that campaign.</li>
+              <li>For the wheel: campaign must be <strong>scheduled</strong> (not drawn), within start/end dates, and on an allowed day.</li>
+              <li>Buyers unlock games after their order is <strong>delivered</strong> and meets eligibility rules.</li>
+            </ol>
+          </details>
           <div class="admin-games-open-panel">
             <div class="admin-panel-head" style="margin-bottom:.5rem">
               <h3 style="margin:0;font-size:1rem">Open / closed per game</h3>
@@ -701,17 +711,17 @@
             <button type="button" class="admin-games-subtab" data-games-tab="instant">Instant Games</button>
           </div>
           <details class="admin-games-prize-guide">
-            <summary>Prize types — ano ang ibig sabihin?</summary>
+            <summary>Prize types — what they mean</summary>
             <ul class="admin-card-meta" style="margin:0.5rem 0 0;padding-left:1.1rem;line-height:1.55">
-              <li><strong>Wallet / Loyalty</strong> — ₱ amount na auto-credit sa wallet ng buyer. Ilagay ang halaga sa Value (hal. <code>500</code>).</li>
-              <li><strong>Voucher (redeem)</strong> — auto-generate ng discount code. Value: <code>50</code> o <code>{"discountValue":50}</code>.</li>
-              <li><strong>Product / Account / Netflix</strong> — physical o account prize; buyer mag-screenshot at Telegram sa iyo.</li>
-              <li><strong>Plug access</strong> — plugging service access (hal. <code>7</code> days sa Value).</li>
-              <li><strong>Custom</strong> — ibang prize; ikaw ang mag-follow up.</li>
-              <li><strong>Walang panalo (none)</strong> — “Better luck” para sa scratch/dice/box. <em>Mataas na weight (25–40)</em> = mas madalas talo.</li>
-              <li><strong>Boom</strong> — scratch lang, visual na talo (same as none).</li>
+              <li><strong>Wallet / Loyalty</strong> — ₱ amount auto-credited to the buyer wallet. Put the amount in Value (e.g. <code>500</code>).</li>
+              <li><strong>Voucher (redeem)</strong> — auto-generates a discount code. Value: <code>50</code> or <code>{"discountValue":50}</code>.</li>
+              <li><strong>Product / Account / Netflix</strong> — physical or account prize; buyer sends a screenshot via Telegram.</li>
+              <li><strong>Plug access</strong> — plugging service access (e.g. <code>7</code> days in Value).</li>
+              <li><strong>Custom</strong> — other prize; you follow up manually.</li>
+              <li><strong>No win (none)</strong> — “Better luck” for scratch/dice/box. <em>High weight (25–40)</em> = loses more often.</li>
+              <li><strong>Boom</strong> — scratch only, visual loss (same as none).</li>
             </ul>
-            <p class="admin-card-meta" style="margin-top:0.5rem"><strong>Wheel:</strong> quantity = ilang nanalo para sa prize na iyon (1 prize = 1 spin). <strong>Ibang games:</strong> weight = chance; quantity = max winners (-1 = unlimited).</p>
+            <p class="admin-card-meta" style="margin-top:0.5rem"><strong>Wheel:</strong> quantity = winners for that prize (1 prize = 1 spin). <strong>Other games:</strong> weight = chance; quantity = max winners (-1 = unlimited).</p>
           </details>
         </div>
 
@@ -739,8 +749,8 @@
               </div>
               <label class="admin-toggle"><input type="checkbox" name="isEnabled" checked> <span>Enabled</span></label>
               <div class="admin-prize-inline-block">
-                <p class="admin-field-label">Prizes <small class="admin-muted">(ilagay dito — hindi na popup)</small></p>
-                <p class="admin-card-meta">Pangalan · Uri · Value · Qty (1 = isang spin/winner). Puwede ring mag-add pagkatapos sa campaign list.</p>
+                <p class="admin-field-label">Prizes</p>
+                <p class="admin-card-meta">Name · Type · Value · Qty (1 = one spin/winner). You can also add prizes later from the campaign list.</p>
                 <div id="wheel-create-prize-rows" class="admin-prize-inline-rows" data-prize-kind="wheel"></div>
                 <button type="button" class="admin-btn admin-btn-outline admin-btn-sm" id="wheel-create-prize-add">+ Add prize</button>
               </div>
@@ -762,14 +772,14 @@
               <div class="admin-field"><label>Ends (optional)</label><input type="datetime-local" name="endsAt"></div>
               <label class="admin-toggle"><input type="checkbox" name="isEnabled" checked> <span>Enabled</span></label>
               <div class="admin-prize-inline-block">
-                <p class="admin-field-label">Prizes <small class="admin-muted">(ilagay dito)</small></p>
-                <p class="admin-card-meta">Weight = chance (talo/none: 25–40). Qty = max winners (-1 = unlimited).</p>
+                <p class="admin-field-label">Prizes</p>
+                <p class="admin-card-meta">Weight = chance (loss/none: 25–40). Qty = max winners (-1 = unlimited).</p>
                 <div id="scratch-create-prize-rows" class="admin-prize-inline-rows" data-prize-kind="scratch"></div>
                 <button type="button" class="admin-btn admin-btn-outline admin-btn-sm" id="scratch-create-prize-add">+ Add prize</button>
               </div>
               <button type="submit" class="admin-btn admin-btn-primary">Create / enable pool</button>
             </form>
-            <p class="admin-card-meta" style="margin-top:0.75rem">Set end date sa pool list para may countdown ang buyers.</p>
+            <p class="admin-card-meta" style="margin-top:0.75rem">Set an end date on the pool list to show a countdown to buyers.</p>
           </div>
           <div id="admin-games-scratch-list" style="margin-top:1rem"></div>
         </div>
@@ -783,7 +793,7 @@
               <div class="admin-field"><label>Ends (optional)</label><input type="datetime-local" name="endsAt"></div>
               <label class="admin-toggle"><input type="checkbox" name="isEnabled" checked> <span>Enabled</span></label>
               <div class="admin-prize-inline-block">
-                <p class="admin-field-label">Prizes <small class="admin-muted">(ilagay dito)</small></p>
+                <p class="admin-field-label">Prizes</p>
                 <div id="mystery-create-prize-rows" class="admin-prize-inline-rows" data-prize-kind="mystery"></div>
                 <button type="button" class="admin-btn admin-btn-outline admin-btn-sm" id="mystery-create-prize-add">+ Add prize</button>
               </div>
@@ -889,17 +899,17 @@
       </div>
       <form id="games-prize-form" class="admin-modal-body">
         <div class="admin-field">
-          <label for="games-prize-label">Prize name <small>(nakikita ng buyer)</small></label>
-          <input id="games-prize-label" class="admin-modal-input" required placeholder="Hal. Loyalty ₱400, Netflix 1 Month">
+          <label for="games-prize-label">Prize name <small>(shown to buyers)</small></label>
+          <input id="games-prize-label" class="admin-modal-input" required placeholder="e.g. Loyalty ₱400, Netflix 1 Month">
         </div>
         <div class="admin-field">
-          <label for="games-prize-type">Uri ng prize</label>
+          <label for="games-prize-type">Prize type</label>
           <select id="games-prize-type" class="admin-modal-input" required></select>
           <p class="admin-card-meta" id="games-prize-type-help" style="margin-top:0.35rem"></p>
         </div>
         <div class="admin-field" id="games-prize-value-wrap">
           <label for="games-prize-value">Value</label>
-          <input id="games-prize-value" class="admin-modal-input" placeholder="Hal. 500 para sa ₱500">
+          <input id="games-prize-value" class="admin-modal-input" placeholder="e.g. 500 for ₱500">
           <small class="admin-card-meta" id="games-prize-value-hint"></small>
         </div>
         <div class="admin-field" id="games-prize-quantity-wrap">
@@ -910,7 +920,7 @@
         <div class="admin-field" id="games-prize-weight-wrap" hidden>
           <label for="games-prize-weight">Weight (chance)</label>
           <input type="number" id="games-prize-weight" class="admin-modal-input" value="3" min="1">
-          <small class="admin-card-meta">Mataas = mas madalas lumabas. Panalo: 2–5 · Talo (none): 25–40</small>
+          <small class="admin-card-meta">Higher = more common. Wins: 2–5 · Loss (none): 25–40</small>
         </div>
         <input type="hidden" id="games-prize-edit-id" value="">
         <input type="hidden" id="games-prize-kind" value="">
@@ -933,7 +943,7 @@
         <div class="admin-field">
           <label for="games-pool-ends-input">End date &amp; time</label>
           <input type="datetime-local" id="games-pool-ends-input" class="admin-modal-input">
-          <p class="admin-card-meta">Iwanang blank para alisin ang end date.</p>
+          <p class="admin-card-meta">Leave blank to remove the end date.</p>
         </div>
         <input type="hidden" id="games-pool-ends-kind" value="">
         <input type="hidden" id="games-pool-ends-id" value="">
@@ -952,7 +962,7 @@
         <div class="admin-field">
           <label for="games-wheel-max-input">Max entries (orders)</label>
           <input type="number" id="games-wheel-max-input" class="admin-modal-input" min="1" required>
-          <p class="admin-card-meta">Auto-draw ang wheel kapag mapuno ang bilang na ito.</p>
+          <p class="admin-card-meta">The wheel auto-draws when this many orders join.</p>
         </div>
         <input type="hidden" id="games-wheel-max-campaign" value="">
         <button type="submit" class="admin-btn admin-btn-primary">Save</button>
@@ -1031,7 +1041,7 @@
   <script src="badges.js?v=20260614tabs"></script>
   <script src="admin.js?v=20260707perf"></script>
   <script src="admin-platform.js?v=20260707deploy"></script>
-  <script src="admin-games.js?v=20260710prizeinline"></script>
+  <script src="admin-games.js?v=20260710gamesadmin"></script>
   <script src="mobile.js?v=20260614mobile"></script>
 </body>
 </html>

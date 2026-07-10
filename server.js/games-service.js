@@ -333,6 +333,21 @@ function mountGamesService(app, db, deps) {
     res.json({ ok: true });
   });
 
+  app.post('/admin/games/wheel/:id/activate', requireAdmin, (req, res) => {
+    const row = db.prepare('SELECT id FROM game_wheel_campaigns WHERE id = ?').get(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Campaign not found' });
+    db.prepare('UPDATE game_wheel_campaigns SET is_enabled = 0').run();
+    db.prepare(`UPDATE game_wheel_campaigns SET is_enabled = 1, updated_at = datetime('now') WHERE id = ?`).run(req.params.id);
+    res.json({ ok: true });
+  });
+
+  app.delete('/admin/games/wheel/:id', requireAdmin, (req, res) => {
+    const row = db.prepare('SELECT id FROM game_wheel_campaigns WHERE id = ?').get(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Campaign not found' });
+    db.prepare('DELETE FROM game_wheel_campaigns WHERE id = ?').run(req.params.id);
+    res.json({ ok: true });
+  });
+
   app.post('/admin/games/wheel/:id/draw', requireAdmin, (req, res) => {
     const result = runWheelDraw(db, engineDeps, Number(req.params.id));
     if (result.error) return res.status(400).json({ error: result.error });
@@ -396,6 +411,21 @@ function mountGamesService(app, db, deps) {
       b.endsAt,
       req.params.id
     );
+    res.json({ ok: true });
+  });
+
+  app.post('/admin/games/scratch/:id/activate', requireAdmin, (req, res) => {
+    const row = db.prepare('SELECT id FROM game_scratch_pools WHERE id = ?').get(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Pool not found' });
+    db.prepare('UPDATE game_scratch_pools SET is_enabled = 0').run();
+    db.prepare(`UPDATE game_scratch_pools SET is_enabled = 1, updated_at = datetime('now') WHERE id = ?`).run(req.params.id);
+    res.json({ ok: true });
+  });
+
+  app.delete('/admin/games/scratch/:id', requireAdmin, (req, res) => {
+    const row = db.prepare('SELECT id FROM game_scratch_pools WHERE id = ?').get(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Pool not found' });
+    db.prepare('DELETE FROM game_scratch_pools WHERE id = ?').run(req.params.id);
     res.json({ ok: true });
   });
 
@@ -512,6 +542,21 @@ function mountGamesService(app, db, deps) {
       b.endsAt,
       req.params.id
     );
+    res.json({ ok: true });
+  });
+
+  app.post('/admin/games/mystery/:id/activate', requireAdmin, (req, res) => {
+    const row = db.prepare('SELECT id FROM game_mystery_pools WHERE id = ?').get(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Pool not found' });
+    db.prepare('UPDATE game_mystery_pools SET is_enabled = 0').run();
+    db.prepare(`UPDATE game_mystery_pools SET is_enabled = 1, updated_at = datetime('now') WHERE id = ?`).run(req.params.id);
+    res.json({ ok: true });
+  });
+
+  app.delete('/admin/games/mystery/:id', requireAdmin, (req, res) => {
+    const row = db.prepare('SELECT id FROM game_mystery_pools WHERE id = ?').get(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Pool not found' });
+    db.prepare('DELETE FROM game_mystery_pools WHERE id = ?').run(req.params.id);
     res.json({ ok: true });
   });
 
