@@ -4079,6 +4079,34 @@ app.put('/admin/payment-methods/:id', requireAdmin, (req, res) => {
   res.json(updated);
 });
 
+function countPaymentMethodUsage(methodId) {
+  const shop = db.prepare('SELECT COUNT(*) AS c FROM orders WHERE payment_method_id = ?').get(methodId).c;
+  const plug = db.prepare('SELECT COUNT(*) AS c FROM plugging_orders WHERE payment_method_id = ?').get(methodId).c;
+  return shop + plug;
+}
+
+app.delete('/admin/payment-methods/:id', requireAdmin, (req, res) => {
+  const id = Number(req.params.id);
+  const existing = db.prepare('SELECT * FROM payment_methods WHERE id = ?').get(id);
+  if (!existing) return res.status(404).json({ error: 'Payment method not found' });
+
+  const used = countPaymentMethodUsage(id);
+  if (used > 0) {
+    return res.status(400).json({
+      error: `Cannot delete — ${used} order(s) use this method. It stays in history; remove it only if unused.`
+    });
+  }
+
+  const qrPath = String(existing.qr_image_url || '').trim();
+  if (qrPath.startsWith('/uploads/payment-qr/')) {
+    const filePath = path.join(uploadsDir, qrPath.replace(/^\/uploads\//, ''));
+    try { fs.unlinkSync(filePath); } catch (_) { /* ignore missing file */ }
+  }
+
+  db.prepare('DELETE FROM payment_methods WHERE id = ?').run(id);
+  res.json({ ok: true });
+});
+
 app.put('/admin/redeem-codes/:id', requireAdmin, (req, res) => {
   const id = Number(req.params.id);
   const { code, discount_type, discount_value, is_active, max_uses } = req.body;

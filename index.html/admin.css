@@ -679,6 +679,13 @@ a.admin-btn-success:hover { color: #fff; }
   flex-wrap: wrap;
 }
 
+.admin-payment-method-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.25rem;
+}
+
 .admin-field-optional {
   font-weight: 500;
   color: var(--a-muted);

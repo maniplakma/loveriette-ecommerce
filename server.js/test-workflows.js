@@ -676,7 +676,9 @@ async function runPaymentSettingsCheck(adminCookie) {
     else fail('new method in buyer API', publicNew.status);
 
     if (created.json?.id) {
-      db.prepare('DELETE FROM payment_methods WHERE id = ?').run(created.json.id);
+      const del = await request('DELETE', `/admin/payment-methods/${created.json.id}`, null, adminCookie);
+      if (del.status === 200) ok('DELETE /admin/payment-methods');
+      else fail('DELETE /admin/payment-methods', del.status);
     }
   } else {
     ok('POST /admin/payment-methods (skipped — already at limit)');
@@ -693,7 +695,7 @@ async function runPaymentSettingsCheck(adminCookie) {
   if (over.status === 400) ok('payment method limit enforced');
   else fail('payment method limit', over.status);
   for (const id of fillIds) {
-    db.prepare('DELETE FROM payment_methods WHERE id = ?').run(id);
+    await request('DELETE', `/admin/payment-methods/${id}`, null, adminCookie);
   }
 }
 

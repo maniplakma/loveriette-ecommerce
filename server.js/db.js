@@ -1164,18 +1164,6 @@ const seedPaymentMethods = [
     ]),
     qr_image_url: '',
     sort_order: 2
-  },
-  {
-    name: 'MARIBANK',
-    slug: 'maribank',
-    instructions: JSON.stringify([
-      'Payment is accepted via QR only.',
-      'Please send the exact amount or your order may be rejected.',
-      'Make sure you are paying to the correct QR code.',
-      'Uploaded receipts only — downloaded or edited receipts will not be accepted.'
-    ]),
-    qr_image_url: '',
-    sort_order: 3
   }
 ];
 
@@ -1200,6 +1188,29 @@ if (paymentCount === 0) {
     db.exec('ROLLBACK');
     throw err;
   }
+}
+
+/** One-time: remove payment methods the store no longer uses. */
+const legacyPurged = db.prepare("SELECT value FROM settings WHERE key = 'payment_methods_legacy_purged'").get();
+if (!legacyPurged) {
+  const UNUSED_PAYMENT_SLUGS = ['maribank', 'gotyme', 'go-tyme', 'maya', 'paymaya', 'bdo', 'bpi', 'unionbank', 'seabank', 'landbank', 'coins-ph', 'coinsph'];
+  const unusedPlaceholders = UNUSED_PAYMENT_SLUGS.map(() => '?').join(',');
+  const legacyPaymentRows = db.prepare(`
+    SELECT id FROM payment_methods WHERE lower(slug) IN (${unusedPlaceholders})
+  `).all(...UNUSED_PAYMENT_SLUGS);
+  if (legacyPaymentRows.length) {
+    const shopUse = db.prepare('SELECT COUNT(*) AS c FROM orders WHERE payment_method_id = ?');
+    const plugUse = db.prepare('SELECT COUNT(*) AS c FROM plugging_orders WHERE payment_method_id = ?');
+    for (const row of legacyPaymentRows) {
+      const used = shopUse.get(row.id).c + plugUse.get(row.id).c;
+      if (used > 0) {
+        db.prepare('UPDATE payment_methods SET is_active = 0 WHERE id = ?').run(row.id);
+      } else {
+        db.prepare('DELETE FROM payment_methods WHERE id = ?').run(row.id);
+      }
+    }
+  }
+  db.prepare("INSERT INTO settings (key, value) VALUES ('payment_methods_legacy_purged', '1')").run();
 }
 
 const redeemCount = db.prepare('SELECT COUNT(*) AS count FROM redeem_codes').get().count;
