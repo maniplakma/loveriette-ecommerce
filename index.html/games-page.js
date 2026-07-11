@@ -192,9 +192,70 @@
     return `
       <div class="games-wheel-visual games-wheel-visual--lg${extraClass ? ` ${extraClass}` : ''}">
         <div class="games-wheel-segments" aria-hidden="true"></div>
+        <div class="games-wheel-labels" aria-hidden="true"></div>
         <div class="games-wheel-ring"></div>
         <div class="games-wheel-center">${icon('wheel', 'games-icon--wheel')}</div>
       </div>`;
+  }
+
+  function shortenWheelLabel(name) {
+    const s = String(name || '').trim();
+    if (!s) return '';
+    if (s.length <= 10) return s;
+    return `${s.slice(0, 9)}…`;
+  }
+
+  function paintWheelSegments(visual, entries, maxEntries) {
+    if (!visual) return;
+    const segEl = visual.querySelector('.games-wheel-segments');
+    let labelsEl = visual.querySelector('.games-wheel-labels');
+    if (!segEl) return;
+    if (!labelsEl) {
+      labelsEl = document.createElement('div');
+      labelsEl.className = 'games-wheel-labels';
+      labelsEl.setAttribute('aria-hidden', 'true');
+      const ring = visual.querySelector('.games-wheel-ring');
+      visual.insertBefore(labelsEl, ring || visual.querySelector('.games-wheel-center'));
+    }
+
+    const entryList = Array.isArray(entries) ? entries : [];
+    const segmentCount = Math.max(8, Number(maxEntries) || 0, entryList.length);
+    const slice = 360 / segmentCount;
+    const palette = [
+      'color-mix(in srgb, var(--games-accent) 50%, #ffc107)',
+      'rgba(255,255,255,0.08)',
+      'color-mix(in srgb, var(--games-accent) 35%, #000)',
+      'rgba(255,255,255,0.06)'
+    ];
+    const stops = [];
+    for (let i = 0; i < segmentCount; i++) {
+      const start = i * slice;
+      const end = (i + 1) * slice;
+      stops.push(`${palette[i % palette.length]} ${start}deg ${end}deg`);
+    }
+    segEl.style.background = `conic-gradient(from -90deg, ${stops.join(', ')})`;
+    visual.style.setProperty('--wheel-segments', String(segmentCount));
+
+    const size = visual.offsetWidth || 130;
+    const labelRadius = Math.max(28, size * 0.34);
+    labelsEl.innerHTML = '';
+    entryList.forEach((entry, i) => {
+      if (i >= segmentCount || !entry?.displayName) return;
+      const angle = slice * i + slice / 2;
+      const label = document.createElement('span');
+      label.className = 'games-wheel-label';
+      label.textContent = shortenWheelLabel(entry.displayName);
+      label.title = String(entry.displayName);
+      label.style.transform = `rotate(${angle}deg) translateY(-${labelRadius}px) rotate(${-angle}deg)`;
+      labelsEl.appendChild(label);
+    });
+  }
+
+  function paintAllWheelVisuals(wheel) {
+    const entries = wheel?.entries || [];
+    const maxEntries = wheel?.maxEntries;
+    document.querySelectorAll('.games-arena--wheel .games-wheel-visual, .games-demo-wheel .games-wheel-visual')
+      .forEach((visual) => paintWheelSegments(visual, entries, maxEntries));
   }
 
   function entriesWall(entries, winners, mySlots) {
@@ -443,6 +504,7 @@
         ${demoBadge()}
         <div class="games-wheel-visual games-wheel-visual--lg">
           <div class="games-wheel-segments" aria-hidden="true"></div>
+          <div class="games-wheel-labels" aria-hidden="true"></div>
           <div class="games-wheel-ring"></div>
           <div class="games-wheel-center">${icon('wheel', 'games-icon--wheel')}</div>
         </div>
@@ -1272,6 +1334,7 @@
     bindCopyGameLinks();
     bindGameChoices();
     startCountdowns();
+    paintAllWheelVisuals(data.wheel);
     runWheelDrawSequence(data.wheel);
     scrollToGameTarget();
 
