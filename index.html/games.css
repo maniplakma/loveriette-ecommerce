@@ -500,19 +500,20 @@
 }
 
 .games-wheel-svg-label {
-  fill: #fff;
-  font-weight: 900;
+  fill: #141428;
+  font-weight: 800;
   font-family: inherit;
   paint-order: stroke fill;
-  stroke: rgba(18, 18, 40, 0.9);
-  stroke-width: 2.2px;
+  stroke: rgba(255, 255, 255, 0.92);
+  stroke-width: 2.5px;
   stroke-linejoin: round;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.02em;
 }
 
-.games-wheel-svg-label--solo {
-  font-size: 15px;
-  stroke-width: 3px;
+.games-wheel-divider {
+  stroke: rgba(255, 255, 255, 0.55);
+  stroke-width: 1.2px;
+  stroke-linecap: round;
 }
 
 .games-demo-wheel--live .games-demo-badge {
