@@ -188,6 +188,21 @@
     }).join('')}</div>`;
   }
 
+  let wheelSvgUid = 0;
+
+  const JOYFUL_WHEEL_COLORS = [
+    '#FF6B9D',
+    '#FFD93D',
+    '#6BCB77',
+    '#4D96FF',
+    '#FF8C42',
+    '#C77DFF',
+    '#FF5E7E',
+    '#5DE2E7',
+    '#FFB347',
+    '#B8F397'
+  ];
+
   function wheelSegmentCount(entries, maxEntries) {
     const filled = Array.isArray(entries) ? entries.length : 0;
     const cap = Number(maxEntries) || 0;
@@ -197,37 +212,72 @@
 
   function wheelGradientCss(segmentCount) {
     const slice = 360 / segmentCount;
-    const palette = [
-      'color-mix(in srgb, var(--games-accent) 50%, #ffc107)',
-      'rgba(255,255,255,0.08)',
-      'color-mix(in srgb, var(--games-accent) 35%, #000)',
-      'rgba(255,255,255,0.06)'
-    ];
     const stops = [];
     for (let i = 0; i < segmentCount; i++) {
       const start = i * slice;
       const end = (i + 1) * slice;
-      stops.push(`${palette[i % palette.length]} ${start}deg ${end}deg`);
+      stops.push(`${JOYFUL_WHEEL_COLORS[i % JOYFUL_WHEEL_COLORS.length]} ${start}deg ${end}deg`);
     }
     return `conic-gradient(from -90deg, ${stops.join(', ')})`;
   }
 
+  function wedgeLabelMaxLen(sliceDeg, radius) {
+    const arc = (Math.PI * radius * 2) * (sliceDeg / 360);
+    return Math.max(4, Math.min(14, Math.floor(arc / 5.5)));
+  }
+
+  function shortenWheelLabel(name, sliceDeg, radius) {
+    const s = String(name || '').trim();
+    if (!s) return '';
+    const maxLen = sliceDeg && radius ? wedgeLabelMaxLen(sliceDeg, radius) : 12;
+    if (s.length <= maxLen) return s;
+    return `${s.slice(0, Math.max(3, maxLen - 1))}…`;
+  }
+
+  function wheelPointerHtml() {
+    return `
+      <div class="games-wheel-pointer" aria-hidden="true" title="Winner is picked here">
+        <svg viewBox="0 0 40 36" width="40" height="36" role="presentation">
+          <defs>
+            <linearGradient id="games-wheel-pointer-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stop-color="#FFE566"/>
+              <stop offset="100%" stop-color="#FF3B6B"/>
+            </linearGradient>
+          </defs>
+          <path d="M20 34 L6 8 L20 14 L34 8 Z" fill="url(#games-wheel-pointer-grad)" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
+        </svg>
+      </div>`;
+  }
+
   function wheelLabelsSvg(entries, segmentCount, wheelSize) {
     if (!entries?.length) return '';
+    const uid = ++wheelSvgUid;
     const cx = wheelSize / 2;
     const cy = wheelSize / 2;
-    const r = wheelSize * 0.36;
+    const r = wheelSize * 0.41;
     const slice = 360 / segmentCount;
-    const sparse = entries.length <= 3;
     const labels = entries.slice(0, segmentCount).map((entry, i) => {
       if (!entry?.displayName) return '';
-      const deg = slice * i + slice / 2;
-      const rad = ((deg - 90) * Math.PI) / 180;
-      const x = cx + r * Math.cos(rad);
-      const y = cy + r * Math.sin(rad);
-      const text = esc(shortenWheelLabel(entry.displayName));
-      const size = sparse ? 13 : Math.max(8, Math.min(11, Math.round(wheelSize / segmentCount * 0.85)));
-      return `<text x="${x.toFixed(2)}" y="${y.toFixed(2)}" class="games-wheel-svg-label${sparse ? ' games-wheel-svg-label--sparse' : ''}" font-size="${size}" text-anchor="middle" dominant-baseline="middle" transform="rotate(${deg.toFixed(2)} ${x.toFixed(2)} ${y.toFixed(2)})">${text}</text>`;
+      const start = slice * i - 90;
+      const end = slice * (i + 1) - 90;
+      const large = slice > 180 ? 1 : 0;
+      const sRad = (start * Math.PI) / 180;
+      const eRad = (end * Math.PI) / 180;
+      const x1 = cx + r * Math.cos(sRad);
+      const y1 = cy + r * Math.sin(sRad);
+      const x2 = cx + r * Math.cos(eRad);
+      const y2 = cy + r * Math.sin(eRad);
+      const pid = `wheel-arc-${uid}-${i}`;
+      const text = esc(shortenWheelLabel(entry.displayName, slice, r));
+      const fontSize = Math.max(
+        7,
+        Math.min(13, Math.round(((Math.PI * r * 2) * (slice / 360)) / Math.max(text.length * 0.52, 2.8)))
+      );
+      return `
+        <path id="${pid}" d="M ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r} ${r} 0 ${large} 1 ${x2.toFixed(2)} ${y2.toFixed(2)}" fill="none"/>
+        <text font-size="${fontSize}" class="games-wheel-svg-label${entries.length <= 3 ? ' games-wheel-svg-label--sparse' : ''}">
+          <textPath href="#${pid}" xlink:href="#${pid}" startOffset="50%" text-anchor="middle">${text}</textPath>
+        </text>`;
     }).join('');
     return `<svg class="games-wheel-svg" viewBox="0 0 ${wheelSize} ${wheelSize}" width="100%" height="100%" aria-hidden="true">${labels}</svg>`;
   }
@@ -240,56 +290,57 @@
     const wheelSize = hasRoster ? 200 : 130;
     const gradient = wheelGradientCss(segmentCount);
     return `
-      <div class="games-wheel-visual games-wheel-visual--lg${rosterClass}${extraClass ? ` ${extraClass}` : ''}" style="--wheel-segments:${segmentCount};--wheel-size:${wheelSize}px" data-wheel-segments="${segmentCount}" data-wheel-entries="${entryList.length}">
-        <div class="games-wheel-segments is-painted" style="background:${gradient}" aria-hidden="true"></div>
-        ${wheelLabelsSvg(entryList, segmentCount, wheelSize)}
-        <div class="games-wheel-ring"></div>
-        <div class="games-wheel-center">${icon('wheel', 'games-icon--wheel')}</div>
+      <div class="games-wheel-wrap">
+        ${wheelPointerHtml()}
+        <div class="games-wheel-visual games-wheel-visual--lg${rosterClass}${extraClass ? ` ${extraClass}` : ''}" style="--wheel-segments:${segmentCount};--wheel-size:${wheelSize}px" data-wheel-segments="${segmentCount}" data-wheel-entries="${entryList.length}">
+          <div class="games-wheel-spin-layer">
+            <div class="games-wheel-segments is-painted" style="background:${gradient}" aria-hidden="true"></div>
+            ${wheelLabelsSvg(entryList, segmentCount, wheelSize)}
+          </div>
+          <div class="games-wheel-ring"></div>
+          <div class="games-wheel-center">${icon('wheel', 'games-icon--wheel')}</div>
+        </div>
       </div>`;
   }
 
-  function shortenWheelLabel(name) {
-    const s = String(name || '').trim();
-    if (!s) return '';
-    if (s.length <= 12) return s;
-    return `${s.slice(0, 11)}…`;
-  }
-
   function paintWheelSegments(visual, entries, maxEntries) {
-    if (!visual) return;
-    const segEl = visual.querySelector('.games-wheel-segments');
+    const wheelVisual = visual?.classList?.contains('games-wheel-visual')
+      ? visual
+      : visual?.querySelector?.('.games-wheel-visual');
+    if (!wheelVisual) return;
+    const spinLayer = wheelVisual.querySelector('.games-wheel-spin-layer');
+    const segEl = spinLayer?.querySelector('.games-wheel-segments') || wheelVisual.querySelector('.games-wheel-segments');
     if (!segEl) return;
 
     const entryList = Array.isArray(entries) ? entries : [];
     const segmentCount = wheelSegmentCount(entryList, maxEntries);
     const hasRoster = entryList.length > 0 || Number(maxEntries) > 0;
-    const wheelSize = hasRoster ? 200 : (visual.offsetWidth || 130);
+    const wheelSize = hasRoster ? 200 : (wheelVisual.offsetWidth || 130);
     segEl.classList.add('is-painted');
     segEl.style.background = wheelGradientCss(segmentCount);
-    visual.style.setProperty('--wheel-segments', String(segmentCount));
-    visual.style.setProperty('--wheel-size', `${wheelSize}px`);
-    visual.dataset.wheelSegments = String(segmentCount);
-    visual.dataset.wheelEntries = String(entryList.length);
-    if (hasRoster) visual.classList.add('games-wheel-visual--roster', 'is-live-roster');
+    wheelVisual.style.setProperty('--wheel-segments', String(segmentCount));
+    wheelVisual.style.setProperty('--wheel-size', `${wheelSize}px`);
+    wheelVisual.dataset.wheelSegments = String(segmentCount);
+    wheelVisual.dataset.wheelEntries = String(entryList.length);
+    if (hasRoster) wheelVisual.classList.add('games-wheel-visual--roster', 'is-live-roster');
 
-    const oldSvg = visual.querySelector('.games-wheel-svg');
+    const layer = spinLayer || wheelVisual;
+    const oldSvg = layer.querySelector('.games-wheel-svg');
     if (oldSvg) oldSvg.remove();
-    const oldLabels = visual.querySelector('.games-wheel-labels');
+    const oldLabels = layer.querySelector('.games-wheel-labels');
     if (oldLabels) oldLabels.remove();
-    const ring = visual.querySelector('.games-wheel-ring');
     const svgWrap = document.createElement('div');
     svgWrap.innerHTML = wheelLabelsSvg(entryList, segmentCount, wheelSize);
     const svg = svgWrap.firstElementChild;
-    if (svg && ring) visual.insertBefore(svg, ring);
-    else if (svg) visual.appendChild(svg);
+    if (svg) layer.appendChild(svg);
   }
 
   function paintAllWheelVisuals(wheel) {
     const entries = wheel?.entries || [];
     const maxEntries = wheel?.maxEntries;
     const paint = () => {
-      document.querySelectorAll('.games-arena--wheel .games-wheel-visual, .games-demo-wheel .games-wheel-visual, .games-expand-panel--wheel .games-wheel-visual')
-        .forEach((visual) => paintWheelSegments(visual, entries, maxEntries));
+      document.querySelectorAll('.games-wheel-wrap, .games-arena--wheel .games-wheel-visual, .games-demo-wheel .games-wheel-visual, .games-expand-panel--wheel .games-wheel-visual')
+        .forEach((node) => paintWheelSegments(node, entries, maxEntries));
     };
     paint();
     requestAnimationFrame(() => requestAnimationFrame(paint));
@@ -1099,6 +1150,7 @@
     if (sessionStorage.getItem(storageKey)) return;
 
     const visual = stage.querySelector('.games-wheel-visual');
+    const spinLayer = stage.querySelector('.games-wheel-spin-layer');
     const live = stage.querySelector('.games-wheel-spin-live');
     const mount = stage.querySelector('.games-wheel-reveal-mount');
     if (!visual || !live) return;
@@ -1128,8 +1180,10 @@
       const w = winners[step];
       live.innerHTML = `<strong>Spin ${step + 1} of ${winners.length}</strong> — drawing…`;
       visual.classList.remove('is-spin-result');
+      if (spinLayer) spinLayer.classList.remove('is-spin-result');
       void visual.offsetWidth;
       visual.classList.add('is-spin-result');
+      if (spinLayer) spinLayer.classList.add('is-spin-result');
       step += 1;
       setTimeout(() => {
         revealCard(w);

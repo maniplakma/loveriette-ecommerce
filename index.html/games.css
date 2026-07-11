@@ -452,11 +452,36 @@
 }
 
 /* Wheel */
+.games-wheel-wrap {
+  position: relative;
+  width: fit-content;
+  margin: 0.35rem auto 0;
+  padding-top: 1.35rem;
+}
+
+.games-wheel-pointer {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 12;
+  line-height: 0;
+  filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.45));
+  pointer-events: none;
+}
+
 .games-wheel-visual {
   position: relative;
   width: 110px;
   height: 110px;
   margin: 0 auto;
+}
+
+.games-wheel-spin-layer {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  transform: rotate(0deg);
 }
 
 .games-wheel-visual--lg { width: 130px; height: 130px; }
@@ -476,18 +501,18 @@
 
 .games-wheel-svg-label {
   fill: #fff;
-  font-weight: 800;
+  font-weight: 900;
   font-family: inherit;
   paint-order: stroke fill;
-  stroke: rgba(0, 0, 0, 0.92);
-  stroke-width: 2.5px;
+  stroke: rgba(18, 18, 40, 0.9);
+  stroke-width: 2.2px;
   stroke-linejoin: round;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.03em;
 }
 
 .games-wheel-svg-label--sparse {
   font-size: 13px;
-  stroke-width: 3px;
+  stroke-width: 2.8px;
 }
 
 .games-demo-wheel--live .games-demo-badge {
@@ -499,26 +524,28 @@
   inset: 0;
   border-radius: 50%;
   background: conic-gradient(
-    from 0deg,
-    color-mix(in srgb, var(--games-accent) 50%, #ffc107) 0deg 45deg,
-    rgba(255,255,255,0.08) 45deg 90deg,
-    color-mix(in srgb, var(--games-accent) 35%, #000) 90deg 135deg,
-    rgba(255,255,255,0.06) 135deg 180deg,
-    color-mix(in srgb, var(--games-accent) 45%, #ffc107) 180deg 225deg,
-    rgba(255,255,255,0.08) 225deg 270deg,
-    color-mix(in srgb, var(--games-accent) 30%, #000) 270deg 315deg,
-    rgba(255,255,255,0.06) 315deg 360deg
+    from -90deg,
+    #FF6B9D 0deg 45deg,
+    #FFD93D 45deg 90deg,
+    #6BCB77 90deg 135deg,
+    #4D96FF 135deg 180deg,
+    #FF8C42 180deg 225deg,
+    #C77DFF 225deg 270deg,
+    #5DE2E7 270deg 315deg,
+    #FFB347 315deg 360deg
   );
-  /* Static by default — spin only on draw result (.is-spin-result) for performance */
   transform: rotate(0deg);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.35);
 }
 
 .games-wheel-ring {
   position: absolute;
-  inset: 4px;
+  inset: 3px;
   border-radius: 50%;
-  border: 2px dashed color-mix(in srgb, var(--games-accent) 60%, #fff);
-  z-index: 1;
+  border: 3px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 0 2px rgba(255, 217, 61, 0.55);
+  z-index: 5;
+  pointer-events: none;
 }
 
 .games-wheel-center {
@@ -528,10 +555,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg, #080404);
-  border: 2px solid color-mix(in srgb, var(--games-accent) 40%, transparent);
-  box-shadow: 0 0 20px var(--games-glow);
-  z-index: 2;
+  background: linear-gradient(145deg, #fff7e8 0%, #ffe566 45%, #ffb347 100%);
+  border: 3px solid #fff;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+  z-index: 6;
 }
 
 .games-wheel-labels {
@@ -1572,8 +1599,7 @@ html:not(.lite-ui) .games-expand-modal .games-scratch-foil {
   text-align: left;
 }
 
-.games-wheel-visual.is-spin-result .games-wheel-segments,
-.games-wheel-visual.is-spin-result .games-wheel-svg {
+.games-wheel-visual.is-spin-result .games-wheel-spin-layer {
   animation: games-wheel-spin-fast 2.5s cubic-bezier(0.2, 0.9, 0.3, 1) 1;
 }
 
@@ -1799,9 +1825,9 @@ body.games-expand-open { overflow: hidden; }
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.35);
 }
 
-.games-expand-play--wheel .games-wheel-visual--lg {
-  width: min(72vw, 220px);
-  height: min(72vw, 220px);
+.games-expand-play--wheel .games-wheel-visual--roster {
+  width: min(72vw, 240px);
+  height: min(72vw, 240px);
 }
 
 .games-expand-play--scratch .games-scratch-ticket {
@@ -1892,7 +1918,7 @@ body.games-expand-open { overflow: hidden; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .games-wheel-visual.is-spin-result .games-wheel-segments,
+  .games-wheel-visual.is-spin-result .games-wheel-spin-layer,
   .games-scratch-foil,
   .games-recent-track,
   .games-countdown-value.is-due,
