@@ -958,9 +958,34 @@ async function runGamesCheck(adminCookie) {
   if (credit?.id && !credit.chosen_game) ok('one game credit granted (pending choice)');
   else fail('one game credit granted', credit?.id || 'missing');
 
-  const slot = db.prepare('SELECT id FROM game_wheel_slots WHERE order_id = ?').get(orderId);
-  if (!slot?.id) ok('no auto wheel slot before game choice');
-  else fail('no auto wheel slot before game choice', 'unexpected slot');
+  const slot = db.prepare('SELECT id, entry_units FROM game_wheel_slots WHERE order_id = ?').get(orderId);
+  if (slot?.id && Number(slot.entry_units) === 3) ok('grand draw wheel slot on approve (qty 3)');
+  else fail('grand draw wheel slot on approve', slot?.id ? `entry_units=${slot.entry_units}` : 'missing');
+
+  const hubAfterApprove = await request('GET', '/api/games');
+  if (hubAfterApprove.json?.wheel?.entryCount >= 3) ok('hub shows grand draw entries after approve');
+  else fail('hub grand draw entry count', hubAfterApprove.json?.wheel?.entryCount);
+
+  const seq2 = db.prepare('SELECT COALESCE(MAX(order_seq), 0) + 1 AS n FROM orders').get().n;
+  const orderNumber2 = String(seq2);
+  const ins2 = db.prepare(`
+    INSERT INTO orders (
+      order_number, order_seq, email, user_id, payment_method_id,
+      subtotal, discount, total, status, tingi_drop_enabled, fulfillment_mode, receipt_url
+    ) VALUES (?, ?, ?, ?, ?, 200, 0, 200, 'pending', 0, 'auto', '/uploads/receipts/test.png')
+  `).run(orderNumber2, seq2, email, buyer.id, pm.id);
+  const orderId2 = ins2.lastInsertRowid;
+  db.prepare(`INSERT INTO order_items (order_id, product_id, product_name, quantity, price) VALUES (?, ?, 'Games Test Qty2', 2, 200)`)
+    .run(orderId2, product.id);
+  const approve2 = await request('POST', `/admin/orders/${orderNumber2}/approve`, {}, adminCookie);
+  if (approve2.status !== 200) { fail('games qty2 approve', approve2.json?.error || approve2.status); return; }
+  const slot2 = db.prepare('SELECT entry_units FROM game_wheel_slots WHERE order_id = ?').get(orderId2);
+  if (Number(slot2?.entry_units) === 2) ok('grand draw counts qty 2 as two entry units');
+  else fail('grand draw qty 2 entry units', slot2?.entry_units);
+
+  purgeGameRowsForOrder(orderId2);
+  db.prepare('DELETE FROM order_items WHERE order_id = ?').run(orderId2);
+  db.prepare('DELETE FROM orders WHERE id = ?').run(orderId2);
 
   const scratch = db.prepare('SELECT id FROM game_scratch_cards WHERE order_id = ?').get(orderId);
   if (!scratch?.id) ok('no auto scratch before game choice');
@@ -1112,23 +1137,21 @@ async function runWheelAutoDrawCheck(adminCookie) {
       .run(orderId, product.id);
     const approveRes = await request('POST', `/admin/orders/${orderNumber}/approve`, {}, adminCookie);
     if (approveRes.status !== 200) { fail('wheel auto-draw approve', approveRes.json?.error || approveRes.status); return null; }
-    const credit = db.prepare('SELECT id FROM game_order_credits WHERE order_id = ?').get(orderId);
-    const login = await loginUser(email, 'testpass123');
-    const choose = await request('POST', `/account/games/credits/${credit.id}/choose`, { gameType: 'wheel' }, login.cookie);
-    return { orderId, choose };
+    const slot = db.prepare('SELECT id FROM game_wheel_slots WHERE order_id = ?').get(orderId);
+    return { orderId, slot };
   }
 
   const first = await joinWheel('a');
-  if (first?.choose?.status === 200) ok('wheel entry 1 of 2');
-  else fail('wheel entry 1 of 2', first?.choose?.json?.error || first?.choose?.status);
+  if (first?.slot?.id) ok('wheel entry 1 of 2 (auto on approve)');
+  else fail('wheel entry 1 of 2', first?.slot?.id || 'missing slot');
 
   const mid = db.prepare('SELECT status FROM game_wheel_campaigns WHERE id = ?').get(wheel.json.id);
   if (mid?.status === 'scheduled') ok('wheel stays scheduled until full');
   else fail('wheel stays scheduled until full', mid?.status);
 
   const second = await joinWheel('b');
-  if (second?.choose?.status === 200) ok('wheel entry 2 of 2');
-  else fail('wheel entry 2 of 2', second?.choose?.json?.error || second?.choose?.status);
+  if (second?.slot?.id) ok('wheel entry 2 of 2 (auto on approve)');
+  else fail('wheel entry 2 of 2', second?.slot?.id || 'missing slot');
 
   const done = db.prepare('SELECT status FROM game_wheel_campaigns WHERE id = ?').get(wheel.json.id);
   if (done?.status === 'drawn') ok('wheel auto-drew when max entries reached');

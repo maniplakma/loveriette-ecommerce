@@ -106,6 +106,31 @@ function orderQualifiesForGames(db, orderId) {
   return getQualifyingOrderItems(db, orderId).length > 0;
 }
 
+function getGrandDrawOrderItems(db, orderId) {
+  const rules = getGamesRules(db);
+  const items = db.prepare(`
+    SELECT id, product_id, quantity FROM order_items WHERE order_id = ?
+  `).all(orderId);
+  if (!rules.strict || !rules.productIds.length) return items;
+  return items.filter((line) =>
+    rules.productIds.includes(Number(line.product_id))
+    && Number(line.quantity) >= 1
+  );
+}
+
+function computeGrandDrawEntryUnits(db, orderId) {
+  return getGrandDrawOrderItems(db, orderId).reduce(
+    (sum, line) => sum + Math.max(0, Number(line.quantity) || 0),
+    0
+  );
+}
+
+function orderQualifiesForGrandDraw(db, orderId) {
+  const order = db.prepare('SELECT id, status FROM orders WHERE id = ?').get(orderId);
+  if (!order || order.status !== 'approved') return false;
+  return computeGrandDrawEntryUnits(db, orderId) >= 1;
+}
+
 function eligibilityMessage(db) {
   const rules = getGamesRules(db);
   const products = getEligibleProducts(db, rules.productIds);
@@ -168,8 +193,11 @@ module.exports = {
   getGamesRules,
   getEligibleProducts,
   getQualifyingOrderItems,
+  getGrandDrawOrderItems,
+  computeGrandDrawEntryUnits,
   orderIsDeliveredForGames,
   orderQualifiesForGames,
+  orderQualifiesForGrandDraw,
   eligibilityMessage,
   buildEligibilityHub,
   saveGamesRules
