@@ -203,27 +203,36 @@
     '#B8F397'
   ];
 
+  /** Slice count = joined players (grows thinner as more join). Empty wheel shows preview slots. */
   function wheelSegmentCount(entries, maxEntries) {
     const filled = Array.isArray(entries) ? entries.length : 0;
     const cap = Number(maxEntries) || 0;
-    if (cap > 0) return cap;
-    return Math.max(8, filled);
+    if (filled > 0) return Math.max(1, Math.min(cap > 0 ? cap : filled, filled));
+    return Math.max(8, Math.min(cap || 12, 12));
   }
 
-  function wheelGradientCss(segmentCount) {
+  function wheelGradientCss(segmentCount, filledCount = segmentCount) {
     const slice = 360 / segmentCount;
     const stops = [];
+    const slots = Math.max(1, filledCount || segmentCount);
     for (let i = 0; i < segmentCount; i++) {
       const start = i * slice;
       const end = (i + 1) * slice;
-      stops.push(`${JOYFUL_WHEEL_COLORS[i % JOYFUL_WHEEL_COLORS.length]} ${start}deg ${end}deg`);
+      const color = i < slots
+        ? JOYFUL_WHEEL_COLORS[i % JOYFUL_WHEEL_COLORS.length]
+        : 'rgba(255,255,255,0.07)';
+      stops.push(`${color} ${start}deg ${end}deg`);
     }
     return `conic-gradient(from -90deg, ${stops.join(', ')})`;
   }
 
+  function wedgeArcLength(sliceDeg, radius) {
+    return (Math.PI * radius * 2) * (sliceDeg / 360);
+  }
+
   function wedgeLabelMaxLen(sliceDeg, radius) {
-    const arc = (Math.PI * radius * 2) * (sliceDeg / 360);
-    return Math.max(4, Math.min(14, Math.floor(arc / 5.5)));
+    const arc = wedgeArcLength(sliceDeg, radius);
+    return Math.max(3, Math.min(16, Math.floor(arc / 4.8)));
   }
 
   function shortenWheelLabel(name, sliceDeg, radius) {
@@ -231,54 +240,83 @@
     if (!s) return '';
     const maxLen = sliceDeg && radius ? wedgeLabelMaxLen(sliceDeg, radius) : 12;
     if (s.length <= maxLen) return s;
-    return `${s.slice(0, Math.max(3, maxLen - 1))}…`;
+    return `${s.slice(0, Math.max(2, maxLen - 1))}…`;
+  }
+
+  function fitWedgeFontSize(text, sliceDeg, radius) {
+    const arc = wedgeArcLength(sliceDeg, radius);
+    const byArc = arc / Math.max(text.length * 0.58, 2.2);
+    const bySlice = sliceDeg * 0.42;
+    return Math.max(6, Math.min(sliceDeg >= 45 ? 16 : 13, Math.round(Math.min(byArc, bySlice))));
   }
 
   function wheelPointerHtml() {
+    const uid = ++wheelSvgUid;
     return `
       <div class="games-wheel-pointer" aria-hidden="true" title="Winner is picked here">
         <svg viewBox="0 0 40 36" width="40" height="36" role="presentation">
           <defs>
-            <linearGradient id="games-wheel-pointer-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+            <linearGradient id="games-wheel-pointer-grad-${uid}" x1="0%" y1="0%" x2="0%" y2="100%">
               <stop offset="0%" stop-color="#FFE566"/>
               <stop offset="100%" stop-color="#FF3B6B"/>
             </linearGradient>
           </defs>
-          <path d="M20 34 L6 8 L20 14 L34 8 Z" fill="url(#games-wheel-pointer-grad)" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
+          <path d="M20 34 L6 8 L20 14 L34 8 Z" fill="url(#games-wheel-pointer-grad-${uid})" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
         </svg>
       </div>`;
+  }
+
+  function wedgeLabelSvg(entry, i, segmentCount, wheelSize, uid) {
+    if (!entry?.displayName) return '';
+    const cx = wheelSize / 2;
+    const cy = wheelSize / 2;
+    const slice = 360 / segmentCount;
+    const innerR = wheelSize * 0.30;
+    const outerR = wheelSize * 0.47;
+    const r = innerR + (outerR - innerR) * 0.58;
+    const text = esc(shortenWheelLabel(entry.displayName, slice, r));
+    if (!text) return '';
+
+    const fontSize = fitWedgeFontSize(text, slice, r);
+    const arcLen = wedgeArcLength(slice, r) * 0.9;
+
+    if (segmentCount === 1) {
+      return `<text x="${cx.toFixed(2)}" y="${(cy - wheelSize * 0.1).toFixed(2)}" class="games-wheel-svg-label games-wheel-svg-label--solo" font-size="${fontSize}" text-anchor="middle" dominant-baseline="middle">${text}</text>`;
+    }
+
+    const start = slice * i - 90;
+    const end = slice * (i + 1) - 90;
+    const large = slice > 180 ? 1 : 0;
+    const sRad = (start * Math.PI) / 180;
+    const eRad = (end * Math.PI) / 180;
+    const x1 = cx + r * Math.cos(sRad);
+    const y1 = cy + r * Math.sin(sRad);
+    const x2 = cx + r * Math.cos(eRad);
+    const y2 = cy + r * Math.sin(eRad);
+    const pid = `wheel-arc-${uid}-${i}`;
+
+    if (slice < 10) {
+      const bisector = slice * i + slice / 2 - 90;
+      const bRad = (bisector * Math.PI) / 180;
+      const tx = cx + r * Math.cos(bRad);
+      const ty = cy + r * Math.sin(bRad);
+      const rot = slice * i + slice / 2;
+      return `<text x="${tx.toFixed(2)}" y="${ty.toFixed(2)}" class="games-wheel-svg-label" font-size="${fontSize}" text-anchor="middle" dominant-baseline="middle" transform="rotate(${rot.toFixed(2)} ${tx.toFixed(2)} ${ty.toFixed(2)})">${text}</text>`;
+    }
+
+    return `
+      <path id="${pid}" d="M ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r} ${r} 0 ${large} 1 ${x2.toFixed(2)} ${y2.toFixed(2)}" fill="none"/>
+      <text font-size="${fontSize}" class="games-wheel-svg-label">
+        <textPath href="#${pid}" xlink:href="#${pid}" startOffset="50%" text-anchor="middle" lengthAdjust="spacingAndGlyphs" textLength="${arcLen.toFixed(2)}">${text}</textPath>
+      </text>`;
   }
 
   function wheelLabelsSvg(entries, segmentCount, wheelSize) {
     if (!entries?.length) return '';
     const uid = ++wheelSvgUid;
-    const cx = wheelSize / 2;
-    const cy = wheelSize / 2;
-    const r = wheelSize * 0.41;
-    const slice = 360 / segmentCount;
-    const labels = entries.slice(0, segmentCount).map((entry, i) => {
-      if (!entry?.displayName) return '';
-      const start = slice * i - 90;
-      const end = slice * (i + 1) - 90;
-      const large = slice > 180 ? 1 : 0;
-      const sRad = (start * Math.PI) / 180;
-      const eRad = (end * Math.PI) / 180;
-      const x1 = cx + r * Math.cos(sRad);
-      const y1 = cy + r * Math.sin(sRad);
-      const x2 = cx + r * Math.cos(eRad);
-      const y2 = cy + r * Math.sin(eRad);
-      const pid = `wheel-arc-${uid}-${i}`;
-      const text = esc(shortenWheelLabel(entry.displayName, slice, r));
-      const fontSize = Math.max(
-        7,
-        Math.min(13, Math.round(((Math.PI * r * 2) * (slice / 360)) / Math.max(text.length * 0.52, 2.8)))
-      );
-      return `
-        <path id="${pid}" d="M ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r} ${r} 0 ${large} 1 ${x2.toFixed(2)} ${y2.toFixed(2)}" fill="none"/>
-        <text font-size="${fontSize}" class="games-wheel-svg-label${entries.length <= 3 ? ' games-wheel-svg-label--sparse' : ''}">
-          <textPath href="#${pid}" xlink:href="#${pid}" startOffset="50%" text-anchor="middle">${text}</textPath>
-        </text>`;
-    }).join('');
+    const labels = entries.slice(0, segmentCount).map((entry, i) =>
+      wedgeLabelSvg(entry, i, segmentCount, wheelSize, uid)
+    ).join('');
     return `<svg class="games-wheel-svg" viewBox="0 0 ${wheelSize} ${wheelSize}" width="100%" height="100%" aria-hidden="true">${labels}</svg>`;
   }
 
@@ -288,7 +326,7 @@
     const hasRoster = entryList.length > 0 || Number(maxEntries) > 0;
     const rosterClass = hasRoster ? ' games-wheel-visual--roster is-live-roster' : '';
     const wheelSize = hasRoster ? 200 : 130;
-    const gradient = wheelGradientCss(segmentCount);
+    const gradient = wheelGradientCss(segmentCount, entryList.length);
     return `
       <div class="games-wheel-wrap">
         ${wheelPointerHtml()}
@@ -317,7 +355,7 @@
     const hasRoster = entryList.length > 0 || Number(maxEntries) > 0;
     const wheelSize = hasRoster ? 200 : (wheelVisual.offsetWidth || 130);
     segEl.classList.add('is-painted');
-    segEl.style.background = wheelGradientCss(segmentCount);
+    segEl.style.background = wheelGradientCss(segmentCount, entryList.length);
     wheelVisual.style.setProperty('--wheel-segments', String(segmentCount));
     wheelVisual.style.setProperty('--wheel-size', `${wheelSize}px`);
     wheelVisual.dataset.wheelSegments = String(segmentCount);

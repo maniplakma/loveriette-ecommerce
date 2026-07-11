@@ -510,9 +510,9 @@
   letter-spacing: 0.03em;
 }
 
-.games-wheel-svg-label--sparse {
-  font-size: 13px;
-  stroke-width: 2.8px;
+.games-wheel-svg-label--solo {
+  font-size: 15px;
+  stroke-width: 3px;
 }
 
 .games-demo-wheel--live .games-demo-badge {
