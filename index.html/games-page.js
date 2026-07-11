@@ -305,7 +305,7 @@
   }
 
   const GAME_JOIN_COPY = {
-    wheel: { hook: 'Wanna join the grand draw?', sub: 'Order from the shop — one game per purchase.' },
+    wheel: { hook: 'Wanna join the grand draw?', sub: 'Order from the shop — one order = one slot in the draw.' },
     scratch: { hook: 'Wanna scratch a lucky card?', sub: 'Order now and unlock after delivery.' },
     mystery: { hook: 'Wanna pick a mystery box?', sub: 'Order now — only one box wins!' },
     dice: { hook: 'Wanna roll lucky dice?', sub: 'Order now and try your luck.' },
@@ -446,7 +446,7 @@
           <div class="games-wheel-ring"></div>
           <div class="games-wheel-center">${icon('wheel', 'games-icon--wheel')}</div>
         </div>
-        <p class="games-demo-caption">Wanna join? Order now — grand draw from approved orders</p>
+        <p class="games-demo-caption">Wanna join? Order now — one approved order = one slot</p>
       </div>`;
   }
 

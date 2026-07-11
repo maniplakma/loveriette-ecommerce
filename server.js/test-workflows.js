@@ -959,15 +959,21 @@ async function runGamesCheck(adminCookie) {
   else fail('one game credit granted', credit?.id || 'missing');
 
   const slot = db.prepare('SELECT id, entry_units FROM game_wheel_slots WHERE order_id = ?').get(orderId);
-  if (slot?.id && Number(slot.entry_units) === 3) ok('grand draw wheel slot on approve (qty 3)');
+  if (slot?.id && Number(slot.entry_units) === 1) ok('grand draw wheel slot on approve (qty 3 = 1 slot)');
   else fail('grand draw wheel slot on approve', slot?.id ? `entry_units=${slot.entry_units}` : 'missing');
 
   const hubAfterApprove = await request('GET', '/api/games');
-  if (hubAfterApprove.json?.wheel?.entryCount >= 3) ok('hub shows grand draw entries after approve');
+  if (hubAfterApprove.json?.wheel?.entryCount >= 1) ok('hub shows grand draw entries after approve');
   else fail('hub grand draw entry count', hubAfterApprove.json?.wheel?.entryCount);
 
   const seq2 = db.prepare('SELECT COALESCE(MAX(order_seq), 0) + 1 AS n FROM orders').get().n;
   const orderNumber2 = String(seq2);
+  await request('PUT', '/admin/games/settings', {
+    gamesEnabled: true,
+    strictEligibility: true,
+    requiredQuantity: 1,
+    productIds: [product.id]
+  }, adminCookie);
   const ins2 = db.prepare(`
     INSERT INTO orders (
       order_number, order_seq, email, user_id, payment_method_id,
@@ -980,8 +986,8 @@ async function runGamesCheck(adminCookie) {
   const approve2 = await request('POST', `/admin/orders/${orderNumber2}/approve`, {}, adminCookie);
   if (approve2.status !== 200) { fail('games qty2 approve', approve2.json?.error || approve2.status); return; }
   const slot2 = db.prepare('SELECT entry_units FROM game_wheel_slots WHERE order_id = ?').get(orderId2);
-  if (Number(slot2?.entry_units) === 2) ok('grand draw counts qty 2 as two entry units');
-  else fail('grand draw qty 2 entry units', slot2?.entry_units);
+  if (Number(slot2?.entry_units) === 1) ok('grand draw qty 2 order still counts as one slot');
+  else fail('grand draw qty 2 one slot', slot2?.entry_units);
 
   purgeGameRowsForOrder(orderId2);
   db.prepare('DELETE FROM order_items WHERE order_id = ?').run(orderId2);

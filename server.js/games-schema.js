@@ -440,6 +440,9 @@ function migrateGamesSchema(db) {
   for (const sql of alters) {
     try { db.exec(sql); } catch (_) { /* column exists */ }
   }
+  try {
+    db.prepare('UPDATE game_wheel_slots SET entry_units = 1 WHERE entry_units IS NULL OR entry_units != 1').run();
+  } catch (_) { /* column may not exist yet */ }
 }
 
 module.exports = { initGamesSchema, seedDefaultGames };

@@ -4,7 +4,6 @@ const crypto = require('crypto');
 const {
   orderQualifiesForGames,
   orderQualifiesForGrandDraw,
-  computeGrandDrawEntryUnits,
   orderIsDeliveredForGames,
   eligibilityMessage,
   buildEligibilityHub,
@@ -60,8 +59,7 @@ function ensureGamesMasterEnabled(db) {
 
 function countWheelEntries(db, campaignId) {
   const row = db.prepare(`
-    SELECT COALESCE(SUM(COALESCE(entry_units, 1)), 0) AS c
-    FROM game_wheel_slots WHERE campaign_id = ?
+    SELECT COUNT(*) AS c FROM game_wheel_slots WHERE campaign_id = ?
   `).get(campaignId);
   return Number(row?.c) || 0;
 }
@@ -890,22 +888,20 @@ function isGrandDrawWheel(campaign) {
   return max > 0;
 }
 
-function insertWheelSlot(db, deps, { wheel, order, userId, entryUnits, notify }) {
+function insertWheelSlot(db, deps, { wheel, order, userId, notify }) {
   const orderId = order.id;
   const orderNumber = String(order.order_number || order.id);
   const displayName = displayNameForUser(db, userId, order.email);
-  const units = Math.max(1, Number(entryUnits) || 1);
 
   db.prepare(`
     INSERT INTO game_wheel_slots (campaign_id, user_id, order_id, order_number, display_name, entry_units)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(wheel.id, userId, orderId, orderNumber, displayName, units);
+    VALUES (?, ?, ?, ?, ?, 1)
+  `).run(wheel.id, userId, orderId, orderNumber, displayName);
 
   const title = notify?.title || 'Grand draw entry!';
-  const body = notify?.body
-    || `Order #${orderNumber} joined the wheel — ${units} slot${units === 1 ? '' : 's'}. Good luck!`;
+  const body = notify?.body || `Order #${orderNumber} joined the wheel. Good luck!`;
   deps?.notify?.(userId, 'promo', title, body);
-  return units;
+  return 1;
 }
 
 function maybeAutoJoinGrandDrawWheelOnApproval(db, deps, order) {
@@ -918,20 +914,17 @@ function maybeAutoJoinGrandDrawWheelOnApproval(db, deps, order) {
   const total = Number(order.total) || 0;
   if (total < Number(wheel.min_order_total || 0)) return { joined: false };
   if (!orderQualifiesForGrandDraw(db, order.id)) return { joined: false };
-
-  const entryUnits = computeGrandDrawEntryUnits(db, order.id);
-  if (entryUnits < 1) return { joined: false };
   if (isWheelFull(db, wheel)) return { joined: false };
 
   const exists = db.prepare('SELECT id FROM game_wheel_slots WHERE order_id = ?').get(order.id);
   if (exists) return { joined: false };
 
   const userId = resolveUserId(db, { userId: order.user_id, email: order.email });
-  if (!userId) return { joined: false };
+  if (!userId) return { joined: false, reason: 'no_user' };
 
-  insertWheelSlot(db, deps, { wheel, order, userId, entryUnits });
+  insertWheelSlot(db, deps, { wheel, order, userId });
   maybeAutoDrawWheel(db, deps, wheel.id);
-  return { joined: true, entryUnits, wheelId: wheel.id };
+  return { joined: true, entryUnits: 1, wheelId: wheel.id };
 }
 
 function syncGrandDrawEntriesForApprovedOrders(db, deps, limit = 200) {
@@ -973,14 +966,10 @@ function grantSingleGameForOrder(db, deps, order, gameType) {
     if (isWheelFull(db, wheel)) return;
     const exists = db.prepare('SELECT id FROM game_wheel_slots WHERE order_id = ?').get(orderId);
     if (exists) return;
-    const entryUnits = isGrandDrawWheel(wheel)
-      ? computeGrandDrawEntryUnits(db, orderId)
-      : 1;
     insertWheelSlot(db, deps, {
       wheel,
       order,
       userId,
-      entryUnits: entryUnits || 1,
       notify: {
         title: 'Spin the Wheel entry!',
         body: `Order #${orderNumber} — you chose the wheel. Good luck!`
@@ -1082,8 +1071,7 @@ function processFullWheelDraws(db, deps) {
     WHERE c.is_enabled = 1 AND c.status = 'scheduled'
       AND c.max_entries IS NOT NULL AND c.max_entries > 0
       AND (
-        SELECT COALESCE(SUM(COALESCE(s.entry_units, 1)), 0)
-        FROM game_wheel_slots s WHERE s.campaign_id = c.id
+        SELECT COUNT(*) FROM game_wheel_slots s WHERE s.campaign_id = c.id
       ) >= c.max_entries
   `).all();
   for (const c of full) {
