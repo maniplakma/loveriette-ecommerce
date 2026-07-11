@@ -8,7 +8,7 @@ const appConfig = require('./config');
 const db = require('./db');
 const { SqliteSessionStore } = require('./session-store');
 const { creditLoyaltyForPurchase } = require('./loyalty');
-const { tryGrantGamesForDeliveredOrder, maybeAutoJoinGrandDrawWheelOnApproval, syncGrandDrawEntriesForApprovedOrders } = require('./games-engine');
+const { tryGrantGamesForDeliveredOrder, maybeAutoJoinGrandDrawWheelOnApproval, syncGrandDrawEntriesForApprovedOrders, repairWheelSlotDisplayNames } = require('./games-engine');
 const { fetchLatestUnreadGmail, parseGmailFilters, getLastFetchedMessageId } = require('./gmail-fetch');
 const {
   oauthConfigured,
@@ -1979,6 +1979,15 @@ try {
   }
 } catch (err) {
   console.error('[games] grand draw backfill failed:', err.message);
+}
+
+try {
+  const repaired = repairWheelSlotDisplayNames(db);
+  if (repaired > 0) {
+    console.log(`[games] repaired ${repaired} wheel slot name(s) from order email`);
+  }
+} catch (err) {
+  console.error('[games] wheel slot name repair failed:', err.message);
 }
 
 function orderItemFulfillmentRemaining(orderItemId, quantity) {

@@ -41,9 +41,11 @@ function mapWheelCampaign(row, db) {
   const slots = db.prepare(`
     SELECT s.id, s.display_name AS displayName, s.order_number AS orderNumber, s.created_at AS createdAt,
            COALESCE(s.entry_units, 1) AS entryUnits,
-           u.username, u.name AS userName, u.email
+           u.username, u.name AS userName, u.email,
+           o.email AS orderEmail
     FROM game_wheel_slots s
     LEFT JOIN users u ON u.id = s.user_id
+    LEFT JOIN orders o ON o.id = s.order_id
     WHERE s.campaign_id = ? ORDER BY s.id ASC
   `).all(row.id).map((slot) => ({
     ...slot,

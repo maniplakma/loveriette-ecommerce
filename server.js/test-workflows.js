@@ -1286,6 +1286,79 @@ async function runWheelAutoDrawCheck(adminCookie) {
   }
 }
 
+function runWheelNameCheck() {
+  console.log('\nWheel name matches order buyer');
+  const {
+    wheelLabelForOrder,
+    wheelLabelFromRow,
+    resolveOrderBuyer,
+    repairWheelSlotDisplayNames
+  } = require('./games-engine');
+
+  const astraId = db.prepare(`
+    INSERT INTO users (email, password_hash, name, username)
+    VALUES ('astra@test.local', 'x', 'Astra', 'astra')
+  `).run().lastInsertRowid;
+  const matchaId = db.prepare(`
+    INSERT INTO users (email, password_hash, name, username)
+    VALUES ('matcha@test.local', 'x', 'Matcha', 'matcha')
+  `).run().lastInsertRowid;
+
+  const mismatchedOrder = { email: 'matcha@test.local', user_id: astraId };
+  const label = wheelLabelForOrder(db, mismatchedOrder);
+  if (label === 'matcha') ok('wheel label uses order email, not logged-in username');
+  else fail('wheel label uses order email', label);
+
+  const buyer = resolveOrderBuyer(db, mismatchedOrder);
+  if (buyer.userId === matchaId) ok('wheel buyer resolves from order email');
+  else fail('wheel buyer resolves from order email', buyer.userId);
+
+  const fromRow = wheelLabelFromRow({
+    displayName: 'matcha',
+    username: 'astra',
+    orderEmail: 'matcha@test.local'
+  });
+  if (fromRow === 'matcha') ok('wheelLabelFromRow prefers stored slot name');
+  else fail('wheelLabelFromRow prefers stored slot name', fromRow);
+
+  const pm = db.prepare('SELECT id FROM payment_methods WHERE is_active = 1 LIMIT 1').get();
+  const product = db.prepare('SELECT id FROM products ORDER BY id LIMIT 1').get();
+  const seq = db.prepare('SELECT COALESCE(MAX(order_seq), 0) + 1 AS n FROM orders').get().n;
+  const orderNumber = `WN${seq}`;
+  const orderId = db.prepare(`
+    INSERT INTO orders (
+      order_number, order_seq, user_id, email, payment_method_id,
+      subtotal, discount, total, status, tingi_drop_enabled, fulfillment_mode
+    ) VALUES (?, ?, ?, 'matcha@test.local', ?, 100, 0, 100, 'approved', 0, 'auto')
+  `).run(orderNumber, seq, astraId, pm.id).lastInsertRowid;
+  db.prepare(`
+    INSERT INTO order_items (order_id, product_id, product_name, quantity, price)
+    VALUES (?, ?, 'Wheel Name Test', 1, 100)
+  `).run(orderId, product.id);
+
+  const wheel = db.prepare(`
+    SELECT id FROM game_wheel_campaigns WHERE is_enabled = 1 ORDER BY id DESC LIMIT 1
+  `).get();
+  if (wheel?.id) {
+    db.prepare(`
+      INSERT INTO game_wheel_slots (campaign_id, user_id, order_id, order_number, display_name, entry_units)
+      VALUES (?, ?, ?, ?, 'astra', 1)
+    `).run(wheel.id, astraId, orderId, orderNumber);
+    const repaired = repairWheelSlotDisplayNames(db);
+    const slot = db.prepare('SELECT display_name, user_id FROM game_wheel_slots WHERE order_id = ?').get(orderId);
+    if (repaired >= 1 && slot?.display_name === 'matcha' && slot.user_id === matchaId) {
+      ok('repairWheelSlotDisplayNames fixes mismatched slot');
+    } else {
+      fail('repairWheelSlotDisplayNames', JSON.stringify({ repaired, slot }));
+    }
+    db.prepare('DELETE FROM game_wheel_slots WHERE order_id = ?').run(orderId);
+  } else ok('repairWheelSlotDisplayNames (skipped — no active wheel)');
+
+  db.prepare('DELETE FROM order_items WHERE order_id = ?').run(orderId);
+  db.prepare('DELETE FROM orders WHERE id = ?').run(orderId);
+  db.prepare('DELETE FROM users WHERE id IN (?, ?)').run(astraId, matchaId);
+}
+
 function runPrizeOddsCheck() {
   console.log('\nPrize odds (losers should dominate)');
   const { pickWeightedPrize, isLoserPrizeType } = require('./games-engine');
@@ -1506,6 +1579,7 @@ async function main() {
     await runGamesCheck(adminCookie);
     await runWheelAutoDrawCheck(adminCookie);
     await runWheelMultiPrizeCheck(adminCookie);
+    runWheelNameCheck();
     runPrizeOddsCheck();
     await runVariantDescriptionCheck(adminCookie);
     await runUserAdminCheck(adminCookie);

@@ -290,9 +290,11 @@ function buildGamesHubState(db, userId = null) {
   const wheelEntries = wheelDisplayRow
     ? db.prepare(`
       SELECT s.display_name AS displayName, s.order_number AS orderNumber,
-             u.username, u.name AS userName, u.email
+             u.username, u.name AS userName, u.email,
+             o.email AS orderEmail
       FROM game_wheel_slots s
       LEFT JOIN users u ON u.id = s.user_id
+      LEFT JOIN orders o ON o.id = s.order_id
       WHERE s.campaign_id = ?
       ORDER BY s.id ASC LIMIT 100
     `).all(wheelDisplayRow.id).map((row) => ({
@@ -522,6 +524,23 @@ function resolveUserId(db, { userId, email }) {
   return row?.id || null;
 }
 
+/** Buyer identity for wheel slots — order email wins over stale session user_id. */
+function resolveOrderBuyer(db, order) {
+  const email = String(order?.email || '').trim().toLowerCase();
+  if (!email) {
+    return { userId: order?.user_id ? Number(order.user_id) : null, email: '' };
+  }
+  const byEmail = db.prepare('SELECT id FROM users WHERE LOWER(email) = ?').get(email);
+  if (byEmail?.id) return { userId: byEmail.id, email };
+  if (order?.user_id) {
+    const linked = db.prepare('SELECT id, email FROM users WHERE id = ?').get(order.user_id);
+    if (linked && String(linked.email || '').trim().toLowerCase() === email) {
+      return { userId: linked.id, email };
+    }
+  }
+  return { userId: order?.user_id ? Number(order.user_id) : null, email };
+}
+
 function displayNameForUser(db, userId, email) {
   const user = userId
     ? db.prepare('SELECT name, email, username FROM users WHERE id = ?').get(userId)
@@ -549,17 +568,33 @@ function wheelLabelForUser(db, userId, email) {
   return 'Player';
 }
 
+/** Wheel label from the order buyer (email on receipt), not the logged-in account username. */
+function wheelLabelForOrder(db, order) {
+  const email = String(order?.email || '').trim().toLowerCase();
+  if (email.includes('@')) {
+    const local = email.split('@')[0].replace(/[^a-zA-Z0-9._-]/g, '');
+    if (local) return local.slice(0, 14);
+  }
+  const buyer = resolveOrderBuyer(db, order);
+  return wheelLabelForUser(db, buyer.userId, email);
+}
+
 function wheelLabelFromRow(row) {
+  const stored = String(row?.displayName || '').trim();
+  if (stored) {
+    const first = stored.split(/\s+/).find(Boolean);
+    if (first) return first.slice(0, 14);
+  }
+  const orderEmail = String(row?.orderEmail || '').trim().toLowerCase();
+  if (orderEmail.includes('@')) {
+    const local = orderEmail.split('@')[0].replace(/[^a-zA-Z0-9._-]/g, '');
+    if (local) return local.slice(0, 14);
+  }
   const username = String(row?.username || '').trim().replace(/^@/, '');
   if (username) return username.slice(0, 14);
   const name = String(row?.userName || row?.name || '').trim();
   if (name) {
     const first = name.split(/\s+/).find(Boolean);
-    if (first) return first.slice(0, 14);
-  }
-  const stored = String(row?.displayName || '').trim();
-  if (stored) {
-    const first = stored.split(/\s+/).find(Boolean);
     if (first) return first.slice(0, 14);
   }
   const em = String(row?.email || '').trim();
@@ -931,16 +966,18 @@ function isGrandDrawWheel(campaign) {
 function insertWheelSlot(db, deps, { wheel, order, userId, notify }) {
   const orderId = order.id;
   const orderNumber = String(order.order_number || order.id);
-  const displayName = wheelLabelForUser(db, userId, order.email);
+  const buyer = resolveOrderBuyer(db, order);
+  const slotUserId = buyer.userId || userId;
+  const displayName = wheelLabelForOrder(db, order);
 
   db.prepare(`
     INSERT INTO game_wheel_slots (campaign_id, user_id, order_id, order_number, display_name, entry_units)
     VALUES (?, ?, ?, ?, ?, 1)
-  `).run(wheel.id, userId, orderId, orderNumber, displayName);
+  `).run(wheel.id, slotUserId, orderId, orderNumber, displayName);
 
   const title = notify?.title || 'Grand draw entry!';
   const body = notify?.body || `Order #${orderNumber} joined the wheel. Good luck!`;
-  deps?.notify?.(userId, 'promo', title, body);
+  deps?.notify?.(slotUserId, 'promo', title, body);
   return 1;
 }
 
@@ -959,7 +996,7 @@ function maybeAutoJoinGrandDrawWheelOnApproval(db, deps, order) {
   const exists = db.prepare('SELECT id FROM game_wheel_slots WHERE order_id = ?').get(order.id);
   if (exists) return { joined: false };
 
-  const userId = resolveUserId(db, { userId: order.user_id, email: order.email });
+  const userId = resolveOrderBuyer(db, order).userId || resolveUserId(db, { userId: order.user_id, email: order.email });
   if (!userId) return { joined: false, reason: 'no_user' };
 
   insertWheelSlot(db, deps, { wheel, order, userId });
@@ -990,6 +1027,34 @@ function syncGrandDrawEntriesForApprovedOrders(db, deps, limit = 200) {
     }
   }
   return { synced };
+}
+
+/** Fix wheel names from order email when account username was shown instead of buyer. */
+function repairWheelSlotDisplayNames(db) {
+  const rows = db.prepare(`
+    SELECT s.id AS slotId, s.display_name AS slotName, s.user_id AS slotUserId,
+           o.email AS orderEmail, o.user_id AS orderUserId
+    FROM game_wheel_slots s
+    INNER JOIN orders o ON o.id = s.order_id
+  `).all();
+  const updateSlot = db.prepare('UPDATE game_wheel_slots SET display_name = ?, user_id = ? WHERE id = ?');
+  const updateWinner = db.prepare(`
+    UPDATE game_wheel_winners SET display_name = ?, user_id = ?
+    WHERE slot_id = ?
+  `);
+  let fixed = 0;
+  for (const row of rows) {
+    const order = { email: row.orderEmail, user_id: row.orderUserId };
+    const buyer = resolveOrderBuyer(db, order);
+    const label = wheelLabelForOrder(db, order);
+    const nextUserId = buyer.userId || row.slotUserId;
+    if (label !== row.slotName || nextUserId !== row.slotUserId) {
+      updateSlot.run(label, nextUserId, row.slotId);
+      updateWinner.run(label, nextUserId, row.slotId);
+      fixed += 1;
+    }
+  }
+  return fixed;
 }
 
 function grantSingleGameForOrder(db, deps, order, gameType) {
@@ -1441,7 +1506,10 @@ module.exports = {
   recordPrizeAward,
   displayNameForUser,
   wheelLabelForUser,
+  wheelLabelForOrder,
   wheelLabelFromRow,
+  resolveOrderBuyer,
+  repairWheelSlotDisplayNames,
   diagnoseWheelPlayState,
   pickEnabledScheduledWheel,
   formatAvailableDays,
