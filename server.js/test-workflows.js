@@ -766,6 +766,58 @@ async function runInventoryCheck(adminCookie) {
   else fail('variant label after delete', vRestored?.availability_state || 'missing');
 }
 
+async function runStockAddFulfillCheck(adminCookie) {
+  console.log('\nStock add auto-delivers waiting approved orders');
+  const variant = db.prepare(`
+    SELECT v.id AS variantId, v.product_id AS productId, p.price
+    FROM product_variants v JOIN products p ON p.id = v.product_id
+    ORDER BY v.id LIMIT 1
+  `).get();
+  if (!variant) { fail('stock add fulfill', 'no variant'); return; }
+
+  db.prepare('DELETE FROM stock_items WHERE variant_id = ?').run(variant.variantId);
+
+  const pm = db.prepare('SELECT id FROM payment_methods WHERE is_active = 1 LIMIT 1').get();
+  if (!pm) { fail('stock add fulfill', 'no payment method'); return; }
+
+  const seq = db.prepare('SELECT COALESCE(MAX(order_seq), 0) + 1 AS n FROM orders').get().n;
+  const orderNumber = `S${seq}`;
+  const ins = db.prepare(`
+    INSERT INTO orders (
+      order_number, order_seq, email, payment_method_id,
+      subtotal, discount, total, status, tingi_drop_enabled, fulfillment_mode
+    ) VALUES (?, ?, 'stock-add-fulfill@test.local', ?, ?, 0, ?, 'approved', 0, 'auto')
+  `).run(orderNumber, seq, pm.id, variant.price, variant.price);
+  const orderId = ins.lastInsertRowid;
+  db.prepare(`
+    INSERT INTO order_items (order_id, product_id, variant_id, product_name, quantity, price)
+    VALUES (?, ?, ?, 'Stock Add Fulfill Test', 1, ?)
+  `).run(orderId, variant.productId, variant.variantId, variant.price);
+
+  const beforeFulfill = db.prepare('SELECT COUNT(*) AS c FROM order_fulfillments WHERE order_id = ?').get(orderId).c;
+  if (beforeFulfill === 0) ok('approved order waits when no stock');
+  else fail('approved order waits when no stock', `fulfillments=${beforeFulfill}`);
+
+  const add = await request('POST', '/admin/inventory', {
+    variant_id: variant.variantId,
+    email: 'waiting@test.local',
+    password: 'pass123',
+    profiles: ['Profile 1']
+  }, adminCookie);
+
+  const afterFulfill = db.prepare('SELECT COUNT(*) AS c FROM order_fulfillments WHERE order_id = ?').get(orderId).c;
+  if (add.status === 201 && add.json.delivered >= 1 && afterFulfill >= 1) {
+    ok('POST /admin/inventory auto-delivers waiting approved order');
+  } else {
+    fail('POST /admin/inventory auto-delivers', JSON.stringify({ status: add.status, json: add.json, afterFulfill }));
+  }
+
+  db.prepare('DELETE FROM order_fulfillments WHERE order_id = ?').run(orderId);
+  db.prepare('DELETE FROM order_items WHERE order_id = ?').run(orderId);
+  db.prepare('DELETE FROM orders WHERE id = ?').run(orderId);
+  db.prepare('DELETE FROM stock_items WHERE variant_id = ?').run(variant.variantId);
+}
+
 async function runThemeCheck(adminCookie) {
   console.log('\nTheme system');
   const colorhunt = await request('POST', '/admin/theme/colorhunt', {
@@ -1410,6 +1462,7 @@ async function main() {
     await runBulkPricingCheck();
     await runPaymentSettingsCheck(adminCookie);
     await runInventoryCheck(adminCookie);
+    await runStockAddFulfillCheck(adminCookie);
     await runThemeCheck(adminCookie);
     await runStoreUpdatesCheck(adminCookie);
     try {

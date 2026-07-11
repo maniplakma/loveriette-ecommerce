@@ -1025,6 +1025,35 @@ function fulfillOrderRemaining(orderId) {
   return { assigned };
 }
 
+/** When new stock is added, deliver waiting approved non-Tingi orders (FIFO). */
+function fulfillWaitingOrdersForNewStock(variantId, productId) {
+  const pid = Number(productId) || db.prepare('SELECT product_id FROM product_variants WHERE id = ?').get(variantId)?.product_id;
+  if (!pid) return 0;
+
+  const orders = db.prepare(`
+    SELECT DISTINCT o.id
+    FROM orders o
+    INNER JOIN order_items oi ON oi.order_id = o.id
+    WHERE o.status = 'approved'
+      AND o.tingi_drop_enabled = 0
+      AND (oi.variant_id = ? OR oi.product_id = ?)
+    ORDER BY o.id ASC
+  `).all(variantId, pid);
+
+  let assigned = 0;
+  for (const { id } of orders) {
+    const summary = orderFulfillmentSummary(id);
+    if (summary.remaining <= 0) continue;
+    if (!orderHasStockForRemaining(id)) continue;
+    const order = db.prepare('SELECT fulfillment_mode FROM orders WHERE id = ?').get(id);
+    if (order?.fulfillment_mode === 'manual') {
+      db.prepare('UPDATE orders SET fulfillment_mode = ?, tingi_hold_until = NULL WHERE id = ?').run('auto', id);
+    }
+    assigned += fulfillOrderRemaining(id).assigned || 0;
+  }
+  return assigned;
+}
+
 function processExpiredTingiHolds() {
   const expired = db.prepare(`
     SELECT id, order_number, user_id, email FROM orders
@@ -4846,7 +4875,13 @@ app.post('/admin/inventory', requireAdmin, (req, res) => {
     db.exec('ROLLBACK');
     return res.status(500).json({ error: 'Failed to create stock' });
   }
-  res.status(201).json({ ok: true, created: created.length });
+  let delivered = 0;
+  try {
+    delivered = fulfillWaitingOrdersForNewStock(variant.id, variant.product_id);
+  } catch (err) {
+    console.error('[inventory] auto-fulfill waiting orders failed', err.message);
+  }
+  res.status(201).json({ ok: true, created: created.length, delivered });
 });
 
 app.put('/admin/inventory/:id', requireAdmin, (req, res) => {

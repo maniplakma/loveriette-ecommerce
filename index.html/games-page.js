@@ -229,10 +229,11 @@
   function wheelRadii(wheelSize) {
     const cx = wheelSize / 2;
     const cy = wheelSize / 2;
-    const rOut = wheelSize / 2 - 1.5;
-    const rIn = wheelSize * 0.28;
-    const labelR = rIn + (rOut - rIn) * 0.52;
-    return { cx, cy, rOut, rIn, labelR };
+    const rOut = wheelSize / 2 - 2;
+    const rIn = wheelSize * 0.30;
+    const radialDepth = rOut - rIn;
+    const labelR = rIn + radialDepth * 0.5;
+    return { cx, cy, rOut, rIn, labelR, radialDepth };
   }
 
   function polarDeg(cx, cy, r, deg) {
@@ -273,8 +274,13 @@
   }
 
   function wedgeLabelMaxLen(sliceDeg, labelR) {
-    const chord = wedgeChordWidth(sliceDeg, labelR);
-    return Math.max(3, Math.min(18, Math.floor(chord / 5.2)));
+    const chord = wedgeChordWidth(sliceDeg, labelR) * 0.82;
+    return Math.max(3, Math.min(14, Math.floor(chord / 6.8)));
+  }
+
+  function readableWheelRotation(bisectorDeg) {
+    const norm = ((bisectorDeg % 360) + 360) % 360;
+    return (norm > 90 && norm < 270) ? bisectorDeg + 180 : bisectorDeg;
   }
 
   function shortenWheelLabel(name, sliceDeg, labelR) {
@@ -286,12 +292,12 @@
   }
 
   function fitRadialFontSize(text, sliceDeg, labelR, radialDepth) {
-    const chord = wedgeChordWidth(sliceDeg, labelR);
-    const byWidth = chord / Math.max(text.length * 0.62, 2);
-    const byDepth = radialDepth * 0.72;
-    const bySlice = sliceDeg * 0.38;
-    const cap = sliceDeg >= 90 ? 18 : sliceDeg >= 45 ? 15 : 12;
-    return Math.max(7, Math.min(cap, Math.round(Math.min(byWidth, byDepth, bySlice))));
+    const chord = wedgeChordWidth(sliceDeg, labelR) * 0.78;
+    const byChord = chord / Math.max(text.length * 0.68, 1.6);
+    const byDepth = radialDepth * 0.58;
+    const bySlice = sliceDeg * 0.28;
+    const cap = sliceDeg >= 120 ? 13 : sliceDeg >= 60 ? 11 : sliceDeg >= 30 ? 9 : 7;
+    return Math.max(6, Math.min(cap, Math.floor(Math.min(byChord, byDepth, bySlice))));
   }
 
   function wheelPointerHtml() {
@@ -310,22 +316,25 @@
       </div>`;
   }
 
-  function radialWedgeLabel(entry, bisectorDeg, sliceDeg, radii) {
+  function radialWedgeLabel(entry, bisectorDeg, sliceDeg, radii, clipId) {
     if (!entry?.displayName) return '';
-    const { cx, cy, labelR, rOut, rIn } = radii;
+    const { cx, cy, labelR, radialDepth } = radii;
     const text = esc(shortenWheelLabel(entry.displayName, sliceDeg, labelR));
     if (!text) return '';
-    const fontSize = fitRadialFontSize(text, sliceDeg, labelR, rOut - rIn);
+    const fontSize = fitRadialFontSize(text, sliceDeg, labelR, radialDepth);
     const [tx, ty] = polarDeg(cx, cy, labelR, bisectorDeg);
-    return `<text x="${tx.toFixed(2)}" y="${ty.toFixed(2)}" class="games-wheel-svg-label" font-size="${fontSize}" text-anchor="middle" dominant-baseline="middle" transform="rotate(${bisectorDeg.toFixed(2)} ${tx.toFixed(2)} ${ty.toFixed(2)})">${text}</text>`;
+    const rot = readableWheelRotation(bisectorDeg);
+    return `<g clip-path="url(#${clipId})"><text x="${tx.toFixed(2)}" y="${ty.toFixed(2)}" class="games-wheel-svg-label" font-size="${fontSize}" text-anchor="middle" dominant-baseline="middle" transform="rotate(${rot.toFixed(2)} ${tx.toFixed(2)} ${ty.toFixed(2)})">${text}</text></g>`;
   }
 
   /** Full SVG wheel: colored wedges + divider lines + radial names (like classic prize wheel). */
   function wheelSvgHtml(entries, segmentCount, wheelSize) {
+    const uid = ++wheelSvgUid;
     const radii = wheelRadii(wheelSize);
     const { cx, cy, rOut, rIn } = radii;
     const slice = 360 / segmentCount;
     const filled = Array.isArray(entries) ? entries.length : 0;
+    const clips = [];
     const wedges = [];
     const dividers = [];
     const labels = [];
@@ -333,14 +342,19 @@
     for (let i = 0; i < segmentCount; i++) {
       const start = slice * i - 90;
       const end = slice * (i + 1) - 90;
+      const clipId = `wheel-clip-${uid}-${i}`;
       const color = i < filled
         ? JOYFUL_WHEEL_COLORS[i % JOYFUL_WHEEL_COLORS.length]
         : (filled > 0 ? 'rgba(255,255,255,0.06)' : JOYFUL_WHEEL_COLORS[i % JOYFUL_WHEEL_COLORS.length]);
 
       if (segmentCount === 1) {
-        wedges.push(`<path fill-rule="evenodd" d="${fullAnnulusPath(cx, cy, rOut, rIn)}" fill="${color}"/>`);
+        const d = fullAnnulusPath(cx, cy, rOut, rIn);
+        clips.push(`<clipPath id="${clipId}"><path fill-rule="evenodd" d="${d}"/></clipPath>`);
+        wedges.push(`<path fill-rule="evenodd" d="${d}" fill="${color}"/>`);
       } else {
-        wedges.push(`<path d="${annularWedgePath(cx, cy, rOut, rIn, start, end)}" fill="${color}"/>`);
+        const d = annularWedgePath(cx, cy, rOut, rIn, start, end);
+        clips.push(`<clipPath id="${clipId}"><path d="${d}"/></clipPath>`);
+        wedges.push(`<path d="${d}" fill="${color}"/>`);
         const [dx1, dy1] = polarDeg(cx, cy, rIn, start);
         const [dx2, dy2] = polarDeg(cx, cy, rOut, start);
         dividers.push(`<line x1="${dx1.toFixed(2)}" y1="${dy1.toFixed(2)}" x2="${dx2.toFixed(2)}" y2="${dy2.toFixed(2)}" class="games-wheel-divider"/>`);
@@ -348,11 +362,12 @@
 
       if (entries?.[i]?.displayName) {
         const bisector = segmentCount === 1 ? -90 : (start + end) / 2;
-        labels.push(radialWedgeLabel(entries[i], bisector, slice, radii));
+        labels.push(radialWedgeLabel(entries[i], bisector, slice, radii, clipId));
       }
     }
 
     return `<svg class="games-wheel-svg" viewBox="0 0 ${wheelSize} ${wheelSize}" width="100%" height="100%" aria-hidden="true" role="presentation">
+      <defs>${clips.join('')}</defs>
       <g class="games-wheel-wedges">${wedges.join('')}</g>
       <g class="games-wheel-dividers">${dividers.join('')}</g>
       <g class="games-wheel-labels">${labels.join('')}</g>
