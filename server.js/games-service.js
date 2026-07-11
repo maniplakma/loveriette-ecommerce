@@ -43,7 +43,7 @@ function mapWheelCampaign(row, db) {
            COALESCE(s.entry_units, 1) AS entryUnits,
            u.username, u.name AS userName, u.email
     FROM game_wheel_slots s
-    JOIN users u ON u.id = s.user_id
+    LEFT JOIN users u ON u.id = s.user_id
     WHERE s.campaign_id = ? ORDER BY s.id ASC
   `).all(row.id).map((slot) => ({
     ...slot,

@@ -292,7 +292,7 @@ function buildGamesHubState(db, userId = null) {
       SELECT s.display_name AS displayName, s.order_number AS orderNumber,
              u.username, u.name AS userName, u.email
       FROM game_wheel_slots s
-      JOIN users u ON u.id = s.user_id
+      LEFT JOIN users u ON u.id = s.user_id
       WHERE s.campaign_id = ?
       ORDER BY s.id ASC LIMIT 100
     `).all(wheelDisplayRow.id).map((row) => ({

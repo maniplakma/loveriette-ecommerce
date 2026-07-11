@@ -212,15 +212,24 @@
     return `conic-gradient(from -90deg, ${stops.join(', ')})`;
   }
 
-  function wheelLabelsHtml(entries, segmentCount, wheelSize) {
+  function wheelLabelsSvg(entries, segmentCount, wheelSize) {
     if (!entries?.length) return '';
+    const cx = wheelSize / 2;
+    const cy = wheelSize / 2;
+    const r = wheelSize * 0.36;
     const slice = 360 / segmentCount;
-    const radius = Math.max(36, Math.round(wheelSize * 0.36));
-    return entries.map((entry, i) => {
-      if (i >= segmentCount || !entry?.displayName) return '';
-      const angle = slice * i + slice / 2;
-      return `<span class="games-wheel-label" style="transform:rotate(${angle}deg) translateY(-${radius}px) rotate(${-angle}deg)" title="${esc(entry.displayName)}">${esc(shortenWheelLabel(entry.displayName))}</span>`;
+    const sparse = entries.length <= 3;
+    const labels = entries.slice(0, segmentCount).map((entry, i) => {
+      if (!entry?.displayName) return '';
+      const deg = slice * i + slice / 2;
+      const rad = ((deg - 90) * Math.PI) / 180;
+      const x = cx + r * Math.cos(rad);
+      const y = cy + r * Math.sin(rad);
+      const text = esc(shortenWheelLabel(entry.displayName));
+      const size = sparse ? 13 : Math.max(8, Math.min(11, Math.round(wheelSize / segmentCount * 0.85)));
+      return `<text x="${x.toFixed(2)}" y="${y.toFixed(2)}" class="games-wheel-svg-label${sparse ? ' games-wheel-svg-label--sparse' : ''}" font-size="${size}" text-anchor="middle" dominant-baseline="middle" transform="rotate(${deg.toFixed(2)} ${x.toFixed(2)} ${y.toFixed(2)})">${text}</text>`;
     }).join('');
+    return `<svg class="games-wheel-svg" viewBox="0 0 ${wheelSize} ${wheelSize}" width="100%" height="100%" aria-hidden="true">${labels}</svg>`;
   }
 
   function wheelVisualHtml(extraClass, entries, maxEntries) {
@@ -228,12 +237,12 @@
     const segmentCount = wheelSegmentCount(entryList, maxEntries);
     const hasRoster = entryList.length > 0 || Number(maxEntries) > 0;
     const rosterClass = hasRoster ? ' games-wheel-visual--roster is-live-roster' : '';
-    const wheelSize = hasRoster ? 196 : 130;
+    const wheelSize = hasRoster ? 200 : 130;
     const gradient = wheelGradientCss(segmentCount);
     return `
-      <div class="games-wheel-visual games-wheel-visual--lg${rosterClass}${extraClass ? ` ${extraClass}` : ''}" style="--wheel-segments:${segmentCount};--wheel-size:${wheelSize}px" data-wheel-segments="${segmentCount}">
+      <div class="games-wheel-visual games-wheel-visual--lg${rosterClass}${extraClass ? ` ${extraClass}` : ''}" style="--wheel-segments:${segmentCount};--wheel-size:${wheelSize}px" data-wheel-segments="${segmentCount}" data-wheel-entries="${entryList.length}">
         <div class="games-wheel-segments is-painted" style="background:${gradient}" aria-hidden="true"></div>
-        <div class="games-wheel-labels" aria-hidden="true">${wheelLabelsHtml(entryList, segmentCount, wheelSize)}</div>
+        ${wheelLabelsSvg(entryList, segmentCount, wheelSize)}
         <div class="games-wheel-ring"></div>
         <div class="games-wheel-center">${icon('wheel', 'games-icon--wheel')}</div>
       </div>`;
@@ -249,39 +258,30 @@
   function paintWheelSegments(visual, entries, maxEntries) {
     if (!visual) return;
     const segEl = visual.querySelector('.games-wheel-segments');
-    let labelsEl = visual.querySelector('.games-wheel-labels');
     if (!segEl) return;
-    if (!labelsEl) {
-      labelsEl = document.createElement('div');
-      labelsEl.className = 'games-wheel-labels';
-      labelsEl.setAttribute('aria-hidden', 'true');
-      const ring = visual.querySelector('.games-wheel-ring');
-      visual.insertBefore(labelsEl, ring || visual.querySelector('.games-wheel-center'));
-    }
 
     const entryList = Array.isArray(entries) ? entries : [];
     const segmentCount = wheelSegmentCount(entryList, maxEntries);
-    const slice = 360 / segmentCount;
     const hasRoster = entryList.length > 0 || Number(maxEntries) > 0;
-    const wheelSize = hasRoster ? 196 : (visual.offsetWidth || 130);
+    const wheelSize = hasRoster ? 200 : (visual.offsetWidth || 130);
     segEl.classList.add('is-painted');
     segEl.style.background = wheelGradientCss(segmentCount);
     visual.style.setProperty('--wheel-segments', String(segmentCount));
     visual.style.setProperty('--wheel-size', `${wheelSize}px`);
     visual.dataset.wheelSegments = String(segmentCount);
+    visual.dataset.wheelEntries = String(entryList.length);
     if (hasRoster) visual.classList.add('games-wheel-visual--roster', 'is-live-roster');
 
-    const labelRadius = Math.max(36, Math.round(wheelSize * 0.36));
-    labelsEl.innerHTML = entryList.map((entry, i) => {
-      if (i >= segmentCount || !entry?.displayName) return '';
-      const angle = slice * i + slice / 2;
-      const label = document.createElement('span');
-      label.className = 'games-wheel-label';
-      label.textContent = shortenWheelLabel(entry.displayName);
-      label.title = String(entry.displayName);
-      label.style.transform = `rotate(${angle}deg) translateY(-${labelRadius}px) rotate(${-angle}deg)`;
-      return label.outerHTML;
-    }).join('');
+    const oldSvg = visual.querySelector('.games-wheel-svg');
+    if (oldSvg) oldSvg.remove();
+    const oldLabels = visual.querySelector('.games-wheel-labels');
+    if (oldLabels) oldLabels.remove();
+    const ring = visual.querySelector('.games-wheel-ring');
+    const svgWrap = document.createElement('div');
+    svgWrap.innerHTML = wheelLabelsSvg(entryList, segmentCount, wheelSize);
+    const svg = svgWrap.firstElementChild;
+    if (svg && ring) visual.insertBefore(svg, ring);
+    else if (svg) visual.appendChild(svg);
   }
 
   function paintAllWheelVisuals(wheel) {
