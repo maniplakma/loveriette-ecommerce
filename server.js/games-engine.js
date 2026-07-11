@@ -3,6 +3,7 @@
 const crypto = require('crypto');
 const {
   orderQualifiesForGames,
+  orderQualifiesForGrandDraw,
   orderIsDeliveredForGames,
   eligibilityMessage,
   buildEligibilityHub,
@@ -57,7 +58,10 @@ function ensureGamesMasterEnabled(db) {
 }
 
 function countWheelEntries(db, campaignId) {
-  return db.prepare('SELECT COUNT(*) AS c FROM game_wheel_slots WHERE campaign_id = ?').get(campaignId).c;
+  const row = db.prepare(`
+    SELECT COUNT(*) AS c FROM game_wheel_slots WHERE campaign_id = ?
+  `).get(campaignId);
+  return Number(row?.c) || 0;
 }
 
 function isWheelFull(db, campaign) {
@@ -291,7 +295,7 @@ function buildGamesHubState(db, userId = null) {
     `).all(wheelDisplayRow.id)
     : [];
   const wheelEntryCount = wheelDisplayRow
-    ? db.prepare('SELECT COUNT(*) AS c FROM game_wheel_slots WHERE campaign_id = ?').get(wheelDisplayRow.id).c
+    ? countWheelEntries(db, wheelDisplayRow.id)
     : 0;
 
   const pendingCredits = userId ? listPendingCredits(db, userId) : [];
@@ -879,6 +883,75 @@ function isGameTypeOpen(db, gameType, orderTotal = 0) {
   return pool && isInstantPoolOpen(pool, enabled, now) && total >= Number(pool.min_order_total || 0);
 }
 
+function isGrandDrawWheel(campaign) {
+  const max = Number(campaign?.max_entries);
+  return max > 0;
+}
+
+function insertWheelSlot(db, deps, { wheel, order, userId, notify }) {
+  const orderId = order.id;
+  const orderNumber = String(order.order_number || order.id);
+  const displayName = displayNameForUser(db, userId, order.email);
+
+  db.prepare(`
+    INSERT INTO game_wheel_slots (campaign_id, user_id, order_id, order_number, display_name, entry_units)
+    VALUES (?, ?, ?, ?, ?, 1)
+  `).run(wheel.id, userId, orderId, orderNumber, displayName);
+
+  const title = notify?.title || 'Grand draw entry!';
+  const body = notify?.body || `Order #${orderNumber} joined the wheel. Good luck!`;
+  deps?.notify?.(userId, 'promo', title, body);
+  return 1;
+}
+
+function maybeAutoJoinGrandDrawWheelOnApproval(db, deps, order) {
+  if (!isGamesEnabled(db) || !order?.id) return { joined: false };
+  if (String(order.status || '').toLowerCase() !== 'approved') return { joined: false };
+
+  const wheel = pickEnabledScheduledWheel(db);
+  if (!wheel || !isGrandDrawWheel(wheel) || !wheel.is_enabled) return { joined: false };
+
+  const total = Number(order.total) || 0;
+  if (total < Number(wheel.min_order_total || 0)) return { joined: false };
+  if (!orderQualifiesForGrandDraw(db, order.id)) return { joined: false };
+  if (isWheelFull(db, wheel)) return { joined: false };
+
+  const exists = db.prepare('SELECT id FROM game_wheel_slots WHERE order_id = ?').get(order.id);
+  if (exists) return { joined: false };
+
+  const userId = resolveUserId(db, { userId: order.user_id, email: order.email });
+  if (!userId) return { joined: false, reason: 'no_user' };
+
+  insertWheelSlot(db, deps, { wheel, order, userId });
+  maybeAutoDrawWheel(db, deps, wheel.id);
+  return { joined: true, entryUnits: 1, wheelId: wheel.id };
+}
+
+function syncGrandDrawEntriesForApprovedOrders(db, deps, limit = 200) {
+  if (!isGamesEnabled(db)) return { synced: 0 };
+  const wheel = pickEnabledScheduledWheel(db);
+  if (!wheel || !isGrandDrawWheel(wheel)) return { synced: 0 };
+
+  const orders = db.prepare(`
+    SELECT o.* FROM orders o
+    WHERE o.status = 'approved'
+      AND NOT EXISTS (SELECT 1 FROM game_wheel_slots s WHERE s.order_id = o.id)
+    ORDER BY o.id ASC
+    LIMIT ?
+  `).all(Math.max(1, Number(limit) || 200));
+
+  let synced = 0;
+  for (const order of orders) {
+    try {
+      const result = maybeAutoJoinGrandDrawWheelOnApproval(db, deps, order);
+      if (result.joined) synced += 1;
+    } catch (err) {
+      console.error('[games] grand draw backfill failed', order.id, err.message);
+    }
+  }
+  return { synced };
+}
+
 function grantSingleGameForOrder(db, deps, order, gameType) {
   const userId = resolveUserId(db, { userId: order.user_id, email: order.email });
   if (!userId) return;
@@ -893,11 +966,15 @@ function grantSingleGameForOrder(db, deps, order, gameType) {
     if (isWheelFull(db, wheel)) return;
     const exists = db.prepare('SELECT id FROM game_wheel_slots WHERE order_id = ?').get(orderId);
     if (exists) return;
-    db.prepare(`
-      INSERT INTO game_wheel_slots (campaign_id, user_id, order_id, order_number, display_name)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(wheel.id, userId, orderId, orderNumber, displayName);
-    deps?.notify?.(userId, 'promo', 'Spin the Wheel entry!', `Order #${orderNumber} — you chose the wheel. Good luck!`);
+    insertWheelSlot(db, deps, {
+      wheel,
+      order,
+      userId,
+      notify: {
+        title: 'Spin the Wheel entry!',
+        body: `Order #${orderNumber} — you chose the wheel. Good luck!`
+      }
+    });
     return;
   }
 
@@ -993,7 +1070,9 @@ function processFullWheelDraws(db, deps) {
     SELECT c.* FROM game_wheel_campaigns c
     WHERE c.is_enabled = 1 AND c.status = 'scheduled'
       AND c.max_entries IS NOT NULL AND c.max_entries > 0
-      AND (SELECT COUNT(*) FROM game_wheel_slots s WHERE s.campaign_id = c.id) >= c.max_entries
+      AND (
+        SELECT COUNT(*) FROM game_wheel_slots s WHERE s.campaign_id = c.id
+      ) >= c.max_entries
   `).all();
   for (const c of full) {
     try {
@@ -1296,6 +1375,8 @@ module.exports = {
   grantGamesForApprovedOrder,
   tryGrantGamesForDeliveredOrder,
   chooseGameForCredit,
+  maybeAutoJoinGrandDrawWheelOnApproval,
+  syncGrandDrawEntriesForApprovedOrders,
   listPendingCredits,
   orderAllowsGamePlay,
   playDeniedMessage,

@@ -217,6 +217,7 @@ function initGamesSchema(db) {
       order_id INTEGER NOT NULL UNIQUE,
       order_number TEXT NOT NULL,
       display_name TEXT NOT NULL DEFAULT '',
+      entry_units INTEGER NOT NULL DEFAULT 1,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (campaign_id) REFERENCES game_wheel_campaigns(id) ON DELETE CASCADE,
       FOREIGN KEY (user_id) REFERENCES users(id),
@@ -433,11 +434,15 @@ function migrateGamesSchema(db) {
     'ALTER TABLE game_mystery_pools ADD COLUMN ends_at TEXT',
     'ALTER TABLE game_instant_pools ADD COLUMN starts_at TEXT',
     'ALTER TABLE game_instant_pools ADD COLUMN ends_at TEXT',
-    'ALTER TABLE game_wheel_campaigns ADD COLUMN max_entries INTEGER'
+    'ALTER TABLE game_wheel_campaigns ADD COLUMN max_entries INTEGER',
+    'ALTER TABLE game_wheel_slots ADD COLUMN entry_units INTEGER NOT NULL DEFAULT 1'
   ];
   for (const sql of alters) {
     try { db.exec(sql); } catch (_) { /* column exists */ }
   }
+  try {
+    db.prepare('UPDATE game_wheel_slots SET entry_units = 1 WHERE entry_units IS NULL OR entry_units != 1').run();
+  } catch (_) { /* column may not exist yet */ }
 }
 
 module.exports = { initGamesSchema, seedDefaultGames };

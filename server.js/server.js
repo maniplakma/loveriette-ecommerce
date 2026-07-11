@@ -7,7 +7,7 @@ const bcrypt = require('bcryptjs');
 const appConfig = require('./config');
 const db = require('./db');
 const { creditLoyaltyForPurchase } = require('./loyalty');
-const { tryGrantGamesForDeliveredOrder } = require('./games-engine');
+const { tryGrantGamesForDeliveredOrder, maybeAutoJoinGrandDrawWheelOnApproval, syncGrandDrawEntriesForApprovedOrders } = require('./games-engine');
 const { fetchLatestUnreadGmail, parseGmailFilters, getLastFetchedMessageId } = require('./gmail-fetch');
 const {
   oauthConfigured,
@@ -1908,6 +1908,11 @@ function markOrderApprovedAndFulfill(orderId) {
   }
 
   const fullOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
+  try {
+    maybeAutoJoinGrandDrawWheelOnApproval(db, gamesNotifyDeps(), fullOrder);
+  } catch (err) {
+    console.error('[games] grand draw auto-join failed', orderId, err.message);
+  }
   if (fullOrder.tingi_drop_enabled) {
     setTingiHoldUntil(orderId);
   } else {
@@ -1932,6 +1937,15 @@ function gamesNotifyDeps() {
   return {
     notify: (userId, type, title, body) => createUserNotification(userId, type, title, body)
   };
+}
+
+try {
+  const backfill = syncGrandDrawEntriesForApprovedOrders(db, gamesNotifyDeps());
+  if (backfill.synced > 0) {
+    console.log(`[games] backfilled ${backfill.synced} grand draw wheel entries`);
+  }
+} catch (err) {
+  console.error('[games] grand draw backfill failed:', err.message);
 }
 
 function orderItemFulfillmentRemaining(orderItemId, quantity) {

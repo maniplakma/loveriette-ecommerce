@@ -18,7 +18,8 @@ const {
   disableAllGamePools,
   ensureLoserPrizeForPool,
   defaultPrizeWeight,
-  isLoserPrizeType
+  isLoserPrizeType,
+  countWheelEntries
 } = require('./games-engine');
 const { sendHtmlPage } = require('./send-html-page');
 const { RIETTE_GAME_ROUTES } = require('./games-paths');
@@ -37,7 +38,8 @@ function mapWheelCampaign(row, db) {
   if (!row) return null;
   const prizes = db.prepare('SELECT * FROM game_wheel_prizes WHERE campaign_id = ? ORDER BY sort_order, id').all(row.id);
   const slots = db.prepare(`
-    SELECT id, display_name AS displayName, order_number AS orderNumber, created_at AS createdAt
+    SELECT id, display_name AS displayName, order_number AS orderNumber, created_at AS createdAt,
+           COALESCE(entry_units, 1) AS entryUnits
     FROM game_wheel_slots WHERE campaign_id = ? ORDER BY id ASC
   `).all(row.id);
   let winner = null;
@@ -82,7 +84,7 @@ function mapWheelCampaign(row, db) {
       wonCount: Number(p.won_count || 0)
     })),
     slots,
-    entryCount: slots.length
+    entryCount: countWheelEntries(db, row.id)
   };
 }
 
