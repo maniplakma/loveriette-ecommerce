@@ -6,6 +6,7 @@ const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const appConfig = require('./config');
 const db = require('./db');
+const { SqliteSessionStore } = require('./session-store');
 const { creditLoyaltyForPurchase } = require('./loyalty');
 const { tryGrantGamesForDeliveredOrder, maybeAutoJoinGrandDrawWheelOnApproval, syncGrandDrawEntriesForApprovedOrders } = require('./games-engine');
 const { fetchLatestUnreadGmail, parseGmailFilters, getLastFetchedMessageId } = require('./gmail-fetch');
@@ -223,11 +224,14 @@ function parseProofUrls(raw) {
 }
 
 app.use(session({
+  store: new SqliteSessionStore(db),
   secret: appConfig.resolveSessionSecret(),
   resave: false,
   saveUninitialized: false,
+  rolling: true,
+  name: 'lr.sid',
   cookie: {
-    maxAge: 7 * 24 * 60 * 60 * 1000,
+    maxAge: 30 * 24 * 60 * 60 * 1000,
     httpOnly: true,
     secure: appConfig.cookieSecure,
     sameSite: 'lax'
@@ -2325,17 +2329,19 @@ app.post('/auth/register', authRateLimit, (req, res) => {
   mergeGuestCartIntoUser(req.session, req.session.userId);
 
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId);
-  startUserSession(req, user);
+  startUserSession(req, user, (err) => {
+    if (err) return res.status(500).json({ error: 'Could not start session' });
 
-  queueBuyerEmail(() => sendWelcomeEmail(db, getSetting, {
-    userId: user.id,
-    email: user.email,
-    name: user.name
-  }));
+    queueBuyerEmail(() => sendWelcomeEmail(db, getSetting, {
+      userId: user.id,
+      email: user.email,
+      name: user.name
+    }));
 
-  res.status(201).json({
-    user: { id: user.id, email: user.email, name: user.name, isAdmin: !!user.is_admin },
-    cart: getCartPayload(req)
+    res.status(201).json({
+      user: { id: user.id, email: user.email, name: user.name, isAdmin: !!user.is_admin },
+      cart: getCartPayload(req)
+    });
   });
 });
 
@@ -2354,12 +2360,14 @@ app.post('/auth/login', authRateLimit, (req, res) => {
     return res.status(403).json({ error: 'Account suspended' });
   }
 
-  startUserSession(req, user);
   mergeGuestCartIntoUser(req.session, user.id);
 
-  res.json({
-    user: { id: user.id, email: user.email, name: user.name, isAdmin: !!user.is_admin },
-    cart: getCartPayload(req)
+  startUserSession(req, user, (err) => {
+    if (err) return res.status(500).json({ error: 'Could not start session' });
+    res.json({
+      user: { id: user.id, email: user.email, name: user.name, isAdmin: !!user.is_admin },
+      cart: getCartPayload(req)
+    });
   });
 });
 
@@ -2470,10 +2478,17 @@ app.get('/auth/me', (req, res) => {
     return res.json({ user: null });
   }
 
-  const user = db.prepare('SELECT id, email, name, is_admin FROM users WHERE id = ?')
-    .get(req.session.userId);
+  const user = db.prepare(`
+    SELECT id, email, name, is_admin, session_version, suspended FROM users WHERE id = ?
+  `).get(req.session.userId);
 
-  if (!user) {
+  if (!user || user.suspended) {
+    req.session.destroy(() => {});
+    return res.json({ user: null });
+  }
+
+  const sessionVer = req.session.sessionVersion ?? 0;
+  if (sessionVer !== (user.session_version ?? 0)) {
     req.session.destroy(() => {});
     return res.json({ user: null });
   }
@@ -2637,10 +2652,15 @@ function recordLogin(req, userId) {
     .run(String(ip).slice(0, 64), userId);
 }
 
-function startUserSession(req, user) {
+function startUserSession(req, user, cb) {
   req.session.userId = user.id;
   req.session.sessionVersion = user.session_version ?? 0;
   recordLogin(req, user.id);
+  if (typeof cb === 'function') {
+    req.session.save(cb);
+    return;
+  }
+  req.session.save(() => {});
 }
 
 function formatUserSettings(userId) {

@@ -109,7 +109,7 @@ async function loginUser(email, password) {
 
 async function runDbChecks() {
   console.log('\nDatabase schema');
-  const tables = ['store_updates', 'email_access_credentials', 'account_replacement_history', 'user_notifications', 'refund_records', 'order_fulfillments', 'product_reports'];
+  const tables = ['store_updates', 'email_access_credentials', 'account_replacement_history', 'user_notifications', 'refund_records', 'order_fulfillments', 'product_reports', 'user_sessions'];
   for (const t of tables) {
     const row = db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`).get(t);
     if (row) ok(`table ${t}`);
@@ -122,6 +122,36 @@ async function runDbChecks() {
   else fail('orders.tingi_drop_enabled', 'missing');
   if (orderCols.includes('reject_reason')) ok('orders.reject_reason');
   else fail('orders.reject_reason', 'missing');
+}
+
+async function runSessionPersistCheck() {
+  console.log('\nPersistent login sessions');
+  const email = `persist-${Date.now()}@test.local`;
+  const reg = await request('POST', '/auth/register', {
+    email,
+    password: 'testpass123',
+    name: 'Persist QA'
+  });
+  const cookie = (reg.headers['set-cookie'] || []).map((c) => c.split(';')[0]).join('; ');
+  if (reg.status !== 201 || !cookie) {
+    fail('register for session persist', reg.status);
+    return;
+  }
+  ok('register returns session cookie');
+
+  const rows = db.prepare('SELECT COUNT(*) AS c FROM user_sessions').get().c;
+  if (rows > 0) ok('session stored in SQLite (survives server restart)');
+  else fail('session stored in SQLite', rows);
+
+  const me = await request('GET', '/auth/me', null, cookie);
+  if (me.status === 200 && me.json.user?.email === email.toLowerCase()) ok('/auth/me restores logged-in user');
+  else fail('/auth/me restores user', JSON.stringify(me.json));
+
+  const user = db.prepare('SELECT id FROM users WHERE email = ?').get(email.toLowerCase());
+  if (user?.id) {
+    await request('POST', '/auth/logout', {}, cookie);
+    db.prepare('DELETE FROM users WHERE id = ?').run(user.id);
+  }
 }
 
 async function runApiChecks(adminCookie) {
@@ -1469,6 +1499,7 @@ async function main() {
     if (adminCookie) ok('admin login');
     else fail('admin login', 'no cookie');
     await runApiChecks(adminCookie);
+    await runSessionPersistCheck();
     await runOrderFlowCheck(adminCookie);
     await runLoyaltyCheck(adminCookie);
     await runGamesToggleCheck(adminCookie);
