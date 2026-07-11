@@ -19,7 +19,8 @@ const {
   ensureLoserPrizeForPool,
   defaultPrizeWeight,
   isLoserPrizeType,
-  countWheelEntries
+  countWheelEntries,
+  wheelLabelFromRow
 } = require('./games-engine');
 const { sendHtmlPage } = require('./send-html-page');
 const { RIETTE_GAME_ROUTES } = require('./games-paths');
@@ -38,10 +39,16 @@ function mapWheelCampaign(row, db) {
   if (!row) return null;
   const prizes = db.prepare('SELECT * FROM game_wheel_prizes WHERE campaign_id = ? ORDER BY sort_order, id').all(row.id);
   const slots = db.prepare(`
-    SELECT id, display_name AS displayName, order_number AS orderNumber, created_at AS createdAt,
-           COALESCE(entry_units, 1) AS entryUnits
-    FROM game_wheel_slots WHERE campaign_id = ? ORDER BY id ASC
-  `).all(row.id);
+    SELECT s.id, s.display_name AS displayName, s.order_number AS orderNumber, s.created_at AS createdAt,
+           COALESCE(s.entry_units, 1) AS entryUnits,
+           u.username, u.name AS userName, u.email
+    FROM game_wheel_slots s
+    JOIN users u ON u.id = s.user_id
+    WHERE s.campaign_id = ? ORDER BY s.id ASC
+  `).all(row.id).map((slot) => ({
+    ...slot,
+    displayName: wheelLabelFromRow(slot)
+  }));
   let winner = null;
   let winners = [];
   if (row.status === 'drawn') {

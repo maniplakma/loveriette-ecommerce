@@ -289,10 +289,16 @@ function buildGamesHubState(db, userId = null) {
 
   const wheelEntries = wheelDisplayRow
     ? db.prepare(`
-      SELECT display_name AS displayName, order_number AS orderNumber
-      FROM game_wheel_slots WHERE campaign_id = ?
-      ORDER BY id ASC LIMIT 100
-    `).all(wheelDisplayRow.id)
+      SELECT s.display_name AS displayName, s.order_number AS orderNumber,
+             u.username, u.name AS userName, u.email
+      FROM game_wheel_slots s
+      JOIN users u ON u.id = s.user_id
+      WHERE s.campaign_id = ?
+      ORDER BY s.id ASC LIMIT 100
+    `).all(wheelDisplayRow.id).map((row) => ({
+      orderNumber: row.orderNumber,
+      displayName: wheelLabelFromRow(row)
+    }))
     : [];
   const wheelEntryCount = wheelDisplayRow
     ? countWheelEntries(db, wheelDisplayRow.id)
@@ -518,13 +524,47 @@ function resolveUserId(db, { userId, email }) {
 
 function displayNameForUser(db, userId, email) {
   const user = userId
-    ? db.prepare('SELECT name, email FROM users WHERE id = ?').get(userId)
+    ? db.prepare('SELECT name, email, username FROM users WHERE id = ?').get(userId)
     : null;
   const name = String(user?.name || '').trim();
   if (name) return name;
   const em = String(user?.email || email || '').trim();
   if (em.includes('@')) return em.split('@')[0];
   return `Buyer #${userId || '?'}`;
+}
+
+function wheelLabelForUser(db, userId, email) {
+  const user = userId
+    ? db.prepare('SELECT name, email, username FROM users WHERE id = ?').get(userId)
+    : null;
+  const username = String(user?.username || '').trim().replace(/^@/, '');
+  if (username) return username.slice(0, 14);
+  const name = String(user?.name || '').trim();
+  if (name) {
+    const first = name.split(/\s+/).find(Boolean);
+    if (first) return first.slice(0, 14);
+  }
+  const em = String(user?.email || email || '').trim();
+  if (em.includes('@')) return em.split('@')[0].slice(0, 14);
+  return 'Player';
+}
+
+function wheelLabelFromRow(row) {
+  const username = String(row?.username || '').trim().replace(/^@/, '');
+  if (username) return username.slice(0, 14);
+  const name = String(row?.userName || row?.name || '').trim();
+  if (name) {
+    const first = name.split(/\s+/).find(Boolean);
+    if (first) return first.slice(0, 14);
+  }
+  const stored = String(row?.displayName || '').trim();
+  if (stored) {
+    const first = stored.split(/\s+/).find(Boolean);
+    if (first) return first.slice(0, 14);
+  }
+  const em = String(row?.email || '').trim();
+  if (em.includes('@')) return em.split('@')[0].slice(0, 14);
+  return 'Player';
 }
 
 function genToken() {
@@ -891,7 +931,7 @@ function isGrandDrawWheel(campaign) {
 function insertWheelSlot(db, deps, { wheel, order, userId, notify }) {
   const orderId = order.id;
   const orderNumber = String(order.order_number || order.id);
-  const displayName = displayNameForUser(db, userId, order.email);
+  const displayName = wheelLabelForUser(db, userId, order.email);
 
   db.prepare(`
     INSERT INTO game_wheel_slots (campaign_id, user_id, order_id, order_number, display_name, entry_units)
@@ -1400,6 +1440,8 @@ module.exports = {
   getGamesRules,
   recordPrizeAward,
   displayNameForUser,
+  wheelLabelForUser,
+  wheelLabelFromRow,
   diagnoseWheelPlayState,
   pickEnabledScheduledWheel,
   formatAvailableDays,
