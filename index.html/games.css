@@ -461,6 +461,15 @@
 
 .games-wheel-visual--lg { width: 130px; height: 130px; }
 
+.games-wheel-visual--roster {
+  width: min(196px, 78vw);
+  height: min(196px, 78vw);
+}
+
+.games-demo-wheel--live .games-demo-badge {
+  display: none;
+}
+
 .games-wheel-segments {
   position: absolute;
   inset: 0;
@@ -512,19 +521,20 @@
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 3.2em;
-  margin-left: -1.6em;
+  width: 3.6em;
+  margin-left: -1.8em;
   text-align: center;
-  font-size: clamp(0.36rem, calc(118px / var(--wheel-segments, 12) * 0.44), 0.58rem);
+  font-size: max(0.62rem, min(0.78rem, calc(var(--wheel-size, 130px) / var(--wheel-segments, 12) * 0.72)));
   font-weight: 800;
   letter-spacing: 0.01em;
-  color: rgba(255, 255, 255, 0.95);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9), 0 0 6px rgba(0, 0, 0, 0.55);
+  color: #fff;
+  text-shadow: 0 0 3px rgba(0, 0, 0, 1), 0 1px 4px rgba(0, 0, 0, 0.95);
   line-height: 1.05;
   transform-origin: center center;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  z-index: 2;
 }
 
 /* Wheel entry progress (max joiners) */

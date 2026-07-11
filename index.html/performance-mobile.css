@@ -161,7 +161,7 @@
     animation: none !important;
   }
 
-  .games-wheel-segments {
+  .games-wheel-segments:not(.is-painted) {
     background: linear-gradient(
       135deg,
       #c49a12 0%,

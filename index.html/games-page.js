@@ -188,11 +188,52 @@
     }).join('')}</div>`;
   }
 
-  function wheelVisualHtml(extraClass) {
+  function wheelSegmentCount(entries, maxEntries) {
+    const filled = Array.isArray(entries) ? entries.length : 0;
+    const cap = Number(maxEntries) || 0;
+    if (cap > 0) return cap;
+    return Math.max(8, filled);
+  }
+
+  function wheelGradientCss(segmentCount) {
+    const slice = 360 / segmentCount;
+    const palette = [
+      'color-mix(in srgb, var(--games-accent) 50%, #ffc107)',
+      'rgba(255,255,255,0.08)',
+      'color-mix(in srgb, var(--games-accent) 35%, #000)',
+      'rgba(255,255,255,0.06)'
+    ];
+    const stops = [];
+    for (let i = 0; i < segmentCount; i++) {
+      const start = i * slice;
+      const end = (i + 1) * slice;
+      stops.push(`${palette[i % palette.length]} ${start}deg ${end}deg`);
+    }
+    return `conic-gradient(from -90deg, ${stops.join(', ')})`;
+  }
+
+  function wheelLabelsHtml(entries, segmentCount, wheelSize) {
+    if (!entries?.length) return '';
+    const slice = 360 / segmentCount;
+    const radius = Math.max(36, Math.round(wheelSize * 0.36));
+    return entries.map((entry, i) => {
+      if (i >= segmentCount || !entry?.displayName) return '';
+      const angle = slice * i + slice / 2;
+      return `<span class="games-wheel-label" style="transform:rotate(${angle}deg) translateY(-${radius}px) rotate(${-angle}deg)" title="${esc(entry.displayName)}">${esc(shortenWheelLabel(entry.displayName))}</span>`;
+    }).join('');
+  }
+
+  function wheelVisualHtml(extraClass, entries, maxEntries) {
+    const entryList = entries || [];
+    const segmentCount = wheelSegmentCount(entryList, maxEntries);
+    const hasRoster = entryList.length > 0 || Number(maxEntries) > 0;
+    const rosterClass = hasRoster ? ' games-wheel-visual--roster is-live-roster' : '';
+    const wheelSize = hasRoster ? 196 : 130;
+    const gradient = wheelGradientCss(segmentCount);
     return `
-      <div class="games-wheel-visual games-wheel-visual--lg${extraClass ? ` ${extraClass}` : ''}">
-        <div class="games-wheel-segments" aria-hidden="true"></div>
-        <div class="games-wheel-labels" aria-hidden="true"></div>
+      <div class="games-wheel-visual games-wheel-visual--lg${rosterClass}${extraClass ? ` ${extraClass}` : ''}" style="--wheel-segments:${segmentCount};--wheel-size:${wheelSize}px" data-wheel-segments="${segmentCount}">
+        <div class="games-wheel-segments is-painted" style="background:${gradient}" aria-hidden="true"></div>
+        <div class="games-wheel-labels" aria-hidden="true">${wheelLabelsHtml(entryList, segmentCount, wheelSize)}</div>
         <div class="games-wheel-ring"></div>
         <div class="games-wheel-center">${icon('wheel', 'games-icon--wheel')}</div>
       </div>`;
@@ -201,8 +242,8 @@
   function shortenWheelLabel(name) {
     const s = String(name || '').trim();
     if (!s) return '';
-    if (s.length <= 10) return s;
-    return `${s.slice(0, 9)}…`;
+    if (s.length <= 12) return s;
+    return `${s.slice(0, 11)}…`;
   }
 
   function paintWheelSegments(visual, entries, maxEntries) {
@@ -219,44 +260,42 @@
     }
 
     const entryList = Array.isArray(entries) ? entries : [];
-    const segmentCount = Math.max(8, Number(maxEntries) || 0, entryList.length);
+    const segmentCount = wheelSegmentCount(entryList, maxEntries);
     const slice = 360 / segmentCount;
-    const palette = [
-      'color-mix(in srgb, var(--games-accent) 50%, #ffc107)',
-      'rgba(255,255,255,0.08)',
-      'color-mix(in srgb, var(--games-accent) 35%, #000)',
-      'rgba(255,255,255,0.06)'
-    ];
-    const stops = [];
-    for (let i = 0; i < segmentCount; i++) {
-      const start = i * slice;
-      const end = (i + 1) * slice;
-      stops.push(`${palette[i % palette.length]} ${start}deg ${end}deg`);
-    }
-    segEl.style.background = `conic-gradient(from -90deg, ${stops.join(', ')})`;
+    const hasRoster = entryList.length > 0 || Number(maxEntries) > 0;
+    const wheelSize = hasRoster ? 196 : (visual.offsetWidth || 130);
+    segEl.classList.add('is-painted');
+    segEl.style.background = wheelGradientCss(segmentCount);
     visual.style.setProperty('--wheel-segments', String(segmentCount));
+    visual.style.setProperty('--wheel-size', `${wheelSize}px`);
+    visual.dataset.wheelSegments = String(segmentCount);
+    if (hasRoster) visual.classList.add('games-wheel-visual--roster', 'is-live-roster');
 
-    const size = visual.offsetWidth || 130;
-    const labelRadius = Math.max(28, size * 0.34);
-    labelsEl.innerHTML = '';
-    entryList.forEach((entry, i) => {
-      if (i >= segmentCount || !entry?.displayName) return;
+    const labelRadius = Math.max(36, Math.round(wheelSize * 0.36));
+    labelsEl.innerHTML = entryList.map((entry, i) => {
+      if (i >= segmentCount || !entry?.displayName) return '';
       const angle = slice * i + slice / 2;
       const label = document.createElement('span');
       label.className = 'games-wheel-label';
       label.textContent = shortenWheelLabel(entry.displayName);
       label.title = String(entry.displayName);
       label.style.transform = `rotate(${angle}deg) translateY(-${labelRadius}px) rotate(${-angle}deg)`;
-      labelsEl.appendChild(label);
-    });
+      return label.outerHTML;
+    }).join('');
   }
 
   function paintAllWheelVisuals(wheel) {
     const entries = wheel?.entries || [];
     const maxEntries = wheel?.maxEntries;
-    document.querySelectorAll('.games-arena--wheel .games-wheel-visual, .games-demo-wheel .games-wheel-visual')
-      .forEach((visual) => paintWheelSegments(visual, entries, maxEntries));
+    const paint = () => {
+      document.querySelectorAll('.games-arena--wheel .games-wheel-visual, .games-demo-wheel .games-wheel-visual, .games-expand-panel--wheel .games-wheel-visual')
+        .forEach((visual) => paintWheelSegments(visual, entries, maxEntries));
+    };
+    paint();
+    requestAnimationFrame(() => requestAnimationFrame(paint));
   }
+
+  let hubWheelData = null;
 
   function entriesWall(entries, winners, mySlots) {
     const list = entries?.length ? entries : [];
@@ -498,18 +537,22 @@
     return '<span class="games-demo-badge">Preview</span>';
   }
 
-  function demoWheel() {
+  function rosterWheelStage(game) {
+    const joined = Number(game.entryCount) > 0 || (game.entries?.length > 0);
+    const count = Number(game.entryCount) || game.entries?.length || 0;
     return `
-      <div class="games-demo-stage games-demo-wheel">
-        ${demoBadge()}
-        <div class="games-wheel-visual games-wheel-visual--lg">
-          <div class="games-wheel-segments" aria-hidden="true"></div>
-          <div class="games-wheel-labels" aria-hidden="true"></div>
-          <div class="games-wheel-ring"></div>
-          <div class="games-wheel-center">${icon('wheel', 'games-icon--wheel')}</div>
-        </div>
-        <p class="games-demo-caption">Wanna join? Order now — one approved order = one slot</p>
+      <div class="games-demo-stage games-demo-wheel${joined ? ' games-demo-wheel--live' : ''}">
+        ${joined ? '' : demoBadge()}
+        ${wheelVisualHtml('', game.entries, game.maxEntries)}
+        <p class="games-demo-caption">${joined
+    ? `${count} player${count === 1 ? '' : 's'} in the draw — names on the wheel`
+    : 'Wanna join? Order now — one approved order = one slot'}</p>
+        ${joined ? entriesWall(game.entries, [], game.mySlots) : ''}
       </div>`;
+  }
+
+  function demoWheel() {
+    return rosterWheelStage({ entries: [], entryCount: 0, maxEntries: null });
   }
 
   function demoScratch() {
@@ -702,7 +745,7 @@
       metaHtml = `<div class="games-arena-meta">${wheelEntriesMetaHtml(game)}</div>`;
       body = `
         <div class="games-play-stage games-play-stage--full">
-          ${wheelVisualHtml('')}
+          ${wheelVisualHtml('', game.entries, game.maxEntries)}
           <p class="games-meta games-meta--full">Roster full — waiting for the automatic draw.</p>
           ${entriesWall(game.entries, [], game.mySlots)}
           <p class="games-meta">${game.entryCount || 0} / ${game.maxEntries || '—'} entries joined</p>
@@ -713,7 +756,7 @@
       body = `
         <div class="games-play-stage games-play-stage--results" data-wheel-id="${game.id || ''}">
           <div class="games-wheel-spin-live" aria-live="polite"></div>
-          ${wheelVisualHtml('')}
+          ${wheelVisualHtml('', game.entries, game.maxEntries)}
           <div class="games-wheel-reveal-mount"></div>
           ${winnersPanel(game.winners)}
           ${entriesWall(game.entries, game.winners, game.mySlots)}
@@ -729,11 +772,11 @@
       ).join('');
       const play = `
         <div class="games-play-stage">
-          ${wheelVisualHtml('')}
+          ${wheelVisualHtml('', game.entries, game.maxEntries)}
           ${game.mySlots?.length ? `<p class="games-meta">Your slots: <strong>${game.mySlots.length}</strong></p><div class="games-slot-wall">${slots}</div>` : ''}
           ${entriesWall(game.entries, [], game.mySlots)}
         </div>`;
-      body = gameArenaBody({ ...game, open: live }, state, 'wheel', demoWheel, play);
+      body = gameArenaBody({ ...game, open: live }, state, 'wheel', () => rosterWheelStage(game), play);
     }
 
     return arenaShell({
@@ -1182,6 +1225,7 @@
     bindInstant();
     bindExpand();
     tickCountdowns();
+    if (type === 'wheel' && hubWheelData) paintAllWheelVisuals(hubWheelData);
   }
 
   let arenaMotionObserver = null;
@@ -1301,6 +1345,7 @@
 
   function renderHub(data) {
     hubEligibility = data.eligibility || null;
+    hubWheelData = data.wheel || null;
     const intro = document.getElementById('games-hub-intro');
     if (intro) {
       const lead = intro.querySelector('p');
