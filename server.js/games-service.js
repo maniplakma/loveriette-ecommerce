@@ -20,7 +20,9 @@ const {
   defaultPrizeWeight,
   isLoserPrizeType,
   countWheelEntries,
-  wheelLabelFromRow
+  wheelLabelFromRow,
+  wheelSlotBuyerJoinSql,
+  wheelSlotLabelSelectSql
 } = require('./games-engine');
 const { sendHtmlPage } = require('./send-html-page');
 const { RIETTE_GAME_ROUTES } = require('./games-paths');
@@ -39,13 +41,10 @@ function mapWheelCampaign(row, db) {
   if (!row) return null;
   const prizes = db.prepare('SELECT * FROM game_wheel_prizes WHERE campaign_id = ? ORDER BY sort_order, id').all(row.id);
   const slots = db.prepare(`
-    SELECT s.id, s.display_name AS displayName, s.order_number AS orderNumber, s.created_at AS createdAt,
-           COALESCE(s.entry_units, 1) AS entryUnits,
-           u.username, u.name AS userName, u.email,
-           o.email AS orderEmail
+    SELECT s.id, ${wheelSlotLabelSelectSql()}, s.created_at AS createdAt,
+           COALESCE(s.entry_units, 1) AS entryUnits
     FROM game_wheel_slots s
-    LEFT JOIN users u ON u.id = s.user_id
-    LEFT JOIN orders o ON o.id = s.order_id
+    ${wheelSlotBuyerJoinSql()}
     WHERE s.campaign_id = ? ORDER BY s.id ASC
   `).all(row.id).map((slot) => ({
     ...slot,
@@ -56,18 +55,32 @@ function mapWheelCampaign(row, db) {
   if (row.status === 'drawn') {
     winners = db.prepare(`
       SELECT w.display_name AS displayName, w.order_number AS orderNumber,
-             p.label AS prizeLabel, p.prize_type AS prizeType
+             p.label AS prizeLabel, p.prize_type AS prizeType,
+             o.email AS orderEmail,
+             buyer.username AS buyerUsername, buyer.name AS buyerName
       FROM game_wheel_winners w
       JOIN game_wheel_prizes p ON p.id = w.prize_id
+      LEFT JOIN game_wheel_slots s ON s.id = w.slot_id
+      LEFT JOIN orders o ON o.id = s.order_id
+      LEFT JOIN users buyer ON LOWER(buyer.email) = LOWER(o.email)
       WHERE w.campaign_id = ?
       ORDER BY w.id ASC
-    `).all(row.id);
+    `).all(row.id).map((w) => ({
+      ...w,
+      displayName: wheelLabelFromRow(w)
+    }));
     if (winners.length) winner = winners[0];
   }
   if (!winner && row.winner_slot_id) {
     winner = db.prepare(`
-      SELECT display_name AS displayName, order_number AS orderNumber FROM game_wheel_slots WHERE id = ?
+      SELECT ${wheelSlotLabelSelectSql()}
+      FROM game_wheel_slots s
+      ${wheelSlotBuyerJoinSql()}
+      WHERE s.id = ?
     `).get(row.winner_slot_id);
+    if (winner) {
+      winner = { ...winner, displayName: wheelLabelFromRow(winner) };
+    }
   }
   return {
     id: row.id,

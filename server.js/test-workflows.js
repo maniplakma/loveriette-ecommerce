@@ -1314,12 +1314,21 @@ function runWheelNameCheck() {
   else fail('wheel buyer resolves from order email', buyer.userId);
 
   const fromRow = wheelLabelFromRow({
-    displayName: 'matcha',
+    displayName: 'astra',
+    username: 'astra',
+    orderEmail: 'matcha@test.local',
+    buyerUsername: 'matcha'
+  });
+  if (fromRow === 'matcha') ok('wheelLabelFromRow prefers order buyer over stored slot name');
+  else fail('wheelLabelFromRow prefers order buyer over stored slot name', fromRow);
+
+  const staleOnly = wheelLabelFromRow({
+    displayName: 'astra',
     username: 'astra',
     orderEmail: 'matcha@test.local'
   });
-  if (fromRow === 'matcha') ok('wheelLabelFromRow prefers stored slot name');
-  else fail('wheelLabelFromRow prefers stored slot name', fromRow);
+  if (staleOnly === 'matcha') ok('wheelLabelFromRow uses order email when stored name is wrong');
+  else fail('wheelLabelFromRow uses order email when stored name is wrong', staleOnly);
 
   const pm = db.prepare('SELECT id FROM payment_methods WHERE is_active = 1 LIMIT 1').get();
   const product = db.prepare('SELECT id FROM products ORDER BY id LIMIT 1').get();

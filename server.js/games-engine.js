@@ -176,14 +176,19 @@ function getWheelWinners(db, campaignId) {
   const rows = db.prepare(`
     SELECT w.display_name AS displayName, w.order_number AS orderNumber,
            p.label AS prizeLabel, p.prize_type AS prizeType, w.created_at AS wonAt,
-           p.sort_order AS prizeSort
+           p.sort_order AS prizeSort,
+           o.email AS orderEmail,
+           buyer.username AS buyerUsername, buyer.name AS buyerName
     FROM game_wheel_winners w
     JOIN game_wheel_prizes p ON p.id = w.prize_id
+    LEFT JOIN game_wheel_slots s ON s.id = w.slot_id
+    LEFT JOIN orders o ON o.id = s.order_id
+    LEFT JOIN users buyer ON LOWER(buyer.email) = LOWER(o.email)
     WHERE w.campaign_id = ?
     ORDER BY w.id ASC
   `).all(campaignId);
   return rows.map((r, i) => ({
-    displayName: r.displayName,
+    displayName: wheelLabelFromRow(r),
     orderNumber: r.orderNumber,
     prizeLabel: r.prizeLabel,
     prizeType: r.prizeType,
@@ -289,12 +294,9 @@ function buildGamesHubState(db, userId = null) {
 
   const wheelEntries = wheelDisplayRow
     ? db.prepare(`
-      SELECT s.display_name AS displayName, s.order_number AS orderNumber,
-             u.username, u.name AS userName, u.email,
-             o.email AS orderEmail
+      SELECT ${wheelSlotLabelSelectSql()}
       FROM game_wheel_slots s
-      LEFT JOIN users u ON u.id = s.user_id
-      LEFT JOIN orders o ON o.id = s.order_id
+      ${wheelSlotBuyerJoinSql()}
       WHERE s.campaign_id = ?
       ORDER BY s.id ASC LIMIT 100
     `).all(wheelDisplayRow.id).map((row) => ({
@@ -568,27 +570,50 @@ function wheelLabelForUser(db, userId, email) {
   return 'Player';
 }
 
+function wheelSlotBuyerJoinSql() {
+  return `
+    LEFT JOIN orders o ON o.id = s.order_id
+    LEFT JOIN users u ON u.id = s.user_id
+    LEFT JOIN users buyer ON LOWER(buyer.email) = LOWER(o.email)
+  `;
+}
+
+function wheelSlotLabelSelectSql() {
+  return `
+    s.display_name AS displayName, s.order_number AS orderNumber,
+    u.username, u.name AS userName, u.email,
+    o.email AS orderEmail,
+    buyer.username AS buyerUsername, buyer.name AS buyerName
+  `;
+}
+
 /** Wheel label from the order buyer (email on receipt), not the logged-in account username. */
 function wheelLabelForOrder(db, order) {
-  const email = String(order?.email || '').trim().toLowerCase();
-  if (email.includes('@')) {
-    const local = email.split('@')[0].replace(/[^a-zA-Z0-9._-]/g, '');
-    if (local) return local.slice(0, 14);
-  }
   const buyer = resolveOrderBuyer(db, order);
+  const email = String(order?.email || buyer.email || '').trim().toLowerCase();
   return wheelLabelForUser(db, buyer.userId, email);
 }
 
 function wheelLabelFromRow(row) {
+  const orderEmail = String(row?.orderEmail || '').trim().toLowerCase();
+  if (orderEmail) {
+    const buyerUsername = String(row?.buyerUsername || '').trim().replace(/^@/, '');
+    if (buyerUsername) return buyerUsername.slice(0, 14);
+    const buyerName = String(row?.buyerName || '').trim();
+    if (buyerName) {
+      const first = buyerName.split(/\s+/).find(Boolean);
+      if (first) return first.slice(0, 14);
+    }
+    if (orderEmail.includes('@')) {
+      const local = orderEmail.split('@')[0].replace(/[^a-zA-Z0-9._-]/g, '');
+      if (local) return local.slice(0, 14);
+    }
+  }
+
   const stored = String(row?.displayName || '').trim();
   if (stored) {
     const first = stored.split(/\s+/).find(Boolean);
     if (first) return first.slice(0, 14);
-  }
-  const orderEmail = String(row?.orderEmail || '').trim().toLowerCase();
-  if (orderEmail.includes('@')) {
-    const local = orderEmail.split('@')[0].replace(/[^a-zA-Z0-9._-]/g, '');
-    if (local) return local.slice(0, 14);
   }
   const username = String(row?.username || '').trim().replace(/^@/, '');
   if (username) return username.slice(0, 14);
@@ -1510,6 +1535,8 @@ module.exports = {
   wheelLabelFromRow,
   resolveOrderBuyer,
   repairWheelSlotDisplayNames,
+  wheelSlotBuyerJoinSql,
+  wheelSlotLabelSelectSql,
   diagnoseWheelPlayState,
   pickEnabledScheduledWheel,
   formatAvailableDays,
