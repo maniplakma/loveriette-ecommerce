@@ -2280,12 +2280,20 @@ function authRateLimit(req, res, next) {
   let bucket = authRateBuckets.get(key);
   if (!bucket || now > bucket.resetAt) {
     bucket = { count: 0, resetAt: now + windowMs };
+    authRateBuckets.set(key, bucket);
   }
-  bucket.count += 1;
-  authRateBuckets.set(key, bucket);
-  if (bucket.count > maxAttempts) {
+  if (bucket.count >= maxAttempts) {
     return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
   }
+  res.on('finish', () => {
+    if (res.statusCode >= 400) {
+      const b = authRateBuckets.get(key);
+      if (b) {
+        b.count += 1;
+        authRateBuckets.set(key, b);
+      }
+    }
+  });
   next();
 }
 

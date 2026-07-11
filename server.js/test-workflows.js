@@ -23,6 +23,24 @@ function purgeGameRowsForOrder(orderId) {
   db.prepare('DELETE FROM game_order_credits WHERE order_id = ?').run(orderId);
 }
 
+/** Remove approved orders still waiting on stock (prevents add-stock from fulfilling the wrong order in tests). */
+function cleanupOrphanWaitingTestOrders() {
+  const rows = db.prepare(`
+    SELECT o.id FROM orders o
+    WHERE o.status = 'approved' AND o.tingi_drop_enabled = 0
+  `).all();
+  for (const { id } of rows) {
+    const expected = db.prepare('SELECT COALESCE(SUM(quantity), 0) AS q FROM order_items WHERE order_id = ?').get(id).q;
+    const fulfilled = db.prepare('SELECT COUNT(*) AS c FROM order_fulfillments WHERE order_id = ?').get(id).c;
+    if (expected > fulfilled) {
+      purgeGameRowsForOrder(id);
+      db.prepare('DELETE FROM order_fulfillments WHERE order_id = ?').run(id);
+      db.prepare('DELETE FROM order_items WHERE order_id = ?').run(id);
+      db.prepare('DELETE FROM orders WHERE id = ?').run(id);
+    }
+  }
+}
+
 function request(method, urlPath, body, cookie) {
   return new Promise((resolve, reject) => {
     const data = body ? JSON.stringify(body) : null;
@@ -794,28 +812,30 @@ async function runStockAddFulfillCheck(adminCookie) {
     VALUES (?, ?, ?, 'Stock Add Fulfill Test', 1, ?)
   `).run(orderId, variant.productId, variant.variantId, variant.price);
 
-  const beforeFulfill = db.prepare('SELECT COUNT(*) AS c FROM order_fulfillments WHERE order_id = ?').get(orderId).c;
-  if (beforeFulfill === 0) ok('approved order waits when no stock');
-  else fail('approved order waits when no stock', `fulfillments=${beforeFulfill}`);
+  try {
+    const beforeFulfill = db.prepare('SELECT COUNT(*) AS c FROM order_fulfillments WHERE order_id = ?').get(orderId).c;
+    if (beforeFulfill === 0) ok('approved order waits when no stock');
+    else fail('approved order waits when no stock', `fulfillments=${beforeFulfill}`);
 
-  const add = await request('POST', '/admin/inventory', {
-    variant_id: variant.variantId,
-    email: 'waiting@test.local',
-    password: 'pass123',
-    profiles: ['Profile 1']
-  }, adminCookie);
+    const add = await request('POST', '/admin/inventory', {
+      variant_id: variant.variantId,
+      email: 'waiting@test.local',
+      password: 'pass123',
+      profiles: ['Profile 1']
+    }, adminCookie);
 
-  const afterFulfill = db.prepare('SELECT COUNT(*) AS c FROM order_fulfillments WHERE order_id = ?').get(orderId).c;
-  if (add.status === 201 && add.json.delivered >= 1 && afterFulfill >= 1) {
-    ok('POST /admin/inventory auto-delivers waiting approved order');
-  } else {
-    fail('POST /admin/inventory auto-delivers', JSON.stringify({ status: add.status, json: add.json, afterFulfill }));
+    const afterFulfill = db.prepare('SELECT COUNT(*) AS c FROM order_fulfillments WHERE order_id = ?').get(orderId).c;
+    if (add.status === 201 && add.json.delivered >= 1 && afterFulfill >= 1) {
+      ok('POST /admin/inventory auto-delivers waiting approved order');
+    } else {
+      fail('POST /admin/inventory auto-delivers', JSON.stringify({ status: add.status, json: add.json, afterFulfill }));
+    }
+  } finally {
+    db.prepare('DELETE FROM order_fulfillments WHERE order_id = ?').run(orderId);
+    db.prepare('DELETE FROM order_items WHERE order_id = ?').run(orderId);
+    db.prepare('DELETE FROM orders WHERE id = ?').run(orderId);
+    db.prepare('DELETE FROM stock_items WHERE variant_id = ?').run(variant.variantId);
   }
-
-  db.prepare('DELETE FROM order_fulfillments WHERE order_id = ?').run(orderId);
-  db.prepare('DELETE FROM order_items WHERE order_id = ?').run(orderId);
-  db.prepare('DELETE FROM orders WHERE id = ?').run(orderId);
-  db.prepare('DELETE FROM stock_items WHERE variant_id = ?').run(variant.variantId);
 }
 
 async function runThemeCheck(adminCookie) {
@@ -1000,8 +1020,8 @@ async function runGamesCheck(adminCookie) {
     ) VALUES (?, ?, ?, ?, ?, 200, 0, 200, 'pending', 0, 'auto', '/uploads/receipts/test.png')
   `).run(orderNumber, seq, email, buyer.id, pm.id);
   const orderId = ins.lastInsertRowid;
-  db.prepare(`INSERT INTO order_items (order_id, product_id, product_name, quantity, price) VALUES (?, ?, 'Games Test', 3, 200)`)
-    .run(orderId, product.id);
+  db.prepare(`INSERT INTO order_items (order_id, product_id, variant_id, product_name, quantity, price) VALUES (?, ?, ?, 'Games Test', 3, 200)`)
+    .run(orderId, product.id, variant.id);
 
   const approveRes = await request('POST', `/admin/orders/${orderNumber}/approve`, {}, adminCookie);
   if (approveRes.status !== 200) { fail('games order approve', approveRes.json?.error || approveRes.status); return; }
@@ -1018,6 +1038,10 @@ async function runGamesCheck(adminCookie) {
   if (hubAfterApprove.json?.wheel?.entryCount >= 1) ok('hub shows grand draw entries after approve');
   else fail('hub grand draw entry count', hubAfterApprove.json?.wheel?.entryCount);
 
+  if (hubAfterApprove.json.eligibility?.strict && hubAfterApprove.json.eligibility?.requiredQuantity === 3) {
+    ok('games hub includes strict eligibility');
+  } else fail('games hub eligibility', JSON.stringify(hubAfterApprove.json.eligibility || {}));
+
   const seq2 = db.prepare('SELECT COALESCE(MAX(order_seq), 0) + 1 AS n FROM orders').get().n;
   const orderNumber2 = String(seq2);
   await request('PUT', '/admin/games/settings', {
@@ -1033,8 +1057,8 @@ async function runGamesCheck(adminCookie) {
     ) VALUES (?, ?, ?, ?, ?, 200, 0, 200, 'pending', 0, 'auto', '/uploads/receipts/test.png')
   `).run(orderNumber2, seq2, email, buyer.id, pm.id);
   const orderId2 = ins2.lastInsertRowid;
-  db.prepare(`INSERT INTO order_items (order_id, product_id, product_name, quantity, price) VALUES (?, ?, 'Games Test Qty2', 2, 200)`)
-    .run(orderId2, product.id);
+  db.prepare(`INSERT INTO order_items (order_id, product_id, variant_id, product_name, quantity, price) VALUES (?, ?, ?, 'Games Test Qty2', 2, 200)`)
+    .run(orderId2, product.id, variant.id);
   const approve2 = await request('POST', `/admin/orders/${orderNumber2}/approve`, {}, adminCookie);
   if (approve2.status !== 200) { fail('games qty2 approve', approve2.json?.error || approve2.status); return; }
   const slot2 = db.prepare('SELECT entry_units FROM game_wheel_slots WHERE order_id = ?').get(orderId2);
@@ -1053,10 +1077,6 @@ async function runGamesCheck(adminCookie) {
   if (hub.status === 200 && hub.json.wheel && hub.json.scratch && hub.json.mystery
       && hub.json.dice && hub.json.pick && hub.json.vault) ok('GET /api/games hub (6 games)');
   else fail('GET /api/games hub', hub.status);
-
-  if (hub.json.eligibility?.strict && hub.json.eligibility?.requiredQuantity === 3) {
-    ok('games hub includes strict eligibility');
-  } else fail('games hub eligibility', JSON.stringify(hub.json.eligibility || {}));
 
   if (hub.json.eligibility?.oneGamePerPurchase) ok('games hub one-game-per-purchase flag');
   else fail('games hub one-game-per-purchase', 'missing');
@@ -1415,7 +1435,7 @@ async function runGamesToggleCheck(adminCookie) {
   const closedPageBody = gamesClosedPage.json?.raw || '';
   if (gamesClosedPage.status === 200
       && closedPageBody.includes('games-arena-grid')
-      && closedPageBody.includes('games-page.js?v=20260710perf')) {
+      && /games-page\.js\?v=\d+/.test(closedPageBody)) {
     ok('GET /games page loads closed-state assets');
   } else fail('GET /games page loads closed-state assets', gamesClosedPage.status);
 
@@ -1444,6 +1464,7 @@ async function main() {
   console.log('Ecom workflow smoke tests');
   try {
     await runDbChecks();
+    cleanupOrphanWaitingTestOrders();
     const adminCookie = await loginAdmin();
     if (adminCookie) ok('admin login');
     else fail('admin login', 'no cookie');
