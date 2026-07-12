@@ -30,10 +30,36 @@ function parseTargets(text) {
     .filter(Boolean);
 }
 
+function parseStoredNextCycleAt(value) {
+  if (!value) return 0;
+  const ts = Date.parse(String(value));
+  return Number.isFinite(ts) && ts > 0 ? ts : 0;
+}
+
+function persistNextCycleAt(db, accountId, nextCycleAt) {
+  if (!nextCycleAt || nextCycleAt <= Date.now()) {
+    db.prepare(`UPDATE plugging_accounts SET next_cycle_at = NULL, updated_at = datetime('now') WHERE id = ?`).run(accountId);
+    return;
+  }
+  db.prepare(`UPDATE plugging_accounts SET next_cycle_at = ?, updated_at = datetime('now') WHERE id = ?`)
+    .run(new Date(nextCycleAt).toISOString(), accountId);
+}
+
 function computeNextCycleAt(cycleEndedAt, delayMinutes) {
   const delayMs = cycleDelayMs(delayMinutes);
   if (!delayMs || delayMs <= 0 || !cycleEndedAt) return 0;
   return cycleEndedAt + delayMs;
+}
+
+function scheduleCycleDelay(db, accountId, cycleEndedAt, delayMinutes) {
+  const delayMin = Number(delayMinutes) || 0;
+  const nextCycleAt = computeNextCycleAt(cycleEndedAt, delayMin);
+  if (nextCycleAt > Date.now()) {
+    persistNextCycleAt(db, accountId, nextCycleAt);
+    return nextCycleAt;
+  }
+  persistNextCycleAt(db, accountId, 0);
+  return 0;
 }
 
 function sleep(ms) {
@@ -314,7 +340,11 @@ async function stopRunnerGracefully(accountId) {
   } catch (_) { /* ignore */ }
 }
 
-async function startRunner(db, accountId, getSettings) {
+async function startRunner(db, accountId, getSettings, { force = false } = {}) {
+  if (!force && isRunning(accountId)) {
+    return { ok: true, alreadyRunning: true };
+  }
+
   await stopRunnerGracefully(accountId);
 
   let account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ?').get(accountId);
@@ -339,16 +369,34 @@ async function startRunner(db, accountId, getSettings) {
   `).get(account.order_id);
   if (!order) throw new Error('Plugging subscription is not active');
 
+  let initialNextCycleAt = 0;
+  if (force) {
+    persistNextCycleAt(db, accountId, 0);
+  } else {
+    initialNextCycleAt = parseStoredNextCycleAt(account.next_cycle_at);
+    if (initialNextCycleAt > 0 && initialNextCycleAt <= Date.now()) {
+      initialNextCycleAt = 0;
+      persistNextCycleAt(db, accountId, 0);
+    }
+  }
+
   const handle = createRunnerHandle(accountId, null);
   runners.set(accountId, handle);
 
   db.prepare('UPDATE plugging_accounts SET runner_status = ?, last_error = ?, updated_at = datetime(\'now\') WHERE id = ?')
     .run('running', '', accountId);
 
-  logPlugActivity(db, accountId, 'started', 'Forwarder started');
+  logPlugActivity(db, accountId, 'started', force ? 'Forwarder started' : 'Forwarder started (cycle delay preserved)');
 
   (async () => {
-    let nextCycleAt = 0;
+    let nextCycleAt = initialNextCycleAt;
+    if (nextCycleAt > Date.now()) {
+      const waitMs = nextCycleAt - Date.now();
+      logPlugActivity(
+        db, accountId, 'info',
+        `Cycle delay — waiting ${formatDelayLabel(waitMs)} (resumed schedule). Next at ${new Date(nextCycleAt).toLocaleTimeString()}`
+      );
+    }
 
     try {
       while (shouldRun(handle, accountId)) {
@@ -368,26 +416,24 @@ async function startRunner(db, accountId, getSettings) {
             if (!shouldRun(handle, accountId)) return;
             const result = await runForwardCycle(client, db, accountId, account, handle);
             cycleEndedAt = result?.cycleEndedAt || null;
-            if (result?.cancelled) return;
+            if (result?.cancelled && !cycleEndedAt) return;
+          }, account.proxy_url);
+
+          if (!shouldRun(handle, accountId)) break;
+          if (cycleEndedAt) {
             account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ?').get(accountId);
             const delayMin = Number(account?.delay_minutes) || 0;
-            const delayMs = cycleDelayMs(delayMin);
-            if (delayMs > 0 && cycleEndedAt) {
-              nextCycleAt = computeNextCycleAt(cycleEndedAt, delayMin);
+            nextCycleAt = scheduleCycleDelay(db, accountId, cycleEndedAt, delayMin);
+            if (nextCycleAt > Date.now()) {
               const waitMs = nextCycleAt - Date.now();
-              if (waitMs > 0) {
-                logPlugActivity(
-                  db, accountId, 'info',
-                  `Cycle delay — waiting ${formatDelayLabel(waitMs)} (${delayMin} min after cycle end). Next at ${new Date(nextCycleAt).toLocaleTimeString()}`
-                );
-              }
-            } else {
-              nextCycleAt = 0;
-              if (cycleEndedAt && delayMin <= 0) {
-                logPlugActivity(db, accountId, 'info', 'Cycle delay is 0 — next cycle runs immediately');
-              }
+              logPlugActivity(
+                db, accountId, 'info',
+                `Cycle delay — waiting ${formatDelayLabel(waitMs)} (${delayMin} min after cycle end). Next at ${new Date(nextCycleAt).toLocaleTimeString()}`
+              );
+            } else if (delayMin <= 0) {
+              logPlugActivity(db, accountId, 'info', 'Cycle delay is 0 — next cycle runs immediately');
             }
-          }, account.proxy_url);
+          }
         } catch (err) {
           if (!shouldRun(handle, accountId)) break;
           const errMsg = String(err.message || err).slice(0, 500);
@@ -419,6 +465,10 @@ function stopRunner(accountId) {
   if (!handle) return;
   handle.running = false;
   handle.generation += 1;
+}
+
+function clearRunnerSchedule(db, accountId) {
+  persistNextCycleAt(db, accountId, 0);
 }
 
 function isRunning(accountId) {
@@ -470,6 +520,9 @@ module.exports = {
   shouldRun,
   cycleDelayMs,
   computeNextCycleAt,
+  parseStoredNextCycleAt,
+  scheduleCycleDelay,
+  clearRunnerSchedule,
   setRunnerForTest,
   clearRunnerForTest
 };

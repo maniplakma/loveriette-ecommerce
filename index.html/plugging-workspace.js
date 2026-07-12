@@ -270,8 +270,13 @@ async function runAutoStartAll() {
   workspace.autoStartRunning = true;
   renderAutoStartPanel();
   const count = data.queued || data.accountIds?.length || 0;
+  const skipped = data.skipped || 0;
   const delay = data.staggerMinutes ?? staggerMinutes;
-  setAutoStartMessage(`Starting ${count} account(s) — ${delay} min between each.`);
+  if (count === 0 && skipped > 0) {
+    setAutoStartMessage(data.message || `All ${skipped} account(s) already running — cycle delays kept.`);
+  } else {
+    setAutoStartMessage(`Starting ${count} account(s) — ${delay} min between each start.${skipped ? ` (${skipped} already running, skipped)` : ''}`);
+  }
   if (selectedId) startActivityPoll(selectedId);
   setTimeout(() => refreshWorkspace({ soft: true }).then(renderAutoStartPanel), 4000);
 }
@@ -561,9 +566,9 @@ function renderAccountDetail(id) {
       <h3>Forwarding Setup</h3>
       <label>Post link</label>
       <input id="cfg-source" class="plug-field-input" value="${esc(a.sourceLink)}" placeholder="https://t.me/channel/123">
-      <label>Delay between cycles (minutes)</label>
+      <label>Cycle delay — minutes between plugs</label>
       <input id="cfg-delay" class="plug-field-input" type="number" min="0" value="${a.delayMinutes}" placeholder="40">
-      <p class="plug-field-hint">Wait this long after each cycle finishes before plugging again. Save settings, then Start.</p>
+      <p class="plug-field-hint">Wait this long after each cycle finishes. Not the same as auto-start stagger above.</p>
       <label>Target groups</label>
       <textarea id="cfg-targets" class="plug-field-textarea" placeholder="@group1&#10;@group2">${esc(a.targetsText)}</textarea>
       <div class="plug-config-actions">
