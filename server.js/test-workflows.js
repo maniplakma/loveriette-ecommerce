@@ -814,6 +814,124 @@ async function runInventoryCheck(adminCookie) {
   else fail('variant label after delete', vRestored?.availability_state || 'missing');
 }
 
+async function runVariantFulfillmentCheck(adminCookie) {
+  console.log('\nVariant-strict stock delivery');
+  const { waitingOrdersForVariant } = require('./fulfillment');
+  const {
+    findMisdeliveredFulfillments,
+    repairMisdeliveredFulfillments,
+    transferFulfillmentCore,
+    releaseMisdeliveryCore
+  } = require('./fulfillment-repair');
+
+  const product = db.prepare('SELECT id, price FROM products ORDER BY id LIMIT 1').get();
+  if (!product) { fail('variant fulfillment', 'no product'); return; }
+
+  let variants = db.prepare(`
+    SELECT id, name FROM product_variants WHERE product_id = ? ORDER BY id ASC
+  `).all(product.id);
+  if (variants.length < 2) {
+    db.prepare(`
+      INSERT INTO product_variants (product_id, name, duration, price, description, sort_order)
+      VALUES (?, 'Straight Test', '30d', ?, '', 99)
+    `).run(product.id, product.price || 100);
+    db.prepare(`
+      INSERT INTO product_variants (product_id, name, duration, price, description, sort_order)
+      VALUES (?, 'With Fixing Test', '30d', ?, '', 100)
+    `).run(product.id, product.price || 100);
+    variants = db.prepare(`
+      SELECT id, name FROM product_variants WHERE product_id = ? ORDER BY id ASC
+    `).all(product.id);
+  }
+  const variantA = variants[0];
+  const variantB = variants[variants.length - 1];
+  if (variantA.id === variantB.id) { fail('variant fulfillment', 'need 2 variants'); return; }
+
+  for (const vid of [variantA.id, variantB.id]) {
+    db.prepare('DELETE FROM order_fulfillments WHERE stock_item_id IN (SELECT id FROM stock_items WHERE variant_id = ?)').run(vid);
+    db.prepare('DELETE FROM stock_items WHERE variant_id = ?').run(vid);
+  }
+
+  const pm = db.prepare('SELECT id FROM payment_methods WHERE is_active = 1 LIMIT 1').get();
+  const price = Number(product.price) || 100;
+
+  function seedWaitingOrder(variantId, emailTag) {
+    const seq = db.prepare('SELECT COALESCE(MAX(order_seq), 0) + 1 AS n FROM orders').get().n;
+    const orderNumber = `VF${emailTag}${seq}`;
+    const email = `vf-${emailTag}-${Date.now()}@test.local`;
+    const ins = db.prepare(`
+      INSERT INTO orders (
+        order_number, order_seq, email, payment_method_id,
+        subtotal, discount, total, status, tingi_drop_enabled, fulfillment_mode
+      ) VALUES (?, ?, ?, ?, ?, 0, ?, 'approved', 0, 'auto')
+    `).run(orderNumber, seq, email, pm.id, price, price);
+    const orderId = ins.lastInsertRowid;
+    db.prepare(`
+      INSERT INTO order_items (order_id, product_id, variant_id, product_name, quantity, price)
+      VALUES (?, ?, ?, ?, 1, ?)
+    `).run(orderId, product.id, variantId, `VF ${emailTag}`, price);
+    return { orderId, orderNumber };
+  }
+
+  const orderA = seedWaitingOrder(variantA.id, 'a');
+
+  try {
+    const waitingForB = waitingOrdersForVariant(db, variantB.id).map((r) => r.id);
+    const waitingForA = waitingOrdersForVariant(db, variantA.id).map((r) => r.id);
+    if (waitingForA.includes(orderA.orderId) && !waitingForB.includes(orderA.orderId)) {
+      ok('waiting-order query is variant-specific');
+    } else {
+      fail('waiting-order query is variant-specific', JSON.stringify({ waitingForA, waitingForB }));
+    }
+
+    const stockId = db.prepare(`
+      INSERT INTO stock_items (product_id, variant_id, service_name, email, password, profiles, cost, price)
+      VALUES (?, ?, 'Straight Stock', 'straight@test.local', 'pass', '[]', 0, ?)
+    `).run(product.id, variantB.id, price).lastInsertRowid;
+
+    if (waitingOrdersForVariant(db, variantB.id).some((r) => r.id === orderA.orderId)) {
+      fail('fixing order must not match straight variant stock', orderA.orderId);
+    } else {
+      ok('fixing order excluded from straight variant delivery queue');
+    }
+
+    const itemA = db.prepare('SELECT id FROM order_items WHERE order_id = ? LIMIT 1').get(orderA.orderId);
+    db.prepare(`
+      INSERT INTO order_fulfillments (order_id, order_item_id, stock_item_id) VALUES (?, ?, ?)
+    `).run(orderA.orderId, itemA.id, stockId);
+    db.prepare(`UPDATE stock_items SET status = 'sold', sold_to = 'email:wrong' WHERE id = ?`).run(stockId);
+
+    if (findMisdeliveredFulfillments(db).length >= 1) ok('detects variant mismatch delivery');
+    else fail('detects variant mismatch delivery', 'none found');
+
+    const orderB = seedWaitingOrder(variantB.id, 'b');
+    const repaired = repairMisdeliveredFulfillments(db, {
+      transferFulfillment: transferFulfillmentCore,
+      releaseMisdelivery: releaseMisdeliveryCore
+    });
+    const afterA = db.prepare('SELECT COUNT(*) AS c FROM order_fulfillments WHERE order_id = ?').get(orderA.orderId).c;
+    const afterB = db.prepare('SELECT COUNT(*) AS c FROM order_fulfillments WHERE order_id = ?').get(orderB.orderId).c;
+    const stillMismatch = findMisdeliveredFulfillments(db).length;
+
+    if (repaired.repaired >= 1 && afterA === 0 && afterB >= 1 && stillMismatch === 0) {
+      ok('repair moves account to correct variant order');
+    } else {
+      fail('repair moves account to correct variant order', JSON.stringify({
+        repaired, afterA, afterB, stillMismatch
+      }));
+    }
+
+    db.prepare('DELETE FROM order_fulfillments WHERE order_id = ?').run(orderB.orderId);
+    db.prepare('DELETE FROM order_items WHERE order_id = ?').run(orderB.orderId);
+    db.prepare('DELETE FROM orders WHERE id = ?').run(orderB.orderId);
+  } finally {
+    db.prepare('DELETE FROM order_fulfillments WHERE order_id = ?').run(orderA.orderId);
+    db.prepare('DELETE FROM order_items WHERE order_id = ?').run(orderA.orderId);
+    db.prepare('DELETE FROM orders WHERE id = ?').run(orderA.orderId);
+    db.prepare('DELETE FROM stock_items WHERE variant_id IN (?, ?)').run(variantA.id, variantB.id);
+  }
+}
+
 async function runStockAddFulfillCheck(adminCookie) {
   console.log('\nStock add auto-delivers waiting approved orders');
   const variant = db.prepare(`
@@ -1719,6 +1837,7 @@ async function main() {
     await runBulkPricingCheck();
     await runPaymentSettingsCheck(adminCookie);
     await runInventoryCheck(adminCookie);
+    await runVariantFulfillmentCheck(adminCookie);
     await runStockAddFulfillCheck(adminCookie);
     await runThemeCheck(adminCookie);
     await runStoreUpdatesCheck(adminCookie);

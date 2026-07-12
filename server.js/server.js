@@ -28,6 +28,17 @@ const {
 } = require('./gmail-schema');
 const { sendHtmlPage } = require('./send-html-page');
 const {
+  findMisdeliveredFulfillments,
+  repairMisdeliveredFulfillments,
+  transferFulfillmentCore,
+  releaseMisdeliveryCore
+} = require('./fulfillment-repair');
+const {
+  pickAvailableStockForItem,
+  orderHasStockForRemaining: orderHasStockForRemainingStrict,
+  waitingOrdersForVariant
+} = require('./fulfillment');
+const {
   createPasswordResetToken,
   findPasswordResetToken,
   isPasswordResetTokenValid,
@@ -601,28 +612,53 @@ function orderFulfillmentSummary(orderId) {
 }
 
 function orderHasStockForRemaining(orderId) {
-  const order = db.prepare('SELECT status FROM orders WHERE id = ?').get(orderId);
-  if (!order || !isApprovedOrderStatus(order.status)) return false;
+  return orderHasStockForRemainingStrict(db, orderId, isApprovedOrderStatus);
+}
 
-  const items = db.prepare(`
-    SELECT id, product_id, variant_id, quantity FROM order_items WHERE order_id = ?
-  `).all(orderId);
-  const countFulfilled = db.prepare('SELECT COUNT(*) AS c FROM order_fulfillments WHERE order_item_id = ?');
-  const countVariant = db.prepare(`
-    SELECT COUNT(*) AS c FROM stock_items WHERE status = 'available' AND variant_id = ?
-  `);
-  const countProduct = db.prepare(`
-    SELECT COUNT(*) AS c FROM stock_items WHERE status = 'available' AND product_id = ?
-  `);
+function transferFulfillmentToOrder(db, payload) {
+  return transferFulfillmentCore(db, payload, {
+    buyerKeyForOrder,
+    clearGmailAssignment: (database, stockItemId, buyerId) => {
+      database.prepare('DELETE FROM buyer_gmail_assignments WHERE stock_item_id = ? AND buyer_id = ?')
+        .run(stockItemId, buyerId);
+    },
+    assignGmail: (database, args) => {
+      try { assignGmailToBuyer(database, args); } catch (_) { /* non-fatal */ }
+    },
+    afterTransfer: (database, toOrderId) => {
+      const remaining = orderFulfillmentSummary(toOrderId).remaining;
+      if (remaining <= 0) {
+        database.prepare('UPDATE orders SET tingi_hold_until = NULL WHERE id = ?').run(toOrderId);
+        queueBuyerEmail(() => trySendOrderDeliveredEmail(db, getSetting, toOrderId));
+        tryGrantGamesForDeliveredOrder(db, gamesNotifyDeps(), toOrderId);
+      }
+    }
+  });
+}
 
-  for (const item of items) {
-    const already = countFulfilled.get(item.id).c;
-    const need = item.quantity - already;
-    if (need <= 0) continue;
-    if (item.variant_id && countVariant.get(item.variant_id).c > 0) return true;
-    if (countProduct.get(item.product_id).c > 0) return true;
+function releaseMisdeliveredFulfillment(db, row) {
+  return releaseMisdeliveryCore(db, row, {
+    clearGmailAssignment: (database, stockItemId, buyerId) => {
+      database.prepare('DELETE FROM buyer_gmail_assignments WHERE stock_item_id = ? AND buyer_id = ?')
+        .run(stockItemId, buyerId);
+    }
+  });
+}
+
+function runFulfillmentRepair() {
+  const result = repairMisdeliveredFulfillments(db, {
+    transferFulfillment: transferFulfillmentToOrder,
+    releaseMisdelivery: releaseMisdeliveredFulfillment
+  });
+  for (const detail of result.details || []) {
+    if (detail.action !== 'released_from_wrong_buyer' || !detail.stockVariantId) continue;
+    try {
+      fulfillWaitingOrdersForNewStock(detail.stockVariantId);
+    } catch (err) {
+      console.error('[fulfillment] re-deliver after release failed', detail.stockVariantId, err.message);
+    }
   }
-  return false;
+  return result;
 }
 
 function buyerOrderPhase(orderRow, fulfillment, stockAvailable) {
@@ -681,8 +717,7 @@ function claimOneStockForOrder(orderId) {
       const need = item.quantity - already;
       if (need <= 0) continue;
 
-      let stockRow = item.variant_id ? pickByVariant.get(item.variant_id) : null;
-      if (!stockRow) stockRow = pickByProduct.get(item.product_id);
+      let stockRow = pickAvailableStockForItem(item, pickByVariant, pickByProduct);
       if (!stockRow) {
         db.exec('ROLLBACK');
         return { error: 'No stock available to claim right now. Contact the seller.' };
@@ -988,8 +1023,7 @@ function fulfillOrderRemaining(orderId) {
       const already = countFulfilled.get(item.id).c;
       const need = item.quantity - already;
       for (let i = 0; i < need; i++) {
-        let stockRow = item.variant_id ? pickByVariant.get(item.variant_id) : null;
-        if (!stockRow) stockRow = pickByProduct.get(item.product_id);
+        let stockRow = pickAvailableStockForItem(item, pickByVariant, pickByProduct);
         if (!stockRow) break;
         markSold.run(buyerKey, stockRow.id);
         insertFulfillment.run(orderId, item.id, stockRow.id);
@@ -1029,20 +1063,9 @@ function fulfillOrderRemaining(orderId) {
   return { assigned };
 }
 
-/** When new stock is added, deliver waiting approved non-Tingi orders (FIFO). */
-function fulfillWaitingOrdersForNewStock(variantId, productId) {
-  const pid = Number(productId) || db.prepare('SELECT product_id FROM product_variants WHERE id = ?').get(variantId)?.product_id;
-  if (!pid) return 0;
-
-  const orders = db.prepare(`
-    SELECT DISTINCT o.id
-    FROM orders o
-    INNER JOIN order_items oi ON oi.order_id = o.id
-    WHERE o.status = 'approved'
-      AND o.tingi_drop_enabled = 0
-      AND (oi.variant_id = ? OR oi.product_id = ?)
-    ORDER BY o.id ASC
-  `).all(variantId, pid);
+/** When new stock is added, deliver waiting approved non-Tingi orders (FIFO, same variant only). */
+function fulfillWaitingOrdersForNewStock(variantId) {
+  const orders = waitingOrdersForVariant(db, variantId);
 
   let assigned = 0;
   for (const { id } of orders) {
@@ -1970,6 +1993,15 @@ function gamesNotifyDeps() {
   return {
     notify: (userId, type, title, body) => createUserNotification(userId, type, title, body)
   };
+}
+
+try {
+  const fulfillmentRepair = runFulfillmentRepair();
+  if (fulfillmentRepair.repaired > 0) {
+    console.log(`[fulfillment] repaired ${fulfillmentRepair.repaired} misdelivered account(s)`);
+  }
+} catch (err) {
+  console.error('[fulfillment] misdelivery repair failed:', err.message);
 }
 
 try {
@@ -4923,11 +4955,28 @@ app.post('/admin/inventory', requireAdmin, (req, res) => {
   }
   let delivered = 0;
   try {
-    delivered = fulfillWaitingOrdersForNewStock(variant.id, variant.product_id);
+    delivered = fulfillWaitingOrdersForNewStock(variant.id);
   } catch (err) {
     console.error('[inventory] auto-fulfill waiting orders failed', err.message);
   }
   res.status(201).json({ ok: true, created: created.length, delivered });
+});
+
+app.post('/admin/fulfillment/repair-misdeliveries', requireAdmin, (req, res) => {
+  try {
+    const before = findMisdeliveredFulfillments(db).length;
+    const result = runFulfillmentRepair();
+    const after = findMisdeliveredFulfillments(db).length;
+    res.json({
+      ok: true,
+      mismatchesBefore: before,
+      mismatchesAfter: after,
+      repaired: result.repaired,
+      details: result.details
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Repair failed' });
+  }
 });
 
 app.put('/admin/inventory/:id', requireAdmin, (req, res) => {
