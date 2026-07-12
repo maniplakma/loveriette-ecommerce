@@ -988,6 +988,56 @@ function isGrandDrawWheel(campaign) {
   return max > 0;
 }
 
+/** Order must fall inside the grand draw window (starts_at → ends_at, or since campaign created). */
+function grandDrawOrderWindow(wheel) {
+  if (!wheel) return { start: null, end: null };
+  return {
+    start: wheel.starts_at || wheel.created_at || null,
+    end: wheel.ends_at || null
+  };
+}
+
+function orderInGrandDrawWindow(order, wheel) {
+  if (!order?.created_at || !wheel) return false;
+  const created = new Date(order.created_at);
+  if (Number.isNaN(created.getTime())) return false;
+  const { start, end } = grandDrawOrderWindow(wheel);
+  if (start && created < new Date(start)) return false;
+  if (end && created > new Date(end)) return false;
+  return true;
+}
+
+function orderQualifiesForGrandDrawJoin(db, order, wheel) {
+  if (!order?.id || !wheel) return false;
+  if (String(order.status || '').toLowerCase() !== 'approved') return false;
+  const total = Number(order.total) || 0;
+  if (total < Number(wheel.min_order_total || 0)) return false;
+  if (!orderQualifiesForGrandDraw(db, order.id)) return false;
+  if (!orderInGrandDrawWindow(order, wheel)) return false;
+  return true;
+}
+
+/** Remove wheel slots that do not match current grand draw rules (wrong date, spend, products). */
+function pruneInvalidGrandDrawSlots(db) {
+  const wheel = pickEnabledScheduledWheel(db);
+  if (!wheel || !isGrandDrawWheel(wheel) || wheel.status === 'drawn') return 0;
+
+  const slots = db.prepare(`
+    SELECT id, order_id FROM game_wheel_slots WHERE campaign_id = ?
+  `).all(wheel.id);
+  const deleteSlot = db.prepare('DELETE FROM game_wheel_slots WHERE id = ?');
+  let removed = 0;
+
+  for (const slot of slots) {
+    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(slot.order_id);
+    if (!orderQualifiesForGrandDrawJoin(db, order, wheel)) {
+      deleteSlot.run(slot.id);
+      removed += 1;
+    }
+  }
+  return removed;
+}
+
 function insertWheelSlot(db, deps, { wheel, order, userId, notify }) {
   const orderId = order.id;
   const orderNumber = String(order.order_number || order.id);
@@ -1012,10 +1062,7 @@ function maybeAutoJoinGrandDrawWheelOnApproval(db, deps, order) {
 
   const wheel = pickEnabledScheduledWheel(db);
   if (!wheel || !isGrandDrawWheel(wheel) || !wheel.is_enabled) return { joined: false };
-
-  const total = Number(order.total) || 0;
-  if (total < Number(wheel.min_order_total || 0)) return { joined: false };
-  if (!orderQualifiesForGrandDraw(db, order.id)) return { joined: false };
+  if (!orderQualifiesForGrandDrawJoin(db, order, wheel)) return { joined: false };
   if (isWheelFull(db, wheel)) return { joined: false };
 
   const exists = db.prepare('SELECT id FROM game_wheel_slots WHERE order_id = ?').get(order.id);
@@ -1034,13 +1081,20 @@ function syncGrandDrawEntriesForApprovedOrders(db, deps, limit = 200) {
   const wheel = pickEnabledScheduledWheel(db);
   if (!wheel || !isGrandDrawWheel(wheel)) return { synced: 0 };
 
+  const window = grandDrawOrderWindow(wheel);
+  const minTotal = Number(wheel.min_order_total || 0);
+  if (!window.start) return { synced: 0 };
+
   const orders = db.prepare(`
     SELECT o.* FROM orders o
     WHERE o.status = 'approved'
+      AND o.total >= ?
+      AND datetime(o.created_at) >= datetime(?)
+      AND (? IS NULL OR datetime(o.created_at) <= datetime(?))
       AND NOT EXISTS (SELECT 1 FROM game_wheel_slots s WHERE s.order_id = o.id)
     ORDER BY o.id ASC
     LIMIT ?
-  `).all(Math.max(1, Number(limit) || 200));
+  `).all(minTotal, window.start, window.end, window.end, Math.max(1, Number(limit) || 200));
 
   let synced = 0;
   for (const order of orders) {
@@ -1507,6 +1561,10 @@ module.exports = {
   chooseGameForCredit,
   maybeAutoJoinGrandDrawWheelOnApproval,
   syncGrandDrawEntriesForApprovedOrders,
+  pruneInvalidGrandDrawSlots,
+  orderQualifiesForGrandDrawJoin,
+  orderInGrandDrawWindow,
+  grandDrawOrderWindow,
   listPendingCredits,
   orderAllowsGamePlay,
   playDeniedMessage,

@@ -8,7 +8,7 @@ const appConfig = require('./config');
 const db = require('./db');
 const { SqliteSessionStore } = require('./session-store');
 const { creditLoyaltyForPurchase } = require('./loyalty');
-const { tryGrantGamesForDeliveredOrder, maybeAutoJoinGrandDrawWheelOnApproval, syncGrandDrawEntriesForApprovedOrders, repairWheelSlotDisplayNames } = require('./games-engine');
+const { tryGrantGamesForDeliveredOrder, maybeAutoJoinGrandDrawWheelOnApproval, syncGrandDrawEntriesForApprovedOrders, repairWheelSlotDisplayNames, pruneInvalidGrandDrawSlots } = require('./games-engine');
 const { fetchLatestUnreadGmail, parseGmailFilters, getLastFetchedMessageId } = require('./gmail-fetch');
 const {
   oauthConfigured,
@@ -1970,6 +1970,15 @@ function gamesNotifyDeps() {
   return {
     notify: (userId, type, title, body) => createUserNotification(userId, type, title, body)
   };
+}
+
+try {
+  const pruned = pruneInvalidGrandDrawSlots(db);
+  if (pruned > 0) {
+    console.log(`[games] removed ${pruned} invalid grand draw wheel slot(s)`);
+  }
+} catch (err) {
+  console.error('[games] grand draw slot prune failed:', err.message);
 }
 
 try {

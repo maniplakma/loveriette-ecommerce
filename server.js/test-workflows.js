@@ -1368,6 +1368,127 @@ function runWheelNameCheck() {
   db.prepare('DELETE FROM users WHERE id IN (?, ?)').run(astraId, matchaId);
 }
 
+function runGrandDrawEligibilityCheck() {
+  console.log('\nGrand draw eligibility (date window + min spend)');
+  const {
+    maybeAutoJoinGrandDrawWheelOnApproval,
+    syncGrandDrawEntriesForApprovedOrders,
+    pruneInvalidGrandDrawSlots,
+    orderQualifiesForGrandDrawJoin
+  } = require('./games-engine');
+
+  db.prepare('DELETE FROM game_wheel_slots WHERE campaign_id IN (SELECT id FROM game_wheel_campaigns WHERE title = ?)')
+    .run('Eligibility Test Wheel');
+  db.prepare(`DELETE FROM game_wheel_campaigns WHERE title = 'Eligibility Test Wheel'`).run();
+
+  const wheelId = db.prepare(`
+    INSERT INTO game_wheel_campaigns (
+      title, is_enabled, available_days, starts_at, ends_at, draw_at,
+      min_order_total, max_entries, status, created_at
+    ) VALUES (
+      'Eligibility Test Wheel', 1, '0,1,2,3,4,5,6',
+      datetime('now', '-1 day', 'start of day'),
+      datetime('now', '-1 day', 'end of day'),
+      datetime('now', '+1 day'),
+      400, 20, 'scheduled', datetime('now', '-2 days')
+    )
+  `).run().lastInsertRowid;
+  const wheel = db.prepare('SELECT * FROM game_wheel_campaigns WHERE id = ?').get(wheelId);
+
+  const pm = db.prepare('SELECT id FROM payment_methods WHERE is_active = 1 LIMIT 1').get();
+  const product = db.prepare('SELECT id FROM products ORDER BY id LIMIT 1').get();
+  db.prepare(`
+    INSERT INTO settings (key, value) VALUES ('games_strict_eligibility', '0')
+    ON CONFLICT(key) DO UPDATE SET value = '0'
+  `).run();
+
+  const tag = Date.now();
+  const astraEmail = `astra-elig-${tag}@test.local`;
+  const matchaEmail = `matcha-elig-${tag}@test.local`;
+  const lowEmail = `low-elig-${tag}@test.local`;
+
+  const astraId = db.prepare(`
+    INSERT INTO users (email, password_hash, name, username)
+    VALUES (?, 'x', 'Astra', ?)
+  `).run(astraEmail, `astra${tag}`).lastInsertRowid;
+
+  const seqOld = db.prepare('SELECT COALESCE(MAX(order_seq), 0) + 1 AS n FROM orders').get().n;
+  const oldOrderId = db.prepare(`
+    INSERT INTO orders (
+      order_number, order_seq, user_id, email, payment_method_id,
+      subtotal, discount, total, status, tingi_drop_enabled, fulfillment_mode, created_at
+    ) VALUES (?, ?, ?, ?, ?, 500, 0, 500, 'approved', 0, 'auto', datetime('now', '-3 days'))
+  `).run(`ELIGOLD${seqOld}`, seqOld, astraId, astraEmail, pm.id).lastInsertRowid;
+  db.prepare(`
+    INSERT INTO order_items (order_id, product_id, product_name, quantity, price)
+    VALUES (?, ?, 'Old Order', 1, 500)
+  `).run(oldOrderId, product.id);
+
+  const oldOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(oldOrderId);
+  const oldJoin = maybeAutoJoinGrandDrawWheelOnApproval(db, {}, oldOrder);
+  if (!oldJoin.joined && !orderQualifiesForGrandDrawJoin(db, oldOrder, wheel)) {
+    ok('old order outside draw window is rejected');
+  } else {
+    fail('old order outside draw window is rejected', JSON.stringify(oldJoin));
+  }
+
+  db.prepare(`
+    INSERT INTO game_wheel_slots (campaign_id, user_id, order_id, order_number, display_name, entry_units)
+    VALUES (?, ?, ?, ?, 'astra', 1)
+  `).run(wheelId, astraId, oldOrderId, `ELIGOLD${seqOld}`);
+  const pruned = pruneInvalidGrandDrawSlots(db);
+  const staleSlot = db.prepare('SELECT id FROM game_wheel_slots WHERE order_id = ?').get(oldOrderId);
+  if (pruned >= 1 && !staleSlot) ok('prune removes invalid grand draw slot');
+  else fail('prune removes invalid grand draw slot', JSON.stringify({ pruned, staleSlot }));
+
+  const seqNew = db.prepare('SELECT COALESCE(MAX(order_seq), 0) + 1 AS n FROM orders').get().n;
+  const lowOrderId = db.prepare(`
+    INSERT INTO orders (
+      order_number, order_seq, user_id, email, payment_method_id,
+      subtotal, discount, total, status, tingi_drop_enabled, fulfillment_mode, created_at
+    ) VALUES (?, ?, ?, ?, ?, 300, 0, 300, 'approved', 0, 'auto', datetime('now', '-1 day', '+12 hours'))
+  `).run(`ELIGLOW${seqNew}`, seqNew, astraId, lowEmail, pm.id).lastInsertRowid;
+  db.prepare(`
+    INSERT INTO order_items (order_id, product_id, product_name, quantity, price)
+    VALUES (?, ?, 'Low Spend', 1, 300)
+  `).run(lowOrderId, product.id);
+  const lowOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(lowOrderId);
+  const lowJoin = maybeAutoJoinGrandDrawWheelOnApproval(db, {}, lowOrder);
+  if (!lowJoin.joined) ok('order below ₱400 min spend is rejected');
+  else fail('order below ₱400 min spend is rejected', JSON.stringify(lowJoin));
+
+  const seqGood = db.prepare('SELECT COALESCE(MAX(order_seq), 0) + 1 AS n FROM orders').get().n;
+  const goodOrderId = db.prepare(`
+    INSERT INTO orders (
+      order_number, order_seq, user_id, email, payment_method_id,
+      subtotal, discount, total, status, tingi_drop_enabled, fulfillment_mode, created_at
+    ) VALUES (?, ?, ?, ?, ?, 450, 0, 450, 'approved', 0, 'auto', datetime('now', '-1 day', '+12 hours'))
+  `).run(`ELIGOK${seqGood}`, seqGood, astraId, matchaEmail, pm.id).lastInsertRowid;
+  db.prepare(`
+    INSERT INTO order_items (order_id, product_id, product_name, quantity, price)
+    VALUES (?, ?, 'Qualifying', 1, 450)
+  `).run(goodOrderId, product.id);
+  const goodOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(goodOrderId);
+  const goodJoin = maybeAutoJoinGrandDrawWheelOnApproval(db, {}, goodOrder);
+  const goodSlot = db.prepare('SELECT id FROM game_wheel_slots WHERE order_id = ?').get(goodOrderId);
+  if (goodJoin.joined && goodSlot?.id) ok('yesterday order ≥ ₱400 joins grand draw');
+  else fail('yesterday order ≥ ₱400 joins grand draw', JSON.stringify({ goodJoin, goodSlot }));
+
+  const synced = syncGrandDrawEntriesForApprovedOrders(db, {});
+  const dupSlot = db.prepare('SELECT COUNT(*) AS c FROM game_wheel_slots WHERE order_id = ?').get(goodOrderId).c;
+  if (dupSlot === 1) ok('backfill does not duplicate qualifying slot');
+  else fail('backfill does not duplicate qualifying slot', dupSlot);
+
+  for (const oid of [oldOrderId, lowOrderId, goodOrderId]) {
+    db.prepare('DELETE FROM game_wheel_slots WHERE order_id = ?').run(oid);
+    db.prepare('DELETE FROM order_items WHERE order_id = ?').run(oid);
+    db.prepare('DELETE FROM orders WHERE id = ?').run(oid);
+  }
+  db.prepare('DELETE FROM game_wheel_slots WHERE campaign_id = ?').run(wheelId);
+  db.prepare('DELETE FROM game_wheel_campaigns WHERE id = ?').run(wheelId);
+  db.prepare('DELETE FROM users WHERE id = ?').run(astraId);
+}
+
 function runPrizeOddsCheck() {
   console.log('\nPrize odds (losers should dominate)');
   const { pickWeightedPrize, isLoserPrizeType } = require('./games-engine');
@@ -1589,6 +1710,7 @@ async function main() {
     await runWheelAutoDrawCheck(adminCookie);
     await runWheelMultiPrizeCheck(adminCookie);
     runWheelNameCheck();
+    runGrandDrawEligibilityCheck();
     runPrizeOddsCheck();
     await runVariantDescriptionCheck(adminCookie);
     await runUserAdminCheck(adminCookie);
