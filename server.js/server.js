@@ -30,6 +30,8 @@ const { sendHtmlPage } = require('./send-html-page');
 const {
   findMisdeliveredFulfillments,
   repairMisdeliveredFulfillments,
+  repairOrderBuyerLinks,
+  findMismatchedOrderBuyerLinks,
   transferFulfillmentCore,
   releaseMisdeliveryCore
 } = require('./fulfillment-repair');
@@ -1176,7 +1178,7 @@ function getUserPurchasedAccounts(userId, email) {
     LEFT JOIN product_variants v ON v.id = s.variant_id
     LEFT JOIN email_access_credentials e ON e.stock_item_id = s.id
     WHERE o.status = 'approved'
-      AND (o.user_id = ? OR (o.user_id IS NULL AND LOWER(o.email) = ?))
+      AND (o.user_id = ? OR LOWER(o.email) = ?)
     ORDER BY f.created_at DESC
   `).all(userId, emailLower);
 
@@ -1206,8 +1208,9 @@ function getUserPurchasedAccounts(userId, email) {
 function userOwnsOrder(order, userId, email) {
   if (!order) return false;
   const emailLower = String(email || '').toLowerCase();
-  return order.user_id === userId
-    || (!order.user_id && String(order.email || '').toLowerCase() === emailLower);
+  const orderEmailLower = String(order.email || '').toLowerCase();
+  if (emailLower && orderEmailLower && orderEmailLower === emailLower) return true;
+  return !!(userId && order.user_id === userId);
 }
 
 function getOrderCredentialsForUser(orderRef, userId, email) {
@@ -1332,7 +1335,7 @@ function userOwnsStockItem(stockItemId, userId, email) {
     JOIN order_fulfillments f ON f.stock_item_id = s.id
     JOIN orders o ON o.id = f.order_id
     WHERE s.id = ? AND o.status = 'approved'
-      AND (o.user_id = ? OR (o.user_id IS NULL AND LOWER(o.email) = ?))
+      AND (o.user_id = ? OR LOWER(o.email) = ?)
   `).get(stockItemId, userId, emailLower);
   return !!row;
 }
@@ -1470,7 +1473,7 @@ function listReportTargetsForUser(userId, email, orderNumber) {
     LEFT JOIN products p ON p.id = s.product_id
     LEFT JOIN product_variants v ON v.id = s.variant_id
     WHERE o.status = 'approved'
-      AND (o.user_id = ? OR (o.user_id IS NULL AND LOWER(o.email) = ?))
+      AND (o.user_id = ? OR LOWER(o.email) = ?)
       ${orderFilter}
     ORDER BY f.id ASC
   `).all(...params);
@@ -1793,7 +1796,7 @@ function countPreOrders(userId, email) {
   return db.prepare(`
     SELECT COUNT(DISTINCT o.id) AS c FROM orders o
     JOIN order_items oi ON oi.order_id = o.id
-    WHERE (o.user_id = ? OR (o.user_id IS NULL AND LOWER(o.email) = ?))
+    WHERE (o.user_id = ? OR LOWER(o.email) = ?)
       AND o.status = 'approved'
       AND (SELECT COUNT(*) FROM order_fulfillments f WHERE f.order_item_id = oi.id) < oi.quantity
   `).get(userId, emailLower).c;
@@ -1805,16 +1808,16 @@ function getUserOrderStats(userId, email) {
     SELECT
       (SELECT wallet_balance FROM users WHERE id = ?) AS balance,
       (SELECT COUNT(*) FROM orders o
-        WHERE (o.user_id = ? OR (o.user_id IS NULL AND LOWER(o.email) = ?)) AND o.status = 'approved') AS totalOrders,
+        WHERE (o.user_id = ? OR LOWER(o.email) = ?) AND o.status = 'approved') AS totalOrders,
       (SELECT COALESCE(SUM(o.total), 0) FROM orders o
-        WHERE (o.user_id = ? OR (o.user_id IS NULL AND LOWER(o.email) = ?)) AND o.status = 'approved') AS totalSpent,
+        WHERE (o.user_id = ? OR LOWER(o.email) = ?) AND o.status = 'approved') AS totalSpent,
       (SELECT COUNT(*) FROM product_reports WHERE user_id = ? OR LOWER(email) = ?) AS reports,
       (SELECT COALESCE(SUM(o.total), 0) FROM orders o
-        WHERE (o.user_id = ? OR (o.user_id IS NULL AND LOWER(o.email) = ?)) AND o.status = 'refunded') AS refundsReceived,
+        WHERE (o.user_id = ? OR LOWER(o.email) = ?) AND o.status = 'refunded') AS refundsReceived,
       (SELECT COUNT(*) FROM order_fulfillments f
         JOIN orders o ON o.id = f.order_id
         WHERE o.status = 'approved'
-          AND (o.user_id = ? OR (o.user_id IS NULL AND LOWER(o.email) = ?))) AS accountCount
+          AND (o.user_id = ? OR LOWER(o.email) = ?)) AS accountCount
   `).get(
     userId, userId, emailLower, userId, emailLower,
     userId, emailLower, userId, emailLower, userId, emailLower
@@ -1840,7 +1843,7 @@ function buildOrdersList(userId, email) {
     FROM orders o
     JOIN payment_methods pm ON pm.id = o.payment_method_id
     LEFT JOIN users u ON u.id = o.user_id
-    WHERE o.user_id = ? OR (o.user_id IS NULL AND LOWER(o.email) = ?)
+    WHERE o.user_id = ? OR LOWER(o.email) = ?
     ORDER BY datetime(o.created_at) DESC
   `).all(userId, emailLower);
 
@@ -1941,6 +1944,16 @@ function backfillNonTingiPaidOrders() {
 backfillPaidOrderFulfillments();
 backfillNonTingiPaidOrders();
 
+function linkOrderToEmailBuyer(orderId) {
+  const order = db.prepare('SELECT id, user_id, email FROM orders WHERE id = ?').get(orderId);
+  if (!order?.email) return false;
+  const emailUser = db.prepare('SELECT id FROM users WHERE LOWER(email) = ?')
+    .get(String(order.email).trim().toLowerCase());
+  if (!emailUser?.id || emailUser.id === order.user_id) return false;
+  db.prepare('UPDATE orders SET user_id = ? WHERE id = ?').run(emailUser.id, orderId);
+  return true;
+}
+
 function markOrderApprovedAndFulfill(orderId) {
   const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
   if (!order) return { error: 'Order not found' };
@@ -1950,6 +1963,7 @@ function markOrderApprovedAndFulfill(orderId) {
   }
 
   db.prepare('UPDATE orders SET status = ? WHERE id = ?').run(ORDER_STATUS.APPROVED, orderId);
+  linkOrderToEmailBuyer(orderId);
 
   try {
     const orderNum = order.order_number || orderId;
@@ -2002,6 +2016,15 @@ try {
   }
 } catch (err) {
   console.error('[fulfillment] misdelivery repair failed:', err.message);
+}
+
+try {
+  const buyerRepair = repairOrderBuyerLinks(db);
+  if (buyerRepair.repaired > 0) {
+    console.log(`[orders] linked ${buyerRepair.repaired} order(s) to buyer email account`);
+  }
+} catch (err) {
+  console.error('[orders] buyer link repair failed:', err.message);
 }
 
 try {
@@ -2967,7 +2990,7 @@ app.get('/account/wallet', requireAuth, (req, res) => {
            o.created_at AS createdAt, pm.name AS paymentMethod
     FROM orders o
     JOIN payment_methods pm ON pm.id = o.payment_method_id
-    WHERE (o.user_id = ? OR (o.user_id IS NULL AND LOWER(o.email) = ?))
+    WHERE (o.user_id = ? OR LOWER(o.email) = ?)
       AND o.status IN ('approved', 'refunded')
     ORDER BY datetime(o.created_at) DESC
   `).all(userId, email);
@@ -3505,7 +3528,6 @@ app.get('/admin/me', requireAdmin, (req, res) => {
 });
 
 app.get('/admin/stats', requireAdmin, (req, res) => {
-  purgeOrdersWithoutPaymentProof();
   const orderCount = db.prepare('SELECT COUNT(*) AS c FROM orders').get().c;
   const pendingCount = db.prepare(
     "SELECT COUNT(*) AS c FROM orders WHERE status IN ('pending_payment', 'pending')"
@@ -3733,7 +3755,8 @@ function batchVariantsByProductIds(productIds) {
 
 app.get('/admin/products', requireAdmin, (req, res) => {
   const rows = db.prepare('SELECT * FROM products ORDER BY id ASC').all();
-  rows.forEach((p) => { p.variants = getVariants(p.id); });
+  const variantMap = batchVariantsByProductIds(rows.map((p) => p.id));
+  rows.forEach((p) => { p.variants = variantMap[p.id] || []; });
   res.json(rows);
 });
 
@@ -4085,14 +4108,17 @@ app.post('/orders', (req, res) => {
   const total = subtotal - discount;
   prepareOrderSchema();
   let { orderSeq, orderNumber } = allocateOrderIdentity();
+  const emailLower = email.trim().toLowerCase();
+  const emailAccount = db.prepare('SELECT id FROM users WHERE LOWER(email) = ?').get(emailLower);
+  const orderUserId = emailAccount?.id || req.session.userId || null;
 
   db.exec('BEGIN');
   try {
     const orderResult = insertOrderRow({
       orderNumber,
       orderSeq,
-      userId: req.session.userId || null,
-      email: email.trim().toLowerCase(),
+      userId: orderUserId,
+      email: emailLower,
       paymentMethodId: Number(paymentMethodId),
       redeemCodeId,
       subtotal,
@@ -4148,8 +4174,8 @@ app.post('/orders', (req, res) => {
         const orderResult = insertOrderRow({
           orderNumber,
           orderSeq,
-          userId: req.session.userId || null,
-          email: email.trim().toLowerCase(),
+          userId: orderUserId,
+          email: emailLower,
           paymentMethodId: Number(paymentMethodId),
           redeemCodeId,
           subtotal,
@@ -4457,12 +4483,103 @@ function saveThemeColorSettings(colors) {
 /* ============================================================
    ALL ORDERS — pending / approved / rejected + search + date
    ============================================================ */
+function batchOrderStockStatus(rows, itemsByOrder) {
+  const stockMap = new Map();
+  if (!rows.length) return stockMap;
+
+  const variantIds = new Set();
+  const productIds = new Set();
+  const itemIds = [];
+  for (const items of itemsByOrder.values()) {
+    for (const item of items) {
+      itemIds.push(item.id);
+      if (item.variant_id) variantIds.add(item.variant_id);
+      if (item.product_id) productIds.add(item.product_id);
+    }
+  }
+
+  const fulfillByItem = new Map();
+  if (itemIds.length) {
+    const ph = itemIds.map(() => '?').join(',');
+    db.prepare(`
+      SELECT order_item_id AS orderItemId, COUNT(*) AS c
+      FROM order_fulfillments WHERE order_item_id IN (${ph}) GROUP BY order_item_id
+    `).all(...itemIds).forEach((r) => fulfillByItem.set(r.orderItemId, r.c));
+  }
+
+  const availByVariant = new Map();
+  if (variantIds.size) {
+    const ph = [...variantIds].map(() => '?').join(',');
+    db.prepare(`
+      SELECT variant_id AS variantId, COUNT(*) AS c FROM stock_items
+      WHERE variant_id IN (${ph}) AND status='available' GROUP BY variant_id
+    `).all(...variantIds).forEach((r) => availByVariant.set(r.variantId, r.c));
+  }
+
+  const availByProduct = new Map();
+  if (productIds.size) {
+    const ph = [...productIds].map(() => '?').join(',');
+    db.prepare(`
+      SELECT product_id AS productId, COUNT(*) AS c FROM stock_items
+      WHERE product_id IN (${ph}) AND status='available' GROUP BY product_id
+    `).all(...productIds).forEach((r) => availByProduct.set(r.productId, r.c));
+  }
+
+  function stockAvail(productId, variantId) {
+    if (variantId) return availByVariant.get(variantId) || 0;
+    return availByProduct.get(productId) || 0;
+  }
+
+  function stockLine(productId, variantId, qty) {
+    const q = Math.max(1, Number(qty) || 1);
+    if (stockAvail(productId, variantId) >= q) return { state: 'available', label: 'Available' };
+    return { state: 'preorder', label: 'Preorder' };
+  }
+
+  for (const order of rows) {
+    const items = itemsByOrder.get(order.id) || [];
+    if (!items.length) {
+      stockMap.set(order.id, { state: 'available', label: null });
+      continue;
+    }
+    if (isApprovedOrderStatus(order.status)) {
+      let anyRemaining = false;
+      let assigned = false;
+      for (const item of items) {
+        const fulfilled = fulfillByItem.get(item.id) || 0;
+        const remaining = Math.max(0, Number(item.quantity) - fulfilled);
+        if (remaining <= 0) continue;
+        anyRemaining = true;
+        const st = stockLine(item.product_id, item.variant_id, remaining);
+        if (st.state === 'preorder') {
+          stockMap.set(order.id, st);
+          assigned = true;
+          break;
+        }
+      }
+      if (!assigned) {
+        stockMap.set(order.id, anyRemaining
+          ? { state: 'available', label: 'Available' }
+          : { state: 'dropped', label: null });
+      }
+    } else {
+      let preorder = null;
+      for (const item of items) {
+        const st = stockLine(item.product_id, item.variant_id, item.quantity);
+        if (st.state === 'preorder') { preorder = st; break; }
+      }
+      stockMap.set(order.id, preorder || { state: 'available', label: 'Available' });
+    }
+  }
+  return stockMap;
+}
+
 function mapOrderCards(rows) {
   if (!rows.length) return [];
   const ids = rows.map((r) => r.id);
   const ph = ids.map(() => '?').join(',');
   const itemRows = db.prepare(`
-    SELECT order_id, product_name AS name, quantity
+    SELECT id, order_id, product_id, variant_id, product_name AS name, quantity
     FROM order_items WHERE order_id IN (${ph})
     ORDER BY id ASC
   `).all(...ids);
@@ -4471,11 +4588,12 @@ function mapOrderCards(rows) {
     if (!itemsByOrder.has(item.order_id)) itemsByOrder.set(item.order_id, []);
     itemsByOrder.get(item.order_id).push(item);
   }
+  const stockByOrder = batchOrderStockStatus(rows, itemsByOrder);
   return rows.map((o) => {
     const items = itemsByOrder.get(o.id) || [];
     const first = items[0];
     const buyerName = o.buyer_name || o.user_name || (o.email ? o.email.split('@')[0] : 'Guest');
-    const stock = orderItemsStockStatus(o.id, o.status);
+    const stock = stockByOrder.get(o.id) || { state: 'available', label: null };
     return {
       id: o.id,
       orderNumber: o.order_number,
@@ -4505,37 +4623,7 @@ function mapOrderCards(rows) {
 }
 
 function orderCard(o) {
-  const items = db.prepare(
-    'SELECT product_name AS name, quantity FROM order_items WHERE order_id = ?'
-  ).all(o.id);
-  const first = items[0];
-  const buyerName = o.buyer_name || o.user_name || (o.email ? o.email.split('@')[0] : 'Guest');
-  const stock = orderItemsStockStatus(o.id, o.status);
-  return {
-    id: o.id,
-    orderNumber: o.order_number,
-    orderId: o.order_seq,
-    displayId: orderDisplayId(o),
-    buyerName,
-    email: o.email,
-    userId: o.user_id || null,
-    user: {
-      id: o.user_id || null,
-      name: o.buyer_name || o.user_name || buyerName,
-      email: o.email
-    },
-    itemName: first ? first.name : '—',
-    itemQty: first ? first.quantity : 0,
-    itemCount: items.length,
-    stockState: stock.state,
-    stockLabel: stock.label,
-    total: o.total,
-    paymentMethod: o.payment_method_name,
-    status: o.status,
-    receiptUrl: o.receipt_url || null,
-    rejectReason: o.reject_reason || null,
-    createdAt: o.created_at
-  };
+  return mapOrderCards([o])[0];
 }
 
 const ALL_ORDER_TABS = {
@@ -4546,7 +4634,6 @@ const ALL_ORDER_TABS = {
 
 app.get('/admin/all-orders', requireAdmin, (req, res) => {
   const tab = ALL_ORDER_TABS[req.query.tab] ? req.query.tab : 'pending';
-  if (tab === 'pending') purgeOrdersWithoutPaymentProof();
   const statuses = ALL_ORDER_TABS[tab];
   const params = [...statuses];
   let query = `
@@ -4655,7 +4742,8 @@ app.get('/admin/transactions', requireAdmin, (req, res) => {
   if (req.query.from) { query += ' AND date(o.created_at) >= date(?)'; params.push(req.query.from); }
   if (req.query.to) { query += ' AND date(o.created_at) <= date(?)'; params.push(req.query.to); }
   query += ' ORDER BY o.id DESC LIMIT 200';
-  const ledger = db.prepare(query).all(...params).map(orderCard);
+  const ledgerRows = db.prepare(query).all(...params);
+  const ledger = mapOrderCards(ledgerRows);
 
   res.json({
     summary: { netRevenue, orders, refundTotal, refundCount, totalReports, goodReports, fixedReports },
@@ -4979,6 +5067,21 @@ app.post('/admin/fulfillment/repair-misdeliveries', requireAdmin, (req, res) => 
   }
 });
 
+app.post('/admin/orders/repair-buyer-links', requireAdmin, (req, res) => {
+  try {
+    const before = findMismatchedOrderBuyerLinks(db);
+    const result = repairOrderBuyerLinks(db);
+    res.json({
+      ok: true,
+      mismatchesBefore: before.length,
+      repaired: result.repaired,
+      details: result.details
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Repair failed' });
+  }
+});
+
 app.put('/admin/inventory/:id', requireAdmin, (req, res) => {
   const id = Number(req.params.id);
   const existing = db.prepare('SELECT * FROM stock_items WHERE id = ?').get(id);
@@ -5030,9 +5133,9 @@ app.get('/admin/users', requireAdmin, (req, res) => {
   let query = `
     SELECT u.id, u.email, u.name, u.username, u.is_admin, u.suspended, u.created_at,
            (SELECT COUNT(*) FROM orders o
-             WHERE o.user_id = u.id OR (o.user_id IS NULL AND LOWER(o.email) = LOWER(u.email))) AS orders,
+             WHERE o.user_id = u.id OR LOWER(o.email) = LOWER(u.email))) AS orders,
            (SELECT COALESCE(SUM(o.total),0) FROM orders o
-             WHERE (o.user_id = u.id OR (o.user_id IS NULL AND LOWER(o.email) = LOWER(u.email)))
+             WHERE (o.user_id = u.id OR LOWER(o.email) = LOWER(u.email))
                AND o.status='approved') AS spent
     FROM users u WHERE 1=1
   `;

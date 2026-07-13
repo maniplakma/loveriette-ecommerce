@@ -1486,6 +1486,51 @@ function runWheelNameCheck() {
   db.prepare('DELETE FROM users WHERE id IN (?, ?)').run(astraId, matchaId);
 }
 
+function runOrderBuyerDashboardCheck() {
+  console.log('\nOrder buyer dashboard (email vs user_id)');
+  const { repairOrderBuyerLinks } = require('./fulfillment-repair');
+
+  const astraId = db.prepare(`
+    INSERT INTO users (email, password_hash, name, username)
+    VALUES ('astra-dash@test.local', 'x', 'Astra', 'astra')
+  `).run().lastInsertRowid;
+  const matchaId = db.prepare(`
+    INSERT INTO users (email, password_hash, name, username)
+    VALUES ('matcha-dash@test.local', 'x', 'Matcha', 'matcha')
+  `).run().lastInsertRowid;
+
+  const pm = db.prepare('SELECT id FROM payment_methods WHERE is_active = 1 LIMIT 1').get();
+  const product = db.prepare('SELECT id FROM products ORDER BY id LIMIT 1').get();
+  const seq = db.prepare('SELECT COALESCE(MAX(order_seq), 0) + 1 AS n FROM orders').get().n;
+  const orderNumber = `BD${seq}`;
+  const orderId = db.prepare(`
+    INSERT INTO orders (
+      order_number, order_seq, user_id, email, payment_method_id,
+      subtotal, discount, total, status, tingi_drop_enabled, fulfillment_mode
+    ) VALUES (?, ?, ?, 'matcha-dash@test.local', ?, 100, 0, 100, 'approved', 0, 'auto')
+  `).run(orderNumber, seq, astraId, pm.id).lastInsertRowid;
+  db.prepare(`
+    INSERT INTO order_items (order_id, product_id, product_name, quantity, price)
+    VALUES (?, ?, 'Dashboard Test', 1, 100)
+  `).run(orderId, product.id);
+
+  const before = db.prepare(`
+    SELECT o.order_number AS orderNumber FROM orders o
+    WHERE o.user_id = ? OR LOWER(o.email) = ?
+  `).all(matchaId, 'matcha-dash@test.local');
+  if (before.some((o) => o.orderNumber === orderNumber)) ok('dashboard lists order by buyer email');
+  else fail('dashboard lists order by buyer email before repair', before.length);
+
+  const repair = repairOrderBuyerLinks(db);
+  const row = db.prepare('SELECT user_id FROM orders WHERE id = ?').get(orderId);
+  if (repair.repaired >= 1 && row.user_id === matchaId) ok('repairOrderBuyerLinks sets user_id from email');
+  else fail('repairOrderBuyerLinks', JSON.stringify({ repair, user_id: row.user_id }));
+
+  db.prepare('DELETE FROM order_items WHERE order_id = ?').run(orderId);
+  db.prepare('DELETE FROM orders WHERE id = ?').run(orderId);
+  db.prepare('DELETE FROM users WHERE id IN (?, ?)').run(astraId, matchaId);
+}
+
 function runGrandDrawEligibilityCheck() {
   console.log('\nGrand draw eligibility (date window + min spend)');
   const {
@@ -1828,6 +1873,7 @@ async function main() {
     await runWheelAutoDrawCheck(adminCookie);
     await runWheelMultiPrizeCheck(adminCookie);
     runWheelNameCheck();
+    runOrderBuyerDashboardCheck();
     runGrandDrawEligibilityCheck();
     runPrizeOddsCheck();
     await runVariantDescriptionCheck(adminCookie);

@@ -26,6 +26,10 @@ class SqliteSessionStore extends Store {
     this.destroyStmt = this.db.prepare('DELETE FROM user_sessions WHERE sid = ?');
     this.touchStmt = this.db.prepare('UPDATE user_sessions SET expire = ? WHERE sid = ?');
     this.cleanupStmt = this.db.prepare('DELETE FROM user_sessions WHERE expire <= ?');
+    this._getCount = 0;
+    setInterval(() => {
+      try { this.cleanupStmt.run(Date.now()); } catch (_) { /* ignore */ }
+    }, 60 * 60 * 1000);
   }
 
   expireAt(sess) {
@@ -34,9 +38,15 @@ class SqliteSessionStore extends Store {
     return Date.now() + (30 * 24 * 60 * 60 * 1000);
   }
 
+  maybeCleanup() {
+    this._getCount += 1;
+    if (this._getCount % 100 !== 0) return;
+    try { this.cleanupStmt.run(Date.now()); } catch (_) { /* ignore */ }
+  }
+
   get(sid, cb) {
     try {
-      this.cleanupStmt.run(Date.now());
+      this.maybeCleanup();
       const row = this.getStmt.get(sid, Date.now());
       cb(null, row ? JSON.parse(row.sess) : null);
     } catch (err) {

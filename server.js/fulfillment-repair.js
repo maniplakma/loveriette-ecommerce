@@ -153,10 +153,46 @@ function repairMisdeliveredFulfillments(db, deps) {
   return { repaired, details };
 }
 
+/** Link orders to the user account that matches order.email (fixes checkout user_id mismatch). */
+function findMismatchedOrderBuyerLinks(db) {
+  return db.prepare(`
+    SELECT o.id, o.order_number AS orderNumber, o.order_seq AS orderSeq,
+           o.user_id AS currentUserId, o.email,
+           u.id AS emailUserId, u.email AS emailUserEmail
+    FROM orders o
+    LEFT JOIN users u ON LOWER(u.email) = LOWER(o.email)
+    WHERE TRIM(COALESCE(o.email, '')) != ''
+      AND u.id IS NOT NULL
+      AND (o.user_id IS NULL OR o.user_id != u.id)
+    ORDER BY o.id ASC
+  `).all();
+}
+
+function repairOrderBuyerLinks(db) {
+  const rows = findMismatchedOrderBuyerLinks(db);
+  if (!rows.length) return { repaired: 0, details: [] };
+  const upd = db.prepare('UPDATE orders SET user_id = ? WHERE id = ?');
+  const details = [];
+  for (const row of rows) {
+    upd.run(row.emailUserId, row.id);
+    details.push({
+      orderId: row.id,
+      orderNumber: row.orderNumber,
+      orderSeq: row.orderSeq,
+      email: row.email,
+      fromUserId: row.currentUserId,
+      toUserId: row.emailUserId
+    });
+  }
+  return { repaired: rows.length, details };
+}
+
 module.exports = {
   findMisdeliveredFulfillments,
   findWaitingOrderItemForVariant,
   transferFulfillmentCore,
   releaseMisdeliveryCore,
-  repairMisdeliveredFulfillments
+  repairMisdeliveredFulfillments,
+  findMismatchedOrderBuyerLinks,
+  repairOrderBuyerLinks
 };

@@ -601,9 +601,6 @@ async function refreshOrdersTab(tab, gen, { background = false } = {}) {
 
 async function loadAllOrders(opts = {}) {
   const tab = activeOrdersTab();
-  if (tab === 'pending') {
-    try { await api('/admin/orders/purge-no-proof', { method: 'POST', body: '{}' }); } catch (_) { /* ignore */ }
-  }
   const list = $('orders-list');
   const gen = ++ordersFetchGen;
   const cached = ordersTabCache[tab];
