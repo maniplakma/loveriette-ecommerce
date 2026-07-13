@@ -50,15 +50,12 @@ Use this guide from start to finish. Nothing is optional unless marked.
 #### Scopes (important)
 
 5. Click **Add or Remove Scopes**
-6. In the filter box, type: `gmail.readonly`
-7. Check this scope only:
+6. Add **both** scopes (loveriette uses read for OTP fetch and send for buyer emails if SMTP is off):
    ```
    https://www.googleapis.com/auth/gmail.readonly
+   https://www.googleapis.com/auth/gmail.send
    ```
-   - Description: *Read all resources and metadata—no write operations*
-8. Click **Update** → **Save and Continue**
-
-> Do **not** add other Gmail scopes. Read-only is enough for OTP fetch.
+7. Click **Update** → **Save and Continue**
 
 #### Test users (required while app is in Testing)
 
@@ -196,7 +193,21 @@ Google rejected the Client ID + Secret pair. This is **not** a website bug.
 
 - Never share Client Secret publicly
 - Rotate secret in Google Console if exposed
-- Only `gmail.readonly` scope — site cannot send or delete emails
+- Only `gmail.readonly` + `gmail.send` — send is used for buyer transactional emails when SMTP is not configured
+
+---
+
+## Quick setup scripts (VPS)
+
+```bash
+# Check site readiness
+bash scripts/gmail-oauth-preflight.sh https://loveriette.shop
+
+# Save Client ID + Secret to .env and verify with Google
+GOOGLE_CLIENT_ID='...' GOOGLE_CLIENT_SECRET='GOCSPX-...' bash scripts/set-gmail-oauth.sh
+```
+
+Tagalog short guide (your steps only): `docs/GMAIL-IKAW-LANG.md`
 
 ---
 

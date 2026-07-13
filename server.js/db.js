@@ -1065,6 +1065,11 @@ const seedPrivacy = [
     title: '12. Contact Us',
     body: 'For privacy-related requests or questions, contact us through the official channels on our Contact page (Telegram or email). Include "Privacy Request" in your message and sufficient information to verify your identity.',
     sort_order: 12
+  },
+  {
+    title: '13. Gmail Integration (Email Fetcher)',
+    body: 'When you purchase a digital product, you may use the Email Fetcher in your account dashboard to retrieve verification or login emails related to your order. To provide this feature, the shop administrator connects one Gmail inbox via Google OAuth. The application requests read access to find messages addressed to your purchased account email, and may use send access only for transactional shop emails (order updates, password reset). We do not sell Gmail data. OAuth tokens are encrypted on the server and expire automatically. You can contact us to ask how your data is used or to request deletion of your account data subject to legal retention rules.',
+    sort_order: 13
   }
 ];
 
@@ -1150,6 +1155,19 @@ if (privacyCount === 0) {
     db.exec('ROLLBACK');
     throw err;
   }
+} else {
+  try {
+    const gmailPrivacy = seedPrivacy.find((s) => s.title.includes('Gmail Integration'));
+    if (gmailPrivacy) {
+      const exists = db.prepare(`
+        SELECT id FROM privacy_sections WHERE title LIKE '%Gmail Integration%' LIMIT 1
+      `).get();
+      if (!exists) {
+        db.prepare('INSERT INTO privacy_sections (title, body, sort_order) VALUES (?, ?, ?)')
+          .run(gmailPrivacy.title, gmailPrivacy.body, gmailPrivacy.sort_order);
+      }
+    }
+  } catch (_) { /* ignore */ }
 }
 
 const seedPaymentMethods = [
