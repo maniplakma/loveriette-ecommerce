@@ -1,20 +1,16 @@
 /**
- * Staggered join-only batch — all workspace accounts join shared groups before forwarding.
+ * Join-only batch — all workspace accounts join shared groups before forwarding.
+ * No stagger/delay between accounts (forwarding auto-start keeps its own delay).
  */
 const { withAuthorizedClient } = require('./plugging-telegram');
 const { ensureAccountProxy } = require('./plugging-proxy');
 const { logPlugActivity } = require('./plugging-activity');
-const { staggerMs } = require('./plugging-autostart');
 const { parseTargets, resolveEntityFromLink } = require('./plugging-runner');
 const { joinTarget, extractInviteHash, isAlreadyMember } = require('./plugging-join');
 const { handlePostJoinVerification } = require('./plugging-verify');
 
 const MAX_JOIN_ATTEMPTS = 3;
 const orderQueues = new Map();
-
-function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
-}
 
 function entityLabel(entity) {
   if (!entity) return '';
@@ -268,7 +264,6 @@ async function joinGroupForAccount(db, account, groupRef, getSettings) {
       if (attemptNum >= MAX_JOIN_ATTEMPTS) {
         return { ok: false, groupRef: key, error: lastError, attempts: attemptNum };
       }
-      await sleep(3000);
     }
   }
 
@@ -283,7 +278,7 @@ async function runAccountJoinBatch(db, account, groups, getSettings) {
   return outcomes;
 }
 
-async function runStaggeredJoinGroups(db, orderId, getSettings, { staggerMinutes = 10, source = 'manual' } = {}) {
+async function runJoinGroupsBatch(db, orderId, getSettings, { source = 'manual' } = {}) {
   if (orderQueues.get(orderId)) {
     return { ok: false, error: 'A join-groups batch is already running for this workspace' };
   }
@@ -301,15 +296,12 @@ async function runStaggeredJoinGroups(db, orderId, getSettings, { staggerMinutes
 
   pruneJoinResults(db, orderId, groups);
 
-  const delayMs = staggerMs(staggerMinutes);
   const queue = { running: true, startedAt: Date.now() };
   orderQueues.set(orderId, queue);
 
   (async () => {
     try {
       for (let i = 0; i < accounts.length; i += 1) {
-        if (!queue.running) break;
-        if (i > 0) await sleep(delayMs);
         if (!queue.running) break;
         logPlugActivity(db, accounts[i].id, 'started', '[Join groups] Batch started for this account');
         await runAccountJoinBatch(db, accounts[i], groups, getSettings);
@@ -325,7 +317,6 @@ async function runStaggeredJoinGroups(db, orderId, getSettings, { staggerMinutes
     source,
     queued: accounts.length,
     groupCount: groups.length,
-    staggerMinutes: Number(staggerMinutes) || 10,
     accountIds: accounts.map((a) => a.id)
   };
 }
@@ -347,7 +338,7 @@ module.exports = {
   getJoinableAccounts,
   buildJoinGroupsStatus,
   pruneJoinResults,
-  runStaggeredJoinGroups,
+  runJoinGroupsBatch,
   stopJoinBatch,
   isJoinBatchRunning,
   joinGroupForAccount

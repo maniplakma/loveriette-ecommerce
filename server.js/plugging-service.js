@@ -16,7 +16,7 @@ const {
   refreshAutoStartSchedule
 } = require('./plugging-autostart');
 const {
-  runStaggeredJoinGroups,
+  runJoinGroupsBatch,
   isJoinBatchRunning,
   buildJoinGroupsStatus,
   pruneJoinResults,
@@ -633,14 +633,8 @@ function mountPluggingService(app, db, deps) {
     const order = db.prepare('SELECT * FROM plugging_orders WHERE id = ?').get(req.plugOrder.id);
     if (!order) return res.status(404).json({ error: 'Order not found' });
 
-    const autoStart = readAutoStartSettings(order);
-    const staggerMinutes = req.body?.staggerMinutes != null
-      ? Math.max(0, Math.round(Number(req.body.staggerMinutes) || 0))
-      : autoStart.staggerMinutes;
-
     try {
-      const result = await runStaggeredJoinGroups(db, order.id, getPluggingSettings, {
-        staggerMinutes,
+      const result = await runJoinGroupsBatch(db, order.id, getPluggingSettings, {
         source: 'manual'
       });
       if (!result.ok) return res.status(400).json({ error: result.error || 'Could not start join batch' });

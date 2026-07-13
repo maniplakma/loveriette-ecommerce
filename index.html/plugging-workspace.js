@@ -317,16 +317,14 @@ async function saveJoinGroupsList() {
 }
 
 async function runJoinGroupsAll() {
-  const staggerMinutes = Number(document.getElementById('autostart-stagger')?.value) || 0;
   const data = await api('/api/plugging/workspace/join-groups/run', {
     method: 'POST',
-    body: JSON.stringify({ staggerMinutes })
+    body: JSON.stringify({})
   });
   workspace.joinGroups = { ...workspace.joinGroups, ...data.joinGroups, running: true };
   renderJoinGroupsPanel();
   const count = data.queued || data.accountIds?.length || 0;
-  const delay = data.staggerMinutes ?? staggerMinutes;
-  setJoinGroupsMessage(`Joining ${data.groupCount || 0} group(s) on ${count} account(s) — ${delay} min between accounts.`);
+  setJoinGroupsMessage(`Joining ${data.groupCount || 0} group(s) on ${count} account(s).`);
   startJoinGroupsPoll();
 }
 
