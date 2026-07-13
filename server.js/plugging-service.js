@@ -7,7 +7,7 @@ const crypto = require('crypto');
 const appConfig = require('./config');
 const { sendHtmlPage } = require('./send-html-page');
 const { sendLoginCode, verifyLoginCode } = require('./plugging-telegram');
-const { startRunner, stopRunner, stopRunnerGracefully, isRunning, resumeRunnersOnBoot } = require('./plugging-runner');
+const { startRunner, stopRunner, stopRunnerGracefully, isRunning, resumeRunnersOnBoot, watchPluggingRunners } = require('./plugging-runner');
 const {
   runStaggeredStart,
   isStaggeredStartRunning,
@@ -510,6 +510,8 @@ function mountPluggingService(app, db, deps) {
 
       ensureAccountProxy(db, account.id, getPluggingSettings());
       clearAccountActivity(db, account.id);
+      db.prepare('UPDATE plugging_accounts SET runner_status = ?, last_error = ?, updated_at = datetime(\'now\') WHERE id = ?')
+        .run('running', '', account.id);
       await startRunner(db, account.id, getPluggingSettings);
       res.json({ ok: true, runnerStatus: 'running' });
     } catch (err) {
@@ -743,6 +745,12 @@ function mountPluggingService(app, db, deps) {
       console.error('[plugging] resume runners failed:', err.message);
     });
     initAutoStartSchedulers(db, getPluggingSettings);
+    const WATCH_MS = Math.max(60_000, Number(process.env.PLUG_RUNNER_WATCH_MS) || 90_000);
+    setInterval(() => {
+      watchPluggingRunners(db, getPluggingSettings).catch((err) => {
+        console.error('[plugging] runner watchdog failed:', err.message);
+      });
+    }, WATCH_MS).unref?.();
   });
 }
 

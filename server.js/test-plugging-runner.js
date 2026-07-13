@@ -47,11 +47,18 @@ function testComputeNextCycleAt() {
   assert.strictEqual(computeNextCycleAt(null, 70), 0);
 }
 
+function testSessionRevokedDetection() {
+  const { isSessionRevokedError } = require('./plugging-telegram');
+  assert.strictEqual(isSessionRevokedError(new Error('AUTH_KEY_UNREGISTERED')), true);
+  assert.strictEqual(isSessionRevokedError(new Error('network timeout')), false);
+}
+
 async function main() {
   await testWaitWhileRunningStopsEarly();
   testShouldRunRejectsReplacedHandle();
   await testCycleDelayMs();
   testComputeNextCycleAt();
+  testSessionRevokedDetection();
   console.log('plugging-runner tests: OK');
 }
 

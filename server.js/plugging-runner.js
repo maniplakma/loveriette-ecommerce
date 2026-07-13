@@ -2,7 +2,7 @@
  * In-process forwarding runners — forwards one exact post link to target groups.
  * One active loop per account; overlapping starts are cancelled before a new loop runs.
  */
-const { withAuthorizedClient } = require('./plugging-telegram');
+const { withAuthorizedClient, isSessionRevokedError } = require('./plugging-telegram');
 const { logPlugActivity } = require('./plugging-activity');
 const { ensureAccountProxy } = require('./plugging-proxy');
 const { cycleDelayMs, groupSendDelayMs, formatDelayLabel } = require('./plugging-stealth');
@@ -13,6 +13,8 @@ const { forwardPostWithRetries } = require('./plugging-forward');
 
 const runners = new Map();
 const RETRY_DELAY_MS = 12000;
+const SESSION_REVOKED_HINT_EVERY = 5;
+const HEARTBEAT_MS = 10 * 60 * 1000;
 const TARGET_RESOLVE_MAX_ATTEMPTS = 3;
 const WAIT_POLL_MS = 500;
 
@@ -45,10 +47,15 @@ function shouldRun(handle, accountId) {
   return !!(current && current === handle && handle.running);
 }
 
-async function waitWhileRunning(handle, accountId, ms) {
+async function waitWhileRunning(handle, accountId, ms, onHeartbeat = null) {
   if (!ms || ms <= 0) return;
   const endAt = Date.now() + ms;
+  let nextHeartbeat = onHeartbeat ? Date.now() + HEARTBEAT_MS : Infinity;
   while (shouldRun(handle, accountId) && Date.now() < endAt) {
+    if (onHeartbeat && Date.now() >= nextHeartbeat) {
+      try { onHeartbeat(); } catch (_) { /* ignore */ }
+      nextHeartbeat = Date.now() + HEARTBEAT_MS;
+    }
     await sleep(Math.min(WAIT_POLL_MS, Math.max(0, endAt - Date.now())));
   }
 }
@@ -349,6 +356,7 @@ async function startRunner(db, accountId, getSettings) {
 
   (async () => {
     let nextCycleAt = 0;
+    let sessionRevokedStreak = 0;
 
     try {
       while (shouldRun(handle, accountId)) {
@@ -357,7 +365,13 @@ async function startRunner(db, accountId, getSettings) {
 
         const now = Date.now();
         if (nextCycleAt > now) {
-          await waitWhileRunning(handle, accountId, nextCycleAt - now);
+          const waitMs = nextCycleAt - now;
+          await waitWhileRunning(handle, accountId, waitMs, () => {
+            logPlugActivity(
+              db, accountId, 'info',
+              `Still running on server — next cycle at ${new Date(nextCycleAt).toLocaleTimeString()} (phone can stay logged out)`
+            );
+          });
         }
         if (!shouldRun(handle, accountId)) break;
 
@@ -366,6 +380,7 @@ async function startRunner(db, accountId, getSettings) {
           account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ?').get(accountId);
           await withAuthorizedClient(settings, account.session_string, async (client) => {
             if (!shouldRun(handle, accountId)) return;
+            sessionRevokedStreak = 0;
             const result = await runForwardCycle(client, db, accountId, account, handle);
             cycleEndedAt = result?.cycleEndedAt || null;
             if (result?.cancelled) return;
@@ -393,7 +408,16 @@ async function startRunner(db, accountId, getSettings) {
           const errMsg = String(err.message || err).slice(0, 500);
           db.prepare('UPDATE plugging_accounts SET last_error = ?, updated_at = datetime(\'now\') WHERE id = ?')
             .run(errMsg, accountId);
-          logPlugActivity(db, accountId, 'error', `Connection issue (retrying in ${Math.round(RETRY_DELAY_MS / 1000)}s): ${errMsg}`);
+          if (isSessionRevokedError(err)) {
+            sessionRevokedStreak += 1;
+            const hint = sessionRevokedStreak >= SESSION_REVOKED_HINT_EVERY
+              ? ' — if you only logged out on your phone, open workspace and re-verify OTP. Do not use Terminate All Sessions in Telegram.'
+              : '';
+            logPlugActivity(db, accountId, 'error', `Telegram session issue (retrying): ${errMsg}${hint}`);
+          } else {
+            sessionRevokedStreak = 0;
+            logPlugActivity(db, accountId, 'error', `Connection issue (retrying in ${Math.round(RETRY_DELAY_MS / 1000)}s): ${errMsg}`);
+          }
           await waitWhileRunning(handle, accountId, RETRY_DELAY_MS);
           continue;
         }
@@ -403,9 +427,13 @@ async function startRunner(db, accountId, getSettings) {
     } finally {
       if (runners.get(accountId) === handle) {
         runners.delete(accountId);
-        db.prepare('UPDATE plugging_accounts SET runner_status = ?, updated_at = datetime(\'now\') WHERE id = ?')
-          .run('stopped', accountId);
-        logPlugActivity(db, accountId, 'stopped', 'Forwarder stopped');
+        if (!handle.running) {
+          db.prepare('UPDATE plugging_accounts SET runner_status = ?, updated_at = datetime(\'now\') WHERE id = ?')
+            .run('stopped', accountId);
+          logPlugActivity(db, accountId, 'stopped', 'Forwarder stopped');
+        } else {
+          logPlugActivity(db, accountId, 'info', 'Forwarder loop ended — auto-resume will restart it on server');
+        }
       }
       handle.doneResolve?.();
     }
@@ -426,6 +454,10 @@ function isRunning(accountId) {
 }
 
 function resumeRunnersOnBoot(db, getSettings) {
+  return watchPluggingRunners(db, getSettings, { reason: 'server restart' });
+}
+
+function watchPluggingRunners(db, getSettings, { reason = 'watchdog' } = {}) {
   const rows = db.prepare(`
     SELECT pa.*
     FROM plugging_accounts pa
@@ -441,10 +473,13 @@ function resumeRunnersOnBoot(db, getSettings) {
     if (!parseTargets(row.targets_text).length) return;
     try {
       await startRunner(db, row.id, getSettings);
-      logPlugActivity(db, row.id, 'info', 'Forwarder resumed after server restart');
+      const msg = reason === 'server restart'
+        ? 'Forwarder resumed after server restart'
+        : 'Forwarder auto-resumed (runs on server — phone logout is OK)';
+      logPlugActivity(db, row.id, 'info', msg);
     } catch (err) {
-      db.prepare('UPDATE plugging_accounts SET runner_status = ?, last_error = ?, updated_at = datetime(\'now\') WHERE id = ?')
-        .run('stopped', String(err.message || err).slice(0, 500), row.id);
+      db.prepare('UPDATE plugging_accounts SET last_error = ?, updated_at = datetime(\'now\') WHERE id = ?')
+        .run(String(err.message || err).slice(0, 500), row.id);
       logPlugActivity(db, row.id, 'error', `Could not resume forwarder: ${String(err.message || err).slice(0, 200)}`);
     }
   }));
@@ -464,6 +499,7 @@ module.exports = {
   stopRunnerGracefully,
   isRunning,
   resumeRunnersOnBoot,
+  watchPluggingRunners,
   parseTargets,
   resolveEntityFromLink,
   waitWhileRunning,

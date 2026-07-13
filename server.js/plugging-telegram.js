@@ -61,6 +61,13 @@ async function connectWithTimeout(client, timeoutMs = 45000) {
   }
 }
 
+function isSessionRevokedError(err) {
+  const msg = String(err?.errorMessage || err?.message || err || '').toUpperCase();
+  return /AUTH_KEY_UNREGISTERED|SESSION_REVOKED|USER_DEACTIVATED|SESSION_EXPIRED/.test(msg)
+    || msg.includes('SESSION EXPIRED')
+    || msg.includes('PLEASE LOG IN AGAIN');
+}
+
 async function createClient(settings, sessionString = '', accountProxyUrl = '', { forceNoProxy = false } = {}) {
   if (!loadGramJs()) throw new Error('Telegram library not available');
   const apiId = Number(settings.telegram_api_id || process.env.TELEGRAM_API_ID);
@@ -78,7 +85,10 @@ async function createClient(settings, sessionString = '', accountProxyUrl = '', 
     retryDelay: 1500,
     timeout: 30,
     useWSS: !proxy,
-    proxy
+    proxy,
+    deviceModel: 'Loveriette Forwarder',
+    systemVersion: 'Server',
+    appVersion: '1.0.0'
   });
   await connectWithTimeout(client, 45000);
   return client;
@@ -133,7 +143,7 @@ async function withAuthorizedClient(settings, sessionString, fn, accountProxyUrl
     }
 
     if (!(await client.isUserAuthorized())) {
-      throw new Error('Telegram session expired — please log in again with your phone number.');
+      throw new Error('Telegram session expired — please log in again in the workspace (phone logout alone should not stop this; if you used Terminate All Sessions, re-verify OTP).');
     }
     return await fn(client, { usedProxy });
   } finally {
@@ -148,5 +158,6 @@ module.exports = {
   getSessionsDir,
   sendLoginCode,
   verifyLoginCode,
-  withAuthorizedClient
+  withAuthorizedClient,
+  isSessionRevokedError
 };
