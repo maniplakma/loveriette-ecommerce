@@ -454,10 +454,60 @@ function isRunning(accountId) {
 }
 
 function resumeRunnersOnBoot(db, getSettings) {
-  return watchPluggingRunners(db, getSettings, { reason: 'server restart' });
+  return watchPluggingRunners(db, getSettings, { reason: 'server restart', staggerResume: true });
 }
 
-function watchPluggingRunners(db, getSettings, { reason = 'watchdog' } = {}) {
+function groupResumableAccounts(rows) {
+  const byOrder = new Map();
+  for (const row of rows) {
+    if (!isPostLink(row.source_link)) continue;
+    if (!parseTargets(row.targets_text).length) continue;
+    if (!byOrder.has(row.order_id)) byOrder.set(row.order_id, []);
+    byOrder.get(row.order_id).push(row);
+  }
+  for (const list of byOrder.values()) {
+    list.sort((a, b) => a.id - b.id);
+  }
+  return byOrder;
+}
+
+async function resumeOneRunner(db, getSettings, row, reason) {
+  if (isRunning(row.id)) return;
+  try {
+    await startRunner(db, row.id, getSettings);
+    const msg = reason === 'server restart'
+      ? 'Forwarder resumed after server restart'
+      : 'Forwarder auto-resumed (runs on server — phone logout is OK)';
+    logPlugActivity(db, row.id, 'info', msg);
+  } catch (err) {
+    db.prepare('UPDATE plugging_accounts SET last_error = ?, updated_at = datetime(\'now\') WHERE id = ?')
+      .run(String(err.message || err).slice(0, 500), row.id);
+    logPlugActivity(db, row.id, 'error', `Could not resume forwarder: ${String(err.message || err).slice(0, 200)}`);
+  }
+}
+
+async function resumeRunnersStaggered(db, getSettings, rows, reason) {
+  const { readAutoStartSettings, staggerMs } = require('./plugging-autostart');
+  const byOrder = groupResumableAccounts(rows);
+  const jobs = [];
+
+  for (const [orderId, accounts] of byOrder) {
+    jobs.push((async () => {
+      const order = db.prepare('SELECT * FROM plugging_orders WHERE id = ?').get(orderId);
+      const settings = readAutoStartSettings(order || {});
+      const delayMs = staggerMs(settings.staggerMinutes, { enabled: settings.staggerEnabled });
+
+      for (let i = 0; i < accounts.length; i += 1) {
+        if (i > 0 && delayMs > 0) await sleep(delayMs);
+        await resumeOneRunner(db, getSettings, accounts[i], reason);
+      }
+    })());
+  }
+
+  await Promise.all(jobs);
+}
+
+function watchPluggingRunners(db, getSettings, { reason = 'watchdog', staggerResume = false } = {}) {
   const rows = db.prepare(`
     SELECT pa.*
     FROM plugging_accounts pa
@@ -467,22 +517,11 @@ function watchPluggingRunners(db, getSettings, { reason = 'watchdog' } = {}) {
       AND po.status = 'approved'
   `).all();
 
-  return Promise.all(rows.map(async (row) => {
-    if (isRunning(row.id)) return;
-    if (!isPostLink(row.source_link)) return;
-    if (!parseTargets(row.targets_text).length) return;
-    try {
-      await startRunner(db, row.id, getSettings);
-      const msg = reason === 'server restart'
-        ? 'Forwarder resumed after server restart'
-        : 'Forwarder auto-resumed (runs on server — phone logout is OK)';
-      logPlugActivity(db, row.id, 'info', msg);
-    } catch (err) {
-      db.prepare('UPDATE plugging_accounts SET last_error = ?, updated_at = datetime(\'now\') WHERE id = ?')
-        .run(String(err.message || err).slice(0, 500), row.id);
-      logPlugActivity(db, row.id, 'error', `Could not resume forwarder: ${String(err.message || err).slice(0, 200)}`);
-    }
-  }));
+  if (staggerResume && rows.length > 1) {
+    return resumeRunnersStaggered(db, getSettings, rows, reason);
+  }
+
+  return Promise.all(rows.map((row) => resumeOneRunner(db, getSettings, row, reason)));
 }
 
 function setRunnerForTest(accountId, handle) {
@@ -507,5 +546,6 @@ module.exports = {
   cycleDelayMs,
   computeNextCycleAt,
   setRunnerForTest,
-  clearRunnerForTest
+  clearRunnerForTest,
+  groupResumableAccounts
 };

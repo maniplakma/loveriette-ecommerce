@@ -8,7 +8,8 @@ const {
   cycleDelayMs,
   computeNextCycleAt,
   setRunnerForTest,
-  clearRunnerForTest
+  clearRunnerForTest,
+  groupResumableAccounts
 } = require('./plugging-runner');
 
 async function testWaitWhileRunningStopsEarly() {
@@ -53,11 +54,25 @@ function testSessionRevokedDetection() {
   assert.strictEqual(isSessionRevokedError(new Error('network timeout')), false);
 }
 
+function testGroupResumableAccounts() {
+  const rows = [
+    { id: 3, order_id: 1, source_link: 'https://t.me/ch/1', targets_text: '@g1' },
+    { id: 1, order_id: 1, source_link: 'https://t.me/ch/2', targets_text: '@g1' },
+    { id: 2, order_id: 2, source_link: 'https://t.me/ch/3', targets_text: '@g2' },
+    { id: 4, order_id: 1, source_link: 'bad', targets_text: '@g1' }
+  ];
+  const grouped = groupResumableAccounts(rows);
+  assert.strictEqual(grouped.size, 2);
+  assert.deepStrictEqual(grouped.get(1).map((r) => r.id), [1, 3]);
+  assert.deepStrictEqual(grouped.get(2).map((r) => r.id), [2]);
+}
+
 async function main() {
   await testWaitWhileRunningStopsEarly();
   testShouldRunRejectsReplacedHandle();
   await testCycleDelayMs();
   testComputeNextCycleAt();
+  testGroupResumableAccounts();
   testSessionRevokedDetection();
   console.log('plugging-runner tests: OK');
 }

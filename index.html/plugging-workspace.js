@@ -586,6 +586,7 @@ async function saveAutoStartSettings() {
 }
 
 async function runAutoStartAll() {
+  await saveAutoStartSettings();
   const form = readAutoStartForm();
   const data = await api('/api/plugging/workspace/auto-start/run', {
     method: 'POST',
