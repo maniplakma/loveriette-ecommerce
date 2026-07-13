@@ -3,6 +3,7 @@ let selectedId = null;
 let pendingOtpAccountId = null;
 let activityPollTimer = null;
 let joinGroupsPollTimer = null;
+let autoStartPollTimer = null;
 let activityLastId = 0;
 
 async function api(url, opts = {}) {
@@ -179,6 +180,7 @@ function showWorkspace() {
   if (selectedId) renderAccountDetail(selectedId);
   else renderEmptyDetail();
   if (workspace.joinGroups?.running) startJoinGroupsPoll();
+  if (workspace.autoStartRunning) startAutoStartPoll();
 }
 
 function readConfigForm() {
@@ -198,6 +200,24 @@ function normalizePostLinkClient(link) {
   if (bareSlash) return `https://t.me/${bareSlash[1]}/${bareSlash[2]}`;
   if (/^t\.me\//i.test(raw)) return `https://${raw}`;
   return raw;
+}
+
+function stopAutoStartPoll() {
+  if (autoStartPollTimer) {
+    clearInterval(autoStartPollTimer);
+    autoStartPollTimer = null;
+  }
+}
+
+function startAutoStartPoll() {
+  stopAutoStartPoll();
+  autoStartPollTimer = setInterval(async () => {
+    try {
+      workspace = await api('/api/plugging/workspace');
+      renderAutoStartPanel();
+      if (!workspace.autoStartRunning) stopAutoStartPoll();
+    } catch (_) { /* ignore */ }
+  }, 4000);
 }
 
 function stopJoinGroupsPoll() {
@@ -301,13 +321,29 @@ function renderJoinGroupsPanel() {
   const hasGroups = String(jg.groupsText || input?.value || '').trim().length > 0;
   if (runBtn) {
     runBtn.disabled = authedCount < 1 || !hasGroups || !!jg.running;
-    runBtn.hidden = !!jg.running;
     runBtn.title = authedCount < 1
       ? 'Log in at least one Telegram account first'
-      : (!hasGroups ? 'Add groups to join' : '');
+      : (!hasGroups ? 'Add groups to join' : (jg.running ? 'Join batch is running' : ''));
   }
   if (stopBtn) stopBtn.hidden = !jg.running;
   if (saveBtn) saveBtn.disabled = !!jg.running;
+
+  const joinHint = document.getElementById('join-groups-run-hint');
+  if (joinHint) {
+    if (jg.running) {
+      joinHint.hidden = false;
+      joinHint.textContent = 'Join in progress — use Stop join to cancel.';
+    } else if (authedCount < 1) {
+      joinHint.hidden = false;
+      joinHint.textContent = 'Log in at least one Telegram account first.';
+    } else if (!hasGroups) {
+      joinHint.hidden = false;
+      joinHint.textContent = 'Add and save at least one group to join.';
+    } else {
+      joinHint.hidden = true;
+      joinHint.textContent = '';
+    }
+  }
 }
 
 async function saveJoinGroupsList() {
@@ -369,6 +405,7 @@ function renderAutoStartPanel() {
   const panel = document.getElementById('plug-autostart-panel');
   if (!panel || !workspace) return;
 
+  const authedCount = (workspace.accounts || []).filter((a) => a.authStatus === 'authenticated').length;
   const readyCount = (workspace.accounts || []).filter((a) =>
     a.authStatus === 'authenticated' && a.sourceLink && a.targetCount > 0
   ).length;
@@ -410,12 +447,30 @@ function renderAutoStartPanel() {
 
   if (runBtn) {
     runBtn.disabled = readyCount < 1 || !!workspace.autoStartRunning;
-    runBtn.hidden = !!workspace.autoStartRunning;
-    runBtn.title = readyCount < 1
-      ? 'Each account needs login, post link, and target groups'
-      : '';
+    runBtn.title = workspace.autoStartRunning
+      ? 'Start-all is already running'
+      : (readyCount < 1
+        ? 'Each account needs login, post link, and target groups saved'
+        : '');
   }
   if (stopBtn) stopBtn.hidden = !workspace.autoStartRunning;
+
+  const runHint = document.getElementById('autostart-run-hint');
+  if (runHint) {
+    if (workspace.autoStartRunning) {
+      runHint.hidden = false;
+      runHint.textContent = 'Start-all in progress — use Stop start all to cancel.';
+    } else if (authedCount < 1) {
+      runHint.hidden = false;
+      runHint.textContent = 'Add and verify at least one Telegram account first.';
+    } else if (readyCount < 1) {
+      runHint.hidden = false;
+      runHint.textContent = 'Each account needs a saved post link and at least one target group before Start all.';
+    } else {
+      runHint.hidden = true;
+      runHint.textContent = '';
+    }
+  }
 }
 
 function readAutoStartForm() {
@@ -459,7 +514,7 @@ async function runAutoStartAll() {
       : `Starting ${count} account(s) — no delay between accounts.`
   );
   if (selectedId) startActivityPoll(selectedId);
-  setTimeout(() => refreshWorkspace({ soft: true }).then(renderAutoStartPanel), 4000);
+  startAutoStartPoll();
 }
 
 async function stopAutoStartAll() {
@@ -467,6 +522,7 @@ async function stopAutoStartAll() {
   workspace.autoStartRunning = data.autoStartRunning;
   renderAutoStartPanel();
   setAutoStartMessage(data.stopped ? 'Start-all batch stopped.' : 'No start-all batch was running.');
+  stopAutoStartPoll();
 }
 
 function setConfigSaveMessage(text, isError = false) {
@@ -808,6 +864,7 @@ document.getElementById('add-account-btn').addEventListener('click', submitAddAc
 document.getElementById('logout-btn').addEventListener('click', async () => {
   stopActivityPoll();
   stopJoinGroupsPoll();
+  stopAutoStartPoll();
   if (window.clearStoredPlugKey) clearStoredPlugKey();
   await api('/api/plugging/workspace/logout', { method: 'POST' });
   location.reload();
@@ -871,9 +928,8 @@ document.getElementById('join-groups-run-btn')?.addEventListener('click', async 
     await runJoinGroupsAll();
   } catch (e) {
     setJoinGroupsMessage(e.message, true);
-    renderJoinGroupsPanel();
   } finally {
-    if (btn) btn.disabled = false;
+    renderJoinGroupsPanel();
   }
 });
 
@@ -898,9 +954,10 @@ document.getElementById('autostart-run-btn')?.addEventListener('click', async ()
     await runAutoStartAll();
   } catch (e) {
     setAutoStartMessage(e.message, true);
-    renderAutoStartPanel();
+    workspace.autoStartRunning = false;
+    stopAutoStartPoll();
   } finally {
-    if (btn) btn.disabled = false;
+    renderAutoStartPanel();
   }
 });
 
