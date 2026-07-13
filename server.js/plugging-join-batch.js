@@ -346,8 +346,11 @@ async function runJoinGroupsBatch(db, orderId, getSettings, { source = 'manual' 
 
 function stopJoinBatch(db, orderId) {
   const queue = orderQueues.get(orderId);
-  if (!queue || !queue.running) return false;
-  queue.running = false;
+  const wasRunning = !!(queue && queue.running);
+  if (queue) {
+    queue.running = false;
+    orderQueues.delete(orderId);
+  }
 
   db.prepare(`
     UPDATE plugging_join_results
@@ -360,7 +363,7 @@ function stopJoinBatch(db, orderId) {
     logPlugActivity(db, row.id, 'stopped', '[Join groups] Stopped by user');
   }
 
-  return true;
+  return wasRunning;
 }
 
 function isJoinBatchRunning(orderId) {

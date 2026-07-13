@@ -13,7 +13,7 @@
   <link rel="stylesheet" href="/style.css?v=20260708b">
   <link rel="stylesheet" href="/theme.css?v=20260708b">
   <link rel="stylesheet" href="/platform.css?v=20260708b">
-  <link rel="stylesheet" href="/plugging-workspace.css?v=12">
+  <link rel="stylesheet" href="/plugging-workspace.css?v=13">
   <script src="/theme.js?v=20260708b" defer></script>
   <script src="/theme-colors.js?v=20260708b" defer></script>
 </head>
@@ -66,6 +66,8 @@
         <button type="button" class="btn-outline-platform plug-btn-compact" id="logout-btn">Logout</button>
       </div>
     </header>
+
+    <div id="plug-toast" class="plug-toast" hidden role="status" aria-live="polite"></div>
 
     <div class="plug-workspace-inner">
       <div class="plug-top-row">
@@ -124,6 +126,7 @@
             <p class="plug-panel-desc">Join every logged-in account to these channels first — no forwarding, no delay between accounts. Run this before <strong>Start all</strong>. Each group is retried up to 3 times per account.</p>
           </div>
           <span class="plug-join-groups-status" id="plug-join-groups-status" hidden></span>
+          <span class="plug-state-badge plug-state-off" id="join-groups-state-badge">JOIN: OFF</span>
         </div>
         <div class="plug-join-groups-layout">
           <div class="plug-join-groups-col">
@@ -168,6 +171,7 @@
             <p class="plug-panel-desc">Start every ready account in order — account 1 first, then the next after the delay you set. <strong>Cycle delay</strong> (minutes between plugs) is set per account above in Forwarding Setup.</p>
           </div>
           <span class="plug-autostart-status" id="plug-autostart-status" hidden></span>
+          <span class="plug-state-badge plug-state-off" id="autostart-delay-badge">DELAY: OFF</span>
         </div>
         <div class="plug-form-grid plug-form-grid-3">
           <label class="plug-checkbox-field">
@@ -189,7 +193,8 @@
         </div>
         <div class="plug-config-actions">
           <button type="button" class="btn-primary-platform plug-btn-compact" id="autostart-run-btn">Start all now</button>
-          <button type="button" class="btn-outline-platform plug-btn-compact plug-btn-danger-outline" id="autostart-stop-btn" hidden>Stop start all</button>
+          <button type="button" class="btn-outline-platform plug-btn-compact plug-btn-danger-outline" id="autostart-stop-btn">Stop start all</button>
+          <button type="button" class="btn-outline-platform plug-btn-compact plug-btn-danger-outline" id="forwarding-stop-all-btn">Stop all forwarding</button>
           <button type="button" class="btn-outline-platform plug-btn-compact" id="autostart-save-btn">Save auto-start</button>
         </div>
         <p id="autostart-msg" class="plug-form-msg" hidden></p>
@@ -205,6 +210,6 @@
   </div>
 
   <script src="/plug-session.js?v=20260709a"></script>
-  <script src="/plugging-workspace.js?v=27"></script>
+  <script src="/plugging-workspace.js?v=28"></script>
 </body>
 </html>

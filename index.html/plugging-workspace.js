@@ -17,6 +17,26 @@ function esc(s) {
   return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 }
 
+let plugToastTimer = null;
+
+function showPlugToast(message, kind = 'info') {
+  const el = document.getElementById('plug-toast');
+  if (!el) return;
+  el.hidden = false;
+  el.textContent = message;
+  el.className = `plug-toast plug-toast-${kind}`;
+  if (plugToastTimer) clearTimeout(plugToastTimer);
+  plugToastTimer = setTimeout(() => {
+    el.hidden = true;
+  }, 5000);
+}
+
+function setStateBadge(el, { text, state }) {
+  if (!el) return;
+  el.textContent = text;
+  el.className = `plug-state-badge plug-state-${state}`;
+}
+
 function formatActivityTime(iso) {
   if (!iso) return '';
   const d = new Date(iso.includes('T') ? iso : `${iso.replace(' ', 'T')}Z`);
@@ -321,6 +341,15 @@ function renderJoinGroupsPanel() {
     }
   }
 
+  const joinBadge = document.getElementById('join-groups-state-badge');
+  if (jg.running) {
+    setStateBadge(joinBadge, { text: 'JOIN: RUNNING', state: 'running' });
+  } else if (!joinEnabled) {
+    setStateBadge(joinBadge, { text: 'JOIN: OFF', state: 'off' });
+  } else {
+    setStateBadge(joinBadge, { text: 'JOIN: ON', state: 'on' });
+  }
+
   const hasGroups = String(jg.groupsText || input?.value || '').trim().length > 0;
   if (runBtn) {
     runBtn.disabled = !joinEnabled || authedCount < 1 || !hasGroups || !!jg.running;
@@ -331,12 +360,11 @@ function renderJoinGroupsPanel() {
         : (!hasGroups ? 'Add groups to join' : (jg.running ? 'Join batch is running' : '')));
   }
   if (stopBtn) {
-    stopBtn.disabled = !jg.running;
-    stopBtn.title = jg.running ? 'Stop the running join batch' : 'No join batch is running';
+    stopBtn.disabled = false;
+    stopBtn.title = jg.running ? 'Stop join and turn JOIN off' : 'Turn JOIN off (nothing running)';
   }
   if (saveBtn) saveBtn.disabled = !!jg.running;
   if (input) input.disabled = !joinEnabled;
-  if (enabledEl) enabledEl.disabled = !!jg.running;
 
   const joinHint = document.getElementById('join-groups-run-hint');
   if (joinHint) {
@@ -359,6 +387,21 @@ function renderJoinGroupsPanel() {
   }
 }
 
+async function setJoinGroupsEnabled(enabled, { notify = true } = {}) {
+  const data = await api('/api/plugging/workspace/join-groups', {
+    method: 'PUT',
+    body: JSON.stringify({ enabled })
+  });
+  workspace.joinGroups = data.joinGroups;
+  renderJoinGroupsPanel();
+  if (!enabled) stopJoinGroupsPoll();
+  if (notify) {
+    const msg = enabled ? 'Join groups is now ON' : 'Join groups is now OFF';
+    setJoinGroupsMessage(msg);
+    showPlugToast(msg, enabled ? 'on' : 'off');
+  }
+}
+
 async function saveJoinGroupsList({ silent = false } = {}) {
   const groupsText = document.getElementById('join-groups-input')?.value || '';
   const enabled = !!document.getElementById('join-groups-enabled')?.checked;
@@ -368,7 +411,11 @@ async function saveJoinGroupsList({ silent = false } = {}) {
   });
   workspace.joinGroups = data.joinGroups;
   renderJoinGroupsPanel();
-  if (!silent) setJoinGroupsMessage(enabled ? 'Group list saved.' : 'Join groups turned off.');
+  if (!silent) {
+    const msg = enabled ? 'Group list saved. Join groups is ON.' : 'Join groups is OFF.';
+    setJoinGroupsMessage(msg);
+    showPlugToast(msg, enabled ? 'on' : 'off');
+  }
   if (!enabled || !data.joinGroups?.running) stopJoinGroupsPoll();
 }
 
@@ -384,14 +431,22 @@ async function runJoinGroupsAll() {
   renderJoinGroupsPanel();
   const count = data.queued || data.accountIds?.length || 0;
   setJoinGroupsMessage(`All ${count} account(s) started — joining ${data.groupCount || 0} group(s) in parallel.`);
+  showPlugToast('Join groups: RUNNING', 'running');
   startJoinGroupsPoll();
 }
 
 async function stopJoinGroupsAll() {
   const data = await api('/api/plugging/workspace/join-groups/stop', { method: 'POST' });
   workspace.joinGroups = data.joinGroups;
+  if (document.getElementById('join-groups-enabled')) {
+    document.getElementById('join-groups-enabled').checked = false;
+  }
   renderJoinGroupsPanel();
-  setJoinGroupsMessage(data.stopped ? 'Join batch stopped.' : 'No join batch was running.');
+  const msg = data.wasRunning
+    ? 'Join groups stopped and turned OFF.'
+    : 'Join groups is now OFF.';
+  setJoinGroupsMessage(msg);
+  showPlugToast('Join groups: OFF', 'off');
   stopJoinGroupsPoll();
 }
 
@@ -471,7 +526,19 @@ function renderAutoStartPanel() {
         ? 'Each account needs login, post link, and target groups saved'
         : '');
   }
-  if (stopBtn) stopBtn.hidden = !workspace.autoStartRunning;
+  if (stopBtn) {
+    stopBtn.disabled = false;
+    stopBtn.title = workspace.autoStartRunning ? 'Stop staggered start-all batch' : 'Stop start-all batch if running';
+  }
+
+  const delayBadge = document.getElementById('autostart-delay-badge');
+  if (workspace.autoStartRunning) {
+    setStateBadge(delayBadge, { text: 'START ALL: RUNNING', state: 'running' });
+  } else if (staggerOn) {
+    setStateBadge(delayBadge, { text: `DELAY: ON (${workspace.autoStart?.staggerMinutes ?? 10}m)`, state: 'on' });
+  } else {
+    setStateBadge(delayBadge, { text: 'DELAY: OFF', state: 'off' });
+  }
 
   const runHint = document.getElementById('autostart-run-hint');
   if (runHint) {
@@ -510,7 +577,12 @@ async function saveAutoStartSettings() {
   workspace.autoStart = data.autoStart;
   workspace.autoStartRunning = data.autoStartRunning;
   renderAutoStartPanel();
-  setAutoStartMessage('Auto-start settings saved.');
+  const staggerOn = !!payload.staggerEnabled;
+  const msg = staggerOn
+    ? `Delay between accounts is ON (${payload.staggerMinutes} min).`
+    : 'Delay between accounts is OFF.';
+  setAutoStartMessage('Auto-start settings saved. ' + msg);
+  showPlugToast(staggerOn ? `DELAY: ON (${payload.staggerMinutes}m)` : 'DELAY: OFF', staggerOn ? 'on' : 'off');
 }
 
 async function runAutoStartAll() {
@@ -539,8 +611,24 @@ async function stopAutoStartAll() {
   const data = await api('/api/plugging/workspace/auto-start/stop', { method: 'POST' });
   workspace.autoStartRunning = data.autoStartRunning;
   renderAutoStartPanel();
-  setAutoStartMessage(data.stopped ? 'Start-all batch stopped.' : 'No start-all batch was running.');
+  const msg = data.wasRunning ? 'Start-all batch stopped.' : 'Start-all is not running.';
+  setAutoStartMessage(msg);
+  showPlugToast('START ALL: OFF', 'off');
   stopAutoStartPoll();
+}
+
+async function stopAllForwarding() {
+  const data = await api('/api/plugging/workspace/forwarding/stop-all', { method: 'POST' });
+  workspace = await api('/api/plugging/workspace');
+  renderAccountList();
+  renderAutoStartPanel();
+  if (selectedId) {
+    updateAccountStats(selectedId);
+    await loadActivity(selectedId, true);
+  }
+  const msg = `Stopped forwarding on ${data.stopped || 0} account(s).`;
+  setAutoStartMessage(msg);
+  showPlugToast('FORWARDING: OFF', 'off');
 }
 
 function setConfigSaveMessage(text, isError = false) {
@@ -888,31 +976,30 @@ document.getElementById('logout-btn').addEventListener('click', async () => {
   location.reload();
 });
 
-document.getElementById('join-groups-enabled')?.addEventListener('change', async () => {
-  const enabled = !!document.getElementById('join-groups-enabled')?.checked;
+document.getElementById('join-groups-enabled')?.addEventListener('change', async (event) => {
+  const enabled = !!event.target?.checked;
   setJoinGroupsMessage('');
   try {
-    if (!enabled && workspace.joinGroups?.running) {
+    if (!enabled) {
       await stopJoinGroupsAll();
+      return;
     }
-    await saveJoinGroupsList({ silent: true });
-    setJoinGroupsMessage(enabled ? 'Join groups enabled.' : 'Join groups turned off.');
+    await setJoinGroupsEnabled(true);
   } catch (e) {
+    if (event.target) event.target.checked = !enabled;
     setJoinGroupsMessage(e.message, true);
+    showPlugToast(e.message, 'off');
     renderJoinGroupsPanel();
   }
 });
 
 document.getElementById('join-groups-stop-btn')?.addEventListener('click', async () => {
   setJoinGroupsMessage('');
-  const btn = document.getElementById('join-groups-stop-btn');
   try {
-    if (btn) btn.disabled = true;
     await stopJoinGroupsAll();
   } catch (e) {
     setJoinGroupsMessage(e.message, true);
-  } finally {
-    if (btn) btn.disabled = false;
+    showPlugToast(e.message, 'off');
     renderJoinGroupsPanel();
   }
 });
@@ -921,21 +1008,30 @@ document.getElementById('join-groups-copy-btn')?.addEventListener('click', () =>
   copyCompletedJoinGroups().catch((e) => setJoinGroupsMessage(e.message, true));
 });
 
-document.getElementById('autostart-stagger-enabled')?.addEventListener('change', () => {
+document.getElementById('autostart-stagger-enabled')?.addEventListener('change', async (event) => {
+  const staggerOn = !!event.target?.checked;
   renderAutoStartPanel();
+  showPlugToast(staggerOn ? 'Account delay: ON (save to keep)' : 'Account delay: OFF (save to keep)', staggerOn ? 'on' : 'off');
 });
 
 document.getElementById('autostart-stop-btn')?.addEventListener('click', async () => {
   setAutoStartMessage('');
-  const btn = document.getElementById('autostart-stop-btn');
   try {
-    if (btn) btn.disabled = true;
     await stopAutoStartAll();
   } catch (e) {
     setAutoStartMessage(e.message, true);
-  } finally {
-    if (btn) btn.disabled = false;
+    showPlugToast(e.message, 'off');
     renderAutoStartPanel();
+  }
+});
+
+document.getElementById('forwarding-stop-all-btn')?.addEventListener('click', async () => {
+  setAutoStartMessage('');
+  try {
+    await stopAllForwarding();
+  } catch (e) {
+    setAutoStartMessage(e.message, true);
+    showPlugToast(e.message, 'off');
   }
 });
 

@@ -614,12 +614,30 @@ function mountPluggingService(app, db, deps) {
   });
 
   app.post('/api/plugging/workspace/auto-start/stop', requirePlugWorkspace, (req, res) => {
-    const stopped = stopStaggeredStart(req.plugOrder.id);
+    const wasRunning = stopStaggeredStart(req.plugOrder.id);
     res.json({
       ok: true,
-      stopped,
+      stopped: true,
+      wasRunning,
       autoStartRunning: isStaggeredStartRunning(req.plugOrder.id)
     });
+  });
+
+  app.post('/api/plugging/workspace/forwarding/stop-all', requirePlugWorkspace, async (req, res) => {
+    const accounts = db.prepare('SELECT id FROM plugging_accounts WHERE order_id = ?').all(req.plugOrder.id);
+    let stopped = 0;
+    for (const row of accounts) {
+      if (isRunning(row.id)) {
+        await stopRunnerGracefully(row.id);
+        stopped += 1;
+      }
+      db.prepare(`
+        UPDATE plugging_accounts SET runner_status = 'stopped', updated_at = datetime('now') WHERE id = ?
+      `).run(row.id);
+      logPlugActivity(db, row.id, 'stopped', 'Forwarder stopped — stop all forwarding');
+    }
+    stopStaggeredStart(req.plugOrder.id);
+    res.json({ ok: true, stopped, accountCount: accounts.length });
   });
 
   app.put('/api/plugging/workspace/join-groups', requirePlugWorkspace, (req, res) => {
@@ -629,15 +647,17 @@ function mountPluggingService(app, db, deps) {
     const body = req.body || {};
     const enabled = body.enabled != null ? (body.enabled ? 1 : 0) : undefined;
 
-    let groupsText = '';
-    try {
-      groupsText = normalizeJoinGroupsText(String(body.groupsText ?? order.join_groups_text ?? ''));
-    } catch (err) {
-      return res.status(400).json({ error: err.message || 'Invalid group list' });
-    }
-
     if (enabled === 0) {
       stopJoinBatch(db, order.id);
+    }
+
+    let groupsText = String(order.join_groups_text || '');
+    if (body.groupsText != null) {
+      try {
+        groupsText = normalizeJoinGroupsText(String(body.groupsText));
+      } catch (err) {
+        return res.status(400).json({ error: err.message || 'Invalid group list' });
+      }
     }
 
     db.prepare(`
@@ -648,8 +668,10 @@ function mountPluggingService(app, db, deps) {
       WHERE id = ?
     `).run(groupsText, enabled, order.id);
 
-    const groups = parseJoinGroups(groupsText);
-    pruneJoinResults(db, order.id, groups);
+    if (body.groupsText != null) {
+      const groups = parseJoinGroups(groupsText);
+      pruneJoinResults(db, order.id, groups);
+    }
 
     const updated = db.prepare('SELECT * FROM plugging_orders WHERE id = ?').get(order.id);
     res.json({
@@ -679,11 +701,16 @@ function mountPluggingService(app, db, deps) {
   app.post('/api/plugging/workspace/join-groups/stop', requirePlugWorkspace, (req, res) => {
     const order = db.prepare('SELECT * FROM plugging_orders WHERE id = ?').get(req.plugOrder.id);
     if (!order) return res.status(404).json({ error: 'Order not found' });
-    const stopped = stopJoinBatch(db, order.id);
+    const wasRunning = stopJoinBatch(db, order.id);
+    db.prepare(`
+      UPDATE plugging_orders SET join_groups_enabled = 0, updated_at = datetime('now') WHERE id = ?
+    `).run(order.id);
+    const updated = db.prepare('SELECT * FROM plugging_orders WHERE id = ?').get(order.id);
     res.json({
       ok: true,
-      stopped,
-      joinGroups: readJoinGroupsPayload(order)
+      stopped: true,
+      wasRunning,
+      joinGroups: readJoinGroupsPayload(updated)
     });
   });
 
