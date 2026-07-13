@@ -10,6 +10,14 @@ const { joinTarget, extractInviteHash, isAlreadyMember } = require('./plugging-j
 const { handlePostJoinVerification } = require('./plugging-verify');
 const { isPostLink, resolvePostMessage } = require('./plugging-post');
 const { forwardPostWithRetries } = require('./plugging-forward');
+const {
+  isWorkspaceStaggerEnabled,
+  waitForSendTurn,
+  completeSendTurn,
+  abortSendTurn,
+  formatQueueWaitMessage,
+  readWorkspaceStagger
+} = require('./plugging-send-queue');
 
 const runners = new Map();
 const RETRY_DELAY_MS = 12000;
@@ -357,14 +365,19 @@ async function startRunner(db, accountId, getSettings) {
   (async () => {
     let nextCycleAt = 0;
     let sessionRevokedStreak = 0;
+    let queueWaitLogged = false;
 
     try {
       while (shouldRun(handle, accountId)) {
         account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ?').get(accountId);
         if (!account) break;
 
+        const orderId = account.order_id;
+        const staggerOn = isWorkspaceStaggerEnabled(db, orderId);
+        const cycleDelayMin = Number(account.delay_minutes) || 0;
+
         const now = Date.now();
-        if (nextCycleAt > now) {
+        if (!staggerOn && nextCycleAt > now) {
           const waitMs = nextCycleAt - now;
           await waitWhileRunning(handle, accountId, waitMs, () => {
             logPlugActivity(
@@ -375,6 +388,26 @@ async function startRunner(db, accountId, getSettings) {
         }
         if (!shouldRun(handle, accountId)) break;
 
+        if (staggerOn) {
+          const gotTurn = await waitForSendTurn(
+            db,
+            orderId,
+            accountId,
+            (waitMs) => waitWhileRunning(handle, accountId, waitMs, () => {
+              if (queueWaitLogged) return;
+              const msg = formatQueueWaitMessage(db, orderId, accountId, cycleDelayMin);
+              if (msg) {
+                logPlugActivity(db, accountId, 'info', msg);
+                queueWaitLogged = true;
+              }
+            }),
+            () => shouldRun(handle, accountId),
+            cycleDelayMin
+          );
+          queueWaitLogged = false;
+          if (!gotTurn) break;
+        }
+
         let cycleEndedAt = null;
         try {
           account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ?').get(accountId);
@@ -383,23 +416,37 @@ async function startRunner(db, accountId, getSettings) {
             sessionRevokedStreak = 0;
             const result = await runForwardCycle(client, db, accountId, account, handle);
             cycleEndedAt = result?.cycleEndedAt || null;
-            if (result?.cancelled) return;
+            if (result?.cancelled) {
+              if (staggerOn) abortSendTurn(db, orderId, accountId);
+              return;
+            }
             account = db.prepare('SELECT * FROM plugging_accounts WHERE id = ?').get(accountId);
-            const delayMin = Number(account?.delay_minutes) || 0;
-            const delayMs = cycleDelayMs(delayMin);
-            if (delayMs > 0 && cycleEndedAt) {
-              nextCycleAt = computeNextCycleAt(cycleEndedAt, delayMin);
-              const waitMs = nextCycleAt - Date.now();
-              if (waitMs > 0) {
-                logPlugActivity(
-                  db, accountId, 'info',
-                  `Cycle delay — waiting ${formatDelayLabel(waitMs)} (${delayMin} min after cycle end). Next at ${new Date(nextCycleAt).toLocaleTimeString()}`
-                );
-              }
-            } else {
+
+            if (staggerOn && cycleEndedAt) {
+              completeSendTurn(db, orderId, accountId, cycleEndedAt);
               nextCycleAt = 0;
-              if (cycleEndedAt && delayMin <= 0) {
-                logPlugActivity(db, accountId, 'info', 'Cycle delay is 0 — next cycle runs immediately');
+              const ws = readWorkspaceStagger(db, orderId);
+              logPlugActivity(
+                db, accountId, 'info',
+                `Send slot done — next account in ${ws.staggerMinutes} min rotation`
+              );
+            } else {
+              const delayMin = Number(account?.delay_minutes) || 0;
+              const delayMs = cycleDelayMs(delayMin);
+              if (delayMs > 0 && cycleEndedAt) {
+                nextCycleAt = computeNextCycleAt(cycleEndedAt, delayMin);
+                const waitMs = nextCycleAt - Date.now();
+                if (waitMs > 0) {
+                  logPlugActivity(
+                    db, accountId, 'info',
+                    `Cycle delay — waiting ${formatDelayLabel(waitMs)} (${delayMin} min after cycle end). Next at ${new Date(nextCycleAt).toLocaleTimeString()}`
+                  );
+                }
+              } else {
+                nextCycleAt = 0;
+                if (cycleEndedAt && delayMin <= 0) {
+                  logPlugActivity(db, accountId, 'info', 'Cycle delay is 0 — next cycle runs immediately');
+                }
               }
             }
           }, account.proxy_url);
@@ -487,24 +534,10 @@ async function resumeOneRunner(db, getSettings, row, reason) {
 }
 
 async function resumeRunnersStaggered(db, getSettings, rows, reason) {
-  const { readAutoStartSettings, staggerMs } = require('./plugging-autostart');
   const byOrder = groupResumableAccounts(rows);
-  const jobs = [];
-
-  for (const [orderId, accounts] of byOrder) {
-    jobs.push((async () => {
-      const order = db.prepare('SELECT * FROM plugging_orders WHERE id = ?').get(orderId);
-      const settings = readAutoStartSettings(order || {});
-      const delayMs = staggerMs(settings.staggerMinutes, { enabled: settings.staggerEnabled });
-
-      for (let i = 0; i < accounts.length; i += 1) {
-        if (i > 0 && delayMs > 0) await sleep(delayMs);
-        await resumeOneRunner(db, getSettings, accounts[i], reason);
-      }
-    })());
-  }
-
-  await Promise.all(jobs);
+  await Promise.all([...byOrder.entries()].map(async ([, accounts]) => {
+    await Promise.all(accounts.map((row) => resumeOneRunner(db, getSettings, row, reason)));
+  }));
 }
 
 function watchPluggingRunners(db, getSettings, { reason = 'watchdog', staggerResume = false } = {}) {

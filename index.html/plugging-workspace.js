@@ -601,8 +601,8 @@ async function runAutoStartAll() {
   const delay = data.staggerEnabled === false ? 0 : (data.staggerMinutes ?? form.staggerMinutes);
   setAutoStartMessage(
     delay > 0
-      ? `Starting ${count} account(s) — ${delay} min between each.`
-      : `Starting ${count} account(s) — no delay between accounts.`
+      ? `Started ${count} account(s) — rotation ${delay} min between each send (account 1 → 2 → … → 1).`
+      : `Started ${count} account(s) — no delay between accounts.`
   );
   if (selectedId) startActivityPoll(selectedId);
   startAutoStartPoll();

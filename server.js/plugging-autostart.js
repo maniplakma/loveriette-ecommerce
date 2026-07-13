@@ -1,24 +1,18 @@
 /**
- * Staggered auto-start for all plugging accounts in a workspace order.
- * Account 1 starts immediately, account 2 after stagger delay, and so on.
+ * Auto-start all plugging accounts in a workspace order.
+ * When account delay is ON, the send queue rotates forwards (1 → 2 → … → N).
  */
 const { startRunner } = require('./plugging-runner');
 const { logPlugActivity } = require('./plugging-activity');
 const { isPostLink } = require('./plugging-post');
 const { parseTargets } = require('./plugging-runner');
+const { staggerMs, readAutoStartSettings } = require('./plugging-stagger-settings');
 
 const orderQueues = new Map();
 const dailyTimers = new Map();
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
-}
-
-function staggerMs(minutes, { enabled = true } = {}) {
-  if (!enabled) return 0;
-  const n = Number(minutes);
-  if (!Number.isFinite(n) || n < 0) return 10 * 60 * 1000;
-  return Math.round(n * 60 * 1000);
 }
 
 function parseDailyAt(value) {
@@ -90,12 +84,22 @@ async function runStaggeredStart(db, orderId, getSettings, { staggerMinutes = 10
   const results = [];
   (async () => {
     try {
-      for (let i = 0; i < accounts.length; i += 1) {
-        if (!queue.running) break;
-        if (i > 0 && delayMs > 0) await sleep(delayMs);
-        if (!queue.running) break;
-        const result = await startAccountSafe(db, accounts[i], getSettings);
-        results.push(result);
+      if (staggerEnabled) {
+        const started = await Promise.all(accounts.map(async (account) => {
+          if (!queue.running) return { ok: false, accountId: account.id, skipped: true };
+          const result = await startAccountSafe(db, account, getSettings);
+          results.push(result);
+          return result;
+        }));
+        void started;
+      } else {
+        for (let i = 0; i < accounts.length; i += 1) {
+          if (!queue.running) break;
+          if (i > 0 && delayMs > 0) await sleep(delayMs);
+          if (!queue.running) break;
+          const result = await startAccountSafe(db, accounts[i], getSettings);
+          results.push(result);
+        }
       }
     } finally {
       orderQueues.delete(orderId);
@@ -121,17 +125,6 @@ function stopStaggeredStart(orderId) {
 
 function isStaggeredStartRunning(orderId) {
   return !!orderQueues.get(orderId);
-}
-
-function readAutoStartSettings(orderRow) {
-  return {
-    enabled: !!orderRow.auto_start_enabled,
-    staggerEnabled: orderRow.auto_start_stagger_enabled == null
-      ? true
-      : !!orderRow.auto_start_stagger_enabled,
-    staggerMinutes: Number(orderRow.auto_start_stagger_minutes) || 10,
-    dailyAt: String(orderRow.auto_start_daily_at || '').trim()
-  };
 }
 
 function scheduleDailyAutoStart(db, orderId, getSettings) {
