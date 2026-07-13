@@ -22,6 +22,7 @@ Hindi ko magagawa ang Google login mo — ikaw lang sa browser.
    - Origin: `https://loveriette.shop`
    - Redirect: `https://loveriette.shop/auth/google/callback`
 7. Kopyahin **Client ID** + **Client Secret**
+8. **OAuth consent screen** → **Branding** → upload logo: `docs/assets/google-oauth-app-logo.png` (sa repo pag na-deploy)
 
 ---
 
