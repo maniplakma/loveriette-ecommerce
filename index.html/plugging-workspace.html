@@ -127,12 +127,16 @@
         </div>
         <div class="plug-join-groups-layout">
           <div class="plug-join-groups-col">
+            <label class="plug-checkbox-field plug-join-groups-enabled-field">
+              <input type="checkbox" id="join-groups-enabled" checked>
+              <span>Enable join groups</span>
+            </label>
             <label for="join-groups-input">Groups / channels to join</label>
             <textarea id="join-groups-input" class="plug-field-textarea" placeholder="@channel1&#10;@group2&#10;https://t.me/+invitehash" rows="6"></textarea>
             <div class="plug-config-actions">
               <button type="button" class="btn-outline-platform plug-btn-compact" id="join-groups-save-btn">Save list</button>
               <button type="button" class="btn-primary-platform plug-btn-compact" id="join-groups-run-btn">Start all join groups</button>
-              <button type="button" class="btn-outline-platform plug-btn-compact plug-btn-danger-outline" id="join-groups-stop-btn" hidden>Stop join</button>
+              <button type="button" class="btn-outline-platform plug-btn-compact plug-btn-danger-outline" id="join-groups-stop-btn">Stop join</button>
             </div>
             <p id="join-groups-msg" class="plug-form-msg" hidden></p>
             <p id="join-groups-run-hint" class="plug-field-hint" hidden></p>
@@ -201,6 +205,6 @@
   </div>
 
   <script src="/plug-session.js?v=20260709a"></script>
-  <script src="/plugging-workspace.js?v=26"></script>
+  <script src="/plugging-workspace.js?v=27"></script>
 </body>
 </html>

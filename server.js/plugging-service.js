@@ -271,6 +271,7 @@ function mountPluggingService(app, db, deps) {
     const groupsText = String(orderRow.join_groups_text || '');
     const status = buildJoinGroupsStatus(db, orderRow.id, groupsText);
     return {
+      enabled: orderRow.join_groups_enabled == null ? true : !!orderRow.join_groups_enabled,
       groupsText,
       running: isJoinBatchRunning(orderRow.id),
       ...status
@@ -625,16 +626,27 @@ function mountPluggingService(app, db, deps) {
     const order = db.prepare('SELECT * FROM plugging_orders WHERE id = ?').get(req.plugOrder.id);
     if (!order) return res.status(404).json({ error: 'Order not found' });
 
+    const body = req.body || {};
+    const enabled = body.enabled != null ? (body.enabled ? 1 : 0) : undefined;
+
     let groupsText = '';
     try {
-      groupsText = normalizeJoinGroupsText(String(req.body?.groupsText ?? order.join_groups_text ?? ''));
+      groupsText = normalizeJoinGroupsText(String(body.groupsText ?? order.join_groups_text ?? ''));
     } catch (err) {
       return res.status(400).json({ error: err.message || 'Invalid group list' });
     }
 
+    if (enabled === 0) {
+      stopJoinBatch(db, order.id);
+    }
+
     db.prepare(`
-      UPDATE plugging_orders SET join_groups_text = ?, updated_at = datetime('now') WHERE id = ?
-    `).run(groupsText, order.id);
+      UPDATE plugging_orders SET
+        join_groups_text = ?,
+        join_groups_enabled = COALESCE(?, join_groups_enabled),
+        updated_at = datetime('now')
+      WHERE id = ?
+    `).run(groupsText, enabled, order.id);
 
     const groups = parseJoinGroups(groupsText);
     pruneJoinResults(db, order.id, groups);
@@ -667,7 +679,7 @@ function mountPluggingService(app, db, deps) {
   app.post('/api/plugging/workspace/join-groups/stop', requirePlugWorkspace, (req, res) => {
     const order = db.prepare('SELECT * FROM plugging_orders WHERE id = ?').get(req.plugOrder.id);
     if (!order) return res.status(404).json({ error: 'Order not found' });
-    const stopped = stopJoinBatch(order.id);
+    const stopped = stopJoinBatch(db, order.id);
     res.json({
       ok: true,
       stopped,

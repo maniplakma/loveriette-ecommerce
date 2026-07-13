@@ -209,9 +209,13 @@ async function joinGroupOnce(client, db, account, groupRef) {
   return entity;
 }
 
-async function joinGroupForAccount(db, account, groupRef, getSettings) {
+async function joinGroupForAccount(db, account, groupRef, getSettings, queue) {
   const orderId = account.order_id;
   const key = normalizeGroupRef(groupRef);
+  if (queue && !queue.running) {
+    return { ok: false, skipped: true, stopped: true, groupRef: key };
+  }
+
   const existing = getJoinResultRow(db, orderId, account.id, key);
 
   if (existing?.status === 'completed') {
@@ -229,6 +233,15 @@ async function joinGroupForAccount(db, account, groupRef, getSettings) {
   let lastError = '';
 
   while (attemptNum < MAX_JOIN_ATTEMPTS) {
+    if (queue && !queue.running) {
+      upsertJoinResult(db, orderId, account.id, key, {
+        status: 'pending',
+        attempts: attemptNum,
+        lastError: ''
+      });
+      return { ok: false, skipped: true, stopped: true, groupRef: key };
+    }
+
     attemptNum += 1;
     upsertJoinResult(db, orderId, account.id, key, {
       status: 'joining',
@@ -271,20 +284,25 @@ async function joinGroupForAccount(db, account, groupRef, getSettings) {
   return { ok: false, groupRef: key, error: lastError || 'Max attempts reached', attempts: attemptNum };
 }
 
-async function runAccountJoinBatch(db, account, groups, getSettings) {
+async function runAccountJoinBatch(db, account, groups, getSettings, queue) {
   const outcomes = [];
   for (const groupRef of groups) {
-    outcomes.push(await joinGroupForAccount(db, account, groupRef, getSettings));
+    if (queue && !queue.running) break;
+    outcomes.push(await joinGroupForAccount(db, account, groupRef, getSettings, queue));
+    if (queue && !queue.running) break;
   }
   return outcomes;
 }
 
 async function runJoinGroupsBatch(db, orderId, getSettings, { source = 'manual' } = {}) {
-  if (orderQueues.get(orderId)) {
+  if (isJoinBatchRunning(orderId)) {
     return { ok: false, error: 'A join-groups batch is already running for this workspace' };
   }
 
-  const order = db.prepare('SELECT join_groups_text FROM plugging_orders WHERE id = ?').get(orderId);
+  const order = db.prepare('SELECT join_groups_text, join_groups_enabled FROM plugging_orders WHERE id = ?').get(orderId);
+  if (order && order.join_groups_enabled === 0) {
+    return { ok: false, error: 'Join groups is turned off — enable it in the panel first' };
+  }
   const groups = parseJoinGroups(order?.join_groups_text || '');
   if (!groups.length) {
     return { ok: false, error: 'Add at least one group or channel to join' };
@@ -305,8 +323,11 @@ async function runJoinGroupsBatch(db, orderId, getSettings, { source = 'manual' 
       await Promise.all(accounts.map(async (account) => {
         if (!queue.running) return;
         logPlugActivity(db, account.id, 'started', '[Join groups] Batch started for this account');
-        await runAccountJoinBatch(db, account, groups, getSettings);
-        if (!queue.running) return;
+        await runAccountJoinBatch(db, account, groups, getSettings, queue);
+        if (!queue.running) {
+          logPlugActivity(db, account.id, 'stopped', '[Join groups] Stopped by user');
+          return;
+        }
         logPlugActivity(db, account.id, 'complete', '[Join groups] Batch finished for this account');
       }));
     } finally {
@@ -323,15 +344,28 @@ async function runJoinGroupsBatch(db, orderId, getSettings, { source = 'manual' 
   };
 }
 
-function stopJoinBatch(orderId) {
+function stopJoinBatch(db, orderId) {
   const queue = orderQueues.get(orderId);
-  if (!queue) return false;
+  if (!queue || !queue.running) return false;
   queue.running = false;
+
+  db.prepare(`
+    UPDATE plugging_join_results
+    SET status = 'pending', updated_at = datetime('now')
+    WHERE order_id = ? AND status = 'joining'
+  `).run(orderId);
+
+  const accounts = db.prepare('SELECT id FROM plugging_accounts WHERE order_id = ?').all(orderId);
+  for (const row of accounts) {
+    logPlugActivity(db, row.id, 'stopped', '[Join groups] Stopped by user');
+  }
+
   return true;
 }
 
 function isJoinBatchRunning(orderId) {
-  return !!orderQueues.get(orderId);
+  const queue = orderQueues.get(orderId);
+  return !!(queue && queue.running);
 }
 
 module.exports = {

@@ -276,6 +276,7 @@ function renderJoinGroupsPanel() {
   panel.hidden = !(workspace.accounts || []).length;
 
   const input = document.getElementById('join-groups-input');
+  const enabledEl = document.getElementById('join-groups-enabled');
   const status = document.getElementById('plug-join-groups-status');
   const runBtn = document.getElementById('join-groups-run-btn');
   const stopBtn = document.getElementById('join-groups-stop-btn');
@@ -283,7 +284,9 @@ function renderJoinGroupsPanel() {
   const completedEl = document.getElementById('join-groups-completed');
   const copyBtn = document.getElementById('join-groups-copy-btn');
   const jg = workspace.joinGroups || {};
+  const joinEnabled = jg.enabled !== false;
 
+  if (enabledEl) enabledEl.checked = joinEnabled;
   if (input && document.activeElement !== input) {
     input.value = jg.groupsText || '';
   }
@@ -320,17 +323,27 @@ function renderJoinGroupsPanel() {
 
   const hasGroups = String(jg.groupsText || input?.value || '').trim().length > 0;
   if (runBtn) {
-    runBtn.disabled = authedCount < 1 || !hasGroups || !!jg.running;
-    runBtn.title = authedCount < 1
-      ? 'Log in at least one Telegram account first'
-      : (!hasGroups ? 'Add groups to join' : (jg.running ? 'Join batch is running' : ''));
+    runBtn.disabled = !joinEnabled || authedCount < 1 || !hasGroups || !!jg.running;
+    runBtn.title = !joinEnabled
+      ? 'Turn on Enable join groups first'
+      : (authedCount < 1
+        ? 'Log in at least one Telegram account first'
+        : (!hasGroups ? 'Add groups to join' : (jg.running ? 'Join batch is running' : '')));
   }
-  if (stopBtn) stopBtn.hidden = !jg.running;
+  if (stopBtn) {
+    stopBtn.disabled = !jg.running;
+    stopBtn.title = jg.running ? 'Stop the running join batch' : 'No join batch is running';
+  }
   if (saveBtn) saveBtn.disabled = !!jg.running;
+  if (input) input.disabled = !joinEnabled;
+  if (enabledEl) enabledEl.disabled = !!jg.running;
 
   const joinHint = document.getElementById('join-groups-run-hint');
   if (joinHint) {
-    if (jg.running) {
+    if (!joinEnabled) {
+      joinHint.hidden = false;
+      joinHint.textContent = 'Join groups is off — turn on Enable join groups to run again.';
+    } else if (jg.running) {
       joinHint.hidden = false;
       joinHint.textContent = 'Join in progress — use Stop join to cancel.';
     } else if (authedCount < 1) {
@@ -346,18 +359,23 @@ function renderJoinGroupsPanel() {
   }
 }
 
-async function saveJoinGroupsList() {
+async function saveJoinGroupsList({ silent = false } = {}) {
   const groupsText = document.getElementById('join-groups-input')?.value || '';
+  const enabled = !!document.getElementById('join-groups-enabled')?.checked;
   const data = await api('/api/plugging/workspace/join-groups', {
     method: 'PUT',
-    body: JSON.stringify({ groupsText })
+    body: JSON.stringify({ groupsText, enabled })
   });
   workspace.joinGroups = data.joinGroups;
   renderJoinGroupsPanel();
-  setJoinGroupsMessage('Group list saved.');
+  if (!silent) setJoinGroupsMessage(enabled ? 'Group list saved.' : 'Join groups turned off.');
+  if (!enabled || !data.joinGroups?.running) stopJoinGroupsPoll();
 }
 
 async function runJoinGroupsAll() {
+  if (!document.getElementById('join-groups-enabled')?.checked) {
+    throw new Error('Turn on Enable join groups first');
+  }
   const data = await api('/api/plugging/workspace/join-groups/run', {
     method: 'POST',
     body: JSON.stringify({})
@@ -868,6 +886,21 @@ document.getElementById('logout-btn').addEventListener('click', async () => {
   if (window.clearStoredPlugKey) clearStoredPlugKey();
   await api('/api/plugging/workspace/logout', { method: 'POST' });
   location.reload();
+});
+
+document.getElementById('join-groups-enabled')?.addEventListener('change', async () => {
+  const enabled = !!document.getElementById('join-groups-enabled')?.checked;
+  setJoinGroupsMessage('');
+  try {
+    if (!enabled && workspace.joinGroups?.running) {
+      await stopJoinGroupsAll();
+    }
+    await saveJoinGroupsList({ silent: true });
+    setJoinGroupsMessage(enabled ? 'Join groups enabled.' : 'Join groups turned off.');
+  } catch (e) {
+    setJoinGroupsMessage(e.message, true);
+    renderJoinGroupsPanel();
+  }
 });
 
 document.getElementById('join-groups-stop-btn')?.addEventListener('click', async () => {
