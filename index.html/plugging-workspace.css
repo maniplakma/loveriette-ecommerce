@@ -473,6 +473,112 @@ body.plug-body {
   color: #fff;
 }
 
+.plug-join-groups-panel {
+  margin-top: 0.85rem;
+}
+
+.plug-join-groups-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 0.85rem;
+}
+
+.plug-join-groups-head h3 {
+  margin: 0 0 0.25rem;
+  font-size: 0.95rem;
+  color: #fff;
+}
+
+.plug-join-groups-status {
+  font-size: 0.75rem;
+  color: #7dffb0;
+  white-space: nowrap;
+}
+
+.plug-join-groups-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1rem;
+}
+
+.plug-join-groups-col label {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--secondary-color, #a4907c);
+}
+
+.plug-join-groups-lists {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.plug-join-list-block {
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  padding: 0.75rem 0.85rem;
+  min-height: 120px;
+}
+
+.plug-join-list-block h4 {
+  margin: 0 0 0.2rem;
+  font-size: 0.82rem;
+  color: #fff;
+}
+
+.plug-join-completed-block h4 {
+  color: #7dffb0;
+}
+
+.plug-join-pending-block h4 {
+  color: #ffb07d;
+}
+
+.plug-join-list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.plug-join-list li {
+  font-size: 0.8rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: #e8e0d8;
+  padding: 0.3rem 0.45rem;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 6px;
+}
+
+.plug-join-list li.plug-join-empty {
+  font-family: inherit;
+  color: var(--secondary-color, #a4907c);
+  background: transparent;
+  font-style: italic;
+}
+
+.plug-join-list li.plug-join-error-detail {
+  font-family: inherit;
+  font-size: 0.72rem;
+  color: #ff9b9b;
+  background: transparent;
+  padding-left: 0.75rem;
+}
+
+@media (max-width: 900px) {
+  .plug-join-groups-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
 .plug-autostart-panel {
   margin-top: 0.85rem;
 }

@@ -13,7 +13,7 @@
   <link rel="stylesheet" href="/style.css?v=20260708b">
   <link rel="stylesheet" href="/theme.css?v=20260708b">
   <link rel="stylesheet" href="/platform.css?v=20260708b">
-  <link rel="stylesheet" href="/plugging-workspace.css?v=10">
+  <link rel="stylesheet" href="/plugging-workspace.css?v=11">
   <script src="/theme.js?v=20260708b" defer></script>
   <script src="/theme-colors.js?v=20260708b" defer></script>
 </head>
@@ -75,12 +75,13 @@
             <li><span class="plug-guide-num">1</span><div><strong>Add Telegram account</strong><p>Enter phone with country code on the right.</p></div></li>
             <li><span class="plug-guide-num">2</span><div><strong>Verify OTP</strong><p>Enter the code from your Telegram app.</p></div></li>
           <li><span class="plug-guide-num">3</span><div><strong>Set post link &amp; targets</strong><p>Add the exact post URL and @group targets, then Start.</p></div></li>
-          <li><span class="plug-guide-num">4</span><div><strong>Monitor activity</strong><p>Live logs show forwards, cycles, and errors.</p></div></li>
-          <li><span class="plug-guide-num">5</span><div><strong>Auto-start all</strong><p>Use the panel below to start every account in order with a delay between each.</p></div></li>
+          <li><span class="plug-guide-num">4</span><div><strong>Join groups first</strong><p>Use Join Groups below to add every account to your channels before forwarding.</p></div></li>
+          <li><span class="plug-guide-num">5</span><div><strong>Monitor activity</strong><p>Live logs show forwards, cycles, and errors.</p></div></li>
+          <li><span class="plug-guide-num">6</span><div><strong>Auto-start all</strong><p>After joins are complete, start every account in order with a delay between each.</p></div></li>
         </ol>
         <div class="plug-guide-tip"><strong>Group verification</strong><p>Auto-solves math (1+1), human/bot checks, and buttons like <strong>Unmute me</strong>, <strong>Tap to unmute</strong>, and <strong>Verify</strong> after joining a target group.</p></div>
         <div class="plug-guide-tip"><strong>Phone logged out?</strong><p>Forwarding runs on our server as <strong>Loveriette Forwarder</strong> — safe to log out on your phone and close this tab. Never tap <strong>Terminate all sessions</strong> in Telegram → Devices.</p></div>
-        <div class="plug-guide-tip"><strong>Tip</strong><p>Groups you are already in are skipped. New groups are joined first (with captcha answers) before forwarding starts.</p></div>
+        <div class="plug-guide-tip"><strong>Tip</strong><p>Join groups first with the panel below (no forwarding). When all channels show completed, use Start all for forwarding.</p></div>
         </aside>
 
         <section class="plug-add-panel" id="plug-add-panel">
@@ -114,6 +115,39 @@
           <p>Select an account to configure forwarding and view live activity.</p>
         </div>
         <ul class="plug-account-list" id="account-list"></ul>
+      </section>
+
+      <section class="plug-panel plug-join-groups-panel" id="plug-join-groups-panel" hidden>
+        <div class="plug-join-groups-head">
+          <div>
+            <h3>Join groups (all accounts)</h3>
+            <p class="plug-panel-desc">Join every logged-in account to these channels first — no forwarding. Run this before <strong>Start all</strong>. Each group is retried up to 3 times per account.</p>
+          </div>
+          <span class="plug-join-groups-status" id="plug-join-groups-status" hidden></span>
+        </div>
+        <div class="plug-join-groups-layout">
+          <div class="plug-join-groups-col">
+            <label for="join-groups-input">Groups / channels to join</label>
+            <textarea id="join-groups-input" class="plug-field-textarea" placeholder="@channel1&#10;@group2&#10;https://t.me/+invitehash" rows="6"></textarea>
+            <div class="plug-config-actions">
+              <button type="button" class="btn-outline-platform plug-btn-compact" id="join-groups-save-btn">Save list</button>
+              <button type="button" class="btn-primary-platform plug-btn-compact" id="join-groups-run-btn">Start all join groups</button>
+            </div>
+            <p id="join-groups-msg" class="plug-form-msg" hidden></p>
+          </div>
+          <div class="plug-join-groups-col plug-join-groups-lists">
+            <div class="plug-join-list-block plug-join-completed-block">
+              <h4>Completed</h4>
+              <p class="plug-panel-desc">All accounts joined these channels.</p>
+              <ul id="join-groups-completed" class="plug-join-list"></ul>
+            </div>
+            <div class="plug-join-list-block plug-join-pending-block">
+              <h4>Not joined / errors</h4>
+              <p class="plug-panel-desc">Still pending or failed after 3 tries on any account.</p>
+              <ul id="join-groups-pending" class="plug-join-list"></ul>
+            </div>
+          </div>
+        </div>
       </section>
 
       <section class="plug-panel plug-autostart-panel" id="plug-autostart-panel" hidden>
@@ -154,6 +188,6 @@
   </div>
 
   <script src="/plug-session.js?v=20260709a"></script>
-  <script src="/plugging-workspace.js?v=22"></script>
+  <script src="/plugging-workspace.js?v=23"></script>
 </body>
 </html>

@@ -15,6 +15,13 @@ const {
   initAutoStartSchedulers,
   refreshAutoStartSchedule
 } = require('./plugging-autostart');
+const {
+  runStaggeredJoinGroups,
+  isJoinBatchRunning,
+  buildJoinGroupsStatus,
+  pruneJoinResults,
+  parseJoinGroups
+} = require('./plugging-join-batch');
 const { isPostLink, normalizePostLink } = require('./plugging-post');
 const { extractInviteHash } = require('./plugging-join');
 const { pickProxyForNewAccount, listPluggingProxies, autoEnableProxySetting, ensureAccountProxy } = require('./plugging-proxy');
@@ -250,6 +257,24 @@ function mountPluggingService(app, db, deps) {
     throw new Error(`Invalid target "${raw}" — use @groupname`);
   }
 
+  function normalizeJoinGroupsText(text) {
+    const lines = String(text || '')
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    return lines.map(normalizeTargetRef).join('\n');
+  }
+
+  function readJoinGroupsPayload(orderRow) {
+    const groupsText = String(orderRow.join_groups_text || '');
+    const status = buildJoinGroupsStatus(db, orderRow.id, groupsText);
+    return {
+      groupsText,
+      running: isJoinBatchRunning(orderRow.id),
+      ...status
+    };
+  }
+
   function normalizeTargetsText(text) {
     const lines = String(text || '')
       .split(/\r?\n/)
@@ -421,6 +446,7 @@ function mountPluggingService(app, db, deps) {
       loyalty,
       autoStart: readAutoStartSettings(req.plugOrder),
       autoStartRunning: isStaggeredStartRunning(req.plugOrder.id),
+      joinGroups: readJoinGroupsPayload(req.plugOrder),
       accounts: accounts.map(mapAccount)
     });
   });
@@ -576,6 +602,61 @@ function mountPluggingService(app, db, deps) {
     } catch (err) {
       res.status(500).json({ error: err.message || 'Could not start accounts' });
     }
+  });
+
+  app.put('/api/plugging/workspace/join-groups', requirePlugWorkspace, (req, res) => {
+    const order = db.prepare('SELECT * FROM plugging_orders WHERE id = ?').get(req.plugOrder.id);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    let groupsText = '';
+    try {
+      groupsText = normalizeJoinGroupsText(String(req.body?.groupsText ?? order.join_groups_text ?? ''));
+    } catch (err) {
+      return res.status(400).json({ error: err.message || 'Invalid group list' });
+    }
+
+    db.prepare(`
+      UPDATE plugging_orders SET join_groups_text = ?, updated_at = datetime('now') WHERE id = ?
+    `).run(groupsText, order.id);
+
+    const groups = parseJoinGroups(groupsText);
+    pruneJoinResults(db, order.id, groups);
+
+    const updated = db.prepare('SELECT * FROM plugging_orders WHERE id = ?').get(order.id);
+    res.json({
+      ok: true,
+      joinGroups: readJoinGroupsPayload(updated)
+    });
+  });
+
+  app.post('/api/plugging/workspace/join-groups/run', requirePlugWorkspace, async (req, res) => {
+    const order = db.prepare('SELECT * FROM plugging_orders WHERE id = ?').get(req.plugOrder.id);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    const autoStart = readAutoStartSettings(order);
+    const staggerMinutes = req.body?.staggerMinutes != null
+      ? Math.max(0, Math.round(Number(req.body.staggerMinutes) || 0))
+      : autoStart.staggerMinutes;
+
+    try {
+      const result = await runStaggeredJoinGroups(db, order.id, getPluggingSettings, {
+        staggerMinutes,
+        source: 'manual'
+      });
+      if (!result.ok) return res.status(400).json({ error: result.error || 'Could not start join batch' });
+      res.json({
+        ...result,
+        joinGroups: readJoinGroupsPayload(order)
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message || 'Could not start join batch' });
+    }
+  });
+
+  app.get('/api/plugging/workspace/join-groups/status', requirePlugWorkspace, (req, res) => {
+    const order = db.prepare('SELECT * FROM plugging_orders WHERE id = ?').get(req.plugOrder.id);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    res.json(readJoinGroupsPayload(order));
   });
 
   app.get('/api/plugging/workspace/accounts/:id/activity', requirePlugWorkspace, (req, res) => {

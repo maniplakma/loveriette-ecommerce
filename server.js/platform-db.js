@@ -309,6 +309,28 @@ function initPlatformDb(db) {
   try { db.exec(`ALTER TABLE plugging_orders ADD COLUMN auto_start_enabled INTEGER NOT NULL DEFAULT 0`); } catch (_) { /* exists */ }
   try { db.exec(`ALTER TABLE plugging_orders ADD COLUMN auto_start_stagger_minutes INTEGER NOT NULL DEFAULT 10`); } catch (_) { /* exists */ }
   try { db.exec(`ALTER TABLE plugging_orders ADD COLUMN auto_start_daily_at TEXT NOT NULL DEFAULT ''`); } catch (_) { /* exists */ }
+  try { db.exec(`ALTER TABLE plugging_orders ADD COLUMN join_groups_text TEXT NOT NULL DEFAULT ''`); } catch (_) { /* exists */ }
+
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS plugging_join_results (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        order_id INTEGER NOT NULL,
+        account_id INTEGER NOT NULL,
+        group_ref TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        attempts INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT NOT NULL DEFAULT '',
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (order_id) REFERENCES plugging_orders(id) ON DELETE CASCADE,
+        FOREIGN KEY (account_id) REFERENCES plugging_accounts(id) ON DELETE CASCADE,
+        UNIQUE(order_id, account_id, group_ref)
+      )
+    `);
+  } catch (_) { /* ignore */ }
+  try {
+    db.exec('CREATE INDEX IF NOT EXISTS idx_plugging_join_results_order ON plugging_join_results(order_id, group_ref)');
+  } catch (_) { /* ignore */ }
 
   try {
     db.exec(`

@@ -2,6 +2,7 @@ let workspace = null;
 let selectedId = null;
 let pendingOtpAccountId = null;
 let activityPollTimer = null;
+let joinGroupsPollTimer = null;
 let activityLastId = 0;
 
 async function api(url, opts = {}) {
@@ -173,9 +174,11 @@ function showWorkspace() {
   }
 
   renderAccountList();
+  renderJoinGroupsPanel();
   renderAutoStartPanel();
   if (selectedId) renderAccountDetail(selectedId);
   else renderEmptyDetail();
+  if (workspace.joinGroups?.running) startJoinGroupsPoll();
 }
 
 function readConfigForm() {
@@ -195,6 +198,136 @@ function normalizePostLinkClient(link) {
   if (bareSlash) return `https://t.me/${bareSlash[1]}/${bareSlash[2]}`;
   if (/^t\.me\//i.test(raw)) return `https://${raw}`;
   return raw;
+}
+
+function stopJoinGroupsPoll() {
+  if (joinGroupsPollTimer) {
+    clearInterval(joinGroupsPollTimer);
+    joinGroupsPollTimer = null;
+  }
+}
+
+function startJoinGroupsPoll() {
+  stopJoinGroupsPoll();
+  joinGroupsPollTimer = setInterval(async () => {
+    try {
+      const data = await api('/api/plugging/workspace/join-groups/status');
+      workspace.joinGroups = data;
+      renderJoinGroupsPanel();
+      if (!data.running) stopJoinGroupsPoll();
+    } catch (_) { /* ignore */ }
+  }, 4000);
+}
+
+function setJoinGroupsMessage(text, isError = false) {
+  const msg = document.getElementById('join-groups-msg');
+  if (!msg) return;
+  msg.hidden = !text;
+  msg.textContent = text || '';
+  msg.className = isError ? 'plug-form-msg plug-form-error' : 'plug-form-msg plug-form-success';
+}
+
+function renderJoinGroupList(el, items, { emptyText, showErrors = false } = {}) {
+  if (!el) return;
+  if (!items?.length) {
+    el.innerHTML = `<li class="plug-join-empty">${esc(emptyText || 'None yet')}</li>`;
+    return;
+  }
+  if (showErrors) {
+    el.innerHTML = items.map((item) => {
+      if (typeof item === 'string') {
+        return `<li>${esc(item)}</li>`;
+      }
+      const errLines = (item.accounts || [])
+        .map((a) => `<li class="plug-join-error-detail">${esc(a.label || a.phone)}: ${esc(a.lastError || 'Failed')} (${a.attempts || 0}/3)</li>`)
+        .join('');
+      return `<li>${esc(item.groupRef)}</li>${errLines}`;
+    }).join('');
+    return;
+  }
+  el.innerHTML = items.map((item) => `<li>${esc(item)}</li>`).join('');
+}
+
+function renderJoinGroupsPanel() {
+  const panel = document.getElementById('plug-join-groups-panel');
+  if (!panel || !workspace) return;
+
+  const authedCount = (workspace.accounts || []).filter((a) => a.authStatus === 'authenticated').length;
+  panel.hidden = !(workspace.accounts || []).length;
+
+  const input = document.getElementById('join-groups-input');
+  const status = document.getElementById('plug-join-groups-status');
+  const runBtn = document.getElementById('join-groups-run-btn');
+  const saveBtn = document.getElementById('join-groups-save-btn');
+  const jg = workspace.joinGroups || {};
+
+  if (input && document.activeElement !== input) {
+    input.value = jg.groupsText || '';
+  }
+
+  renderJoinGroupList(
+    document.getElementById('join-groups-completed'),
+    jg.completed || [],
+    { emptyText: 'No completed joins yet' }
+  );
+
+  const pendingItems = [];
+  for (const ref of jg.pending || []) {
+    const err = (jg.errors || []).find((e) => e.groupRef === ref);
+    pendingItems.push(err || ref);
+  }
+  renderJoinGroupList(
+    document.getElementById('join-groups-pending'),
+    pendingItems,
+    { emptyText: 'All configured groups joined', showErrors: true }
+  );
+
+  if (status) {
+    if (jg.running) {
+      status.hidden = false;
+      status.textContent = 'Join batch in progress…';
+    } else if ((jg.configured || []).length && (jg.completed || []).length === (jg.configured || []).length && authedCount > 0) {
+      status.hidden = false;
+      status.textContent = 'All groups joined on all accounts';
+    } else {
+      status.hidden = true;
+      status.textContent = '';
+    }
+  }
+
+  const hasGroups = String(jg.groupsText || input?.value || '').trim().length > 0;
+  if (runBtn) {
+    runBtn.disabled = authedCount < 1 || !hasGroups || !!jg.running;
+    runBtn.title = authedCount < 1
+      ? 'Log in at least one Telegram account first'
+      : (!hasGroups ? 'Add groups to join' : '');
+  }
+  if (saveBtn) saveBtn.disabled = !!jg.running;
+}
+
+async function saveJoinGroupsList() {
+  const groupsText = document.getElementById('join-groups-input')?.value || '';
+  const data = await api('/api/plugging/workspace/join-groups', {
+    method: 'PUT',
+    body: JSON.stringify({ groupsText })
+  });
+  workspace.joinGroups = data.joinGroups;
+  renderJoinGroupsPanel();
+  setJoinGroupsMessage('Group list saved.');
+}
+
+async function runJoinGroupsAll() {
+  const staggerMinutes = Number(document.getElementById('autostart-stagger')?.value) || 0;
+  const data = await api('/api/plugging/workspace/join-groups/run', {
+    method: 'POST',
+    body: JSON.stringify({ staggerMinutes })
+  });
+  workspace.joinGroups = { ...workspace.joinGroups, ...data.joinGroups, running: true };
+  renderJoinGroupsPanel();
+  const count = data.queued || data.accountIds?.length || 0;
+  const delay = data.staggerMinutes ?? staggerMinutes;
+  setJoinGroupsMessage(`Joining ${data.groupCount || 0} group(s) on ${count} account(s) — ${delay} min between accounts.`);
+  startJoinGroupsPoll();
 }
 
 function setAutoStartMessage(text, isError = false) {
@@ -294,6 +427,7 @@ function setConfigSaveMessage(text, isError = false) {
 async function refreshWorkspace({ soft = false } = {}) {
   workspace = await api('/api/plugging/workspace');
   renderAccountList();
+  renderJoinGroupsPanel();
   renderAutoStartPanel();
   if (!selectedId) {
     renderEmptyDetail();
@@ -613,9 +747,38 @@ document.getElementById('add-account-btn').addEventListener('click', submitAddAc
 
 document.getElementById('logout-btn').addEventListener('click', async () => {
   stopActivityPoll();
+  stopJoinGroupsPoll();
   if (window.clearStoredPlugKey) clearStoredPlugKey();
   await api('/api/plugging/workspace/logout', { method: 'POST' });
   location.reload();
+});
+
+document.getElementById('join-groups-save-btn')?.addEventListener('click', async () => {
+  setJoinGroupsMessage('');
+  const btn = document.getElementById('join-groups-save-btn');
+  try {
+    if (btn) btn.disabled = true;
+    await saveJoinGroupsList();
+  } catch (e) {
+    setJoinGroupsMessage(e.message, true);
+  } finally {
+    if (btn) btn.disabled = false;
+    renderJoinGroupsPanel();
+  }
+});
+
+document.getElementById('join-groups-run-btn')?.addEventListener('click', async () => {
+  setJoinGroupsMessage('');
+  const btn = document.getElementById('join-groups-run-btn');
+  try {
+    if (btn) btn.disabled = true;
+    await runJoinGroupsAll();
+  } catch (e) {
+    setJoinGroupsMessage(e.message, true);
+    renderJoinGroupsPanel();
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 });
 
 document.getElementById('autostart-save-btn')?.addEventListener('click', async () => {
