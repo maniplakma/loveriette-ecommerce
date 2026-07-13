@@ -258,18 +258,21 @@ function renderJoinGroupsPanel() {
   const input = document.getElementById('join-groups-input');
   const status = document.getElementById('plug-join-groups-status');
   const runBtn = document.getElementById('join-groups-run-btn');
+  const stopBtn = document.getElementById('join-groups-stop-btn');
   const saveBtn = document.getElementById('join-groups-save-btn');
+  const completedEl = document.getElementById('join-groups-completed');
+  const copyBtn = document.getElementById('join-groups-copy-btn');
   const jg = workspace.joinGroups || {};
 
   if (input && document.activeElement !== input) {
     input.value = jg.groupsText || '';
   }
 
-  renderJoinGroupList(
-    document.getElementById('join-groups-completed'),
-    jg.completed || [],
-    { emptyText: 'No completed joins yet' }
-  );
+  const completedText = jg.completedText || (jg.completed || []).join('\n');
+  if (completedEl && document.activeElement !== completedEl) {
+    completedEl.value = completedText;
+  }
+  if (copyBtn) copyBtn.disabled = !completedText.trim();
 
   const pendingItems = [];
   for (const ref of jg.pending || []) {
@@ -285,7 +288,7 @@ function renderJoinGroupsPanel() {
   if (status) {
     if (jg.running) {
       status.hidden = false;
-      status.textContent = 'Join batch in progress…';
+      status.textContent = 'Join batch in progress — all accounts started';
     } else if ((jg.configured || []).length && (jg.completed || []).length === (jg.configured || []).length && authedCount > 0) {
       status.hidden = false;
       status.textContent = 'All groups joined on all accounts';
@@ -298,10 +301,12 @@ function renderJoinGroupsPanel() {
   const hasGroups = String(jg.groupsText || input?.value || '').trim().length > 0;
   if (runBtn) {
     runBtn.disabled = authedCount < 1 || !hasGroups || !!jg.running;
+    runBtn.hidden = !!jg.running;
     runBtn.title = authedCount < 1
       ? 'Log in at least one Telegram account first'
       : (!hasGroups ? 'Add groups to join' : '');
   }
+  if (stopBtn) stopBtn.hidden = !jg.running;
   if (saveBtn) saveBtn.disabled = !!jg.running;
 }
 
@@ -324,8 +329,32 @@ async function runJoinGroupsAll() {
   workspace.joinGroups = { ...workspace.joinGroups, ...data.joinGroups, running: true };
   renderJoinGroupsPanel();
   const count = data.queued || data.accountIds?.length || 0;
-  setJoinGroupsMessage(`Joining ${data.groupCount || 0} group(s) on ${count} account(s).`);
+  setJoinGroupsMessage(`All ${count} account(s) started — joining ${data.groupCount || 0} group(s) in parallel.`);
   startJoinGroupsPoll();
+}
+
+async function stopJoinGroupsAll() {
+  const data = await api('/api/plugging/workspace/join-groups/stop', { method: 'POST' });
+  workspace.joinGroups = data.joinGroups;
+  renderJoinGroupsPanel();
+  setJoinGroupsMessage(data.stopped ? 'Join batch stopped.' : 'No join batch was running.');
+  stopJoinGroupsPoll();
+}
+
+async function copyCompletedJoinGroups() {
+  const text = document.getElementById('join-groups-completed')?.value?.trim() || '';
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    setJoinGroupsMessage('Copied completed groups — paste into Target groups.');
+  } catch (_) {
+    const el = document.getElementById('join-groups-completed');
+    if (el) {
+      el.focus();
+      el.select();
+      setJoinGroupsMessage('Select all and copy manually.');
+    }
+  }
 }
 
 function setAutoStartMessage(text, isError = false) {
@@ -346,19 +375,30 @@ function renderAutoStartPanel() {
 
   panel.hidden = !(workspace.accounts || []).length;
   const enabled = document.getElementById('autostart-enabled');
+  const staggerEnabled = document.getElementById('autostart-stagger-enabled');
   const stagger = document.getElementById('autostart-stagger');
+  const staggerField = stagger?.closest('.plug-form-field');
   const daily = document.getElementById('autostart-daily');
   const status = document.getElementById('plug-autostart-status');
   const runBtn = document.getElementById('autostart-run-btn');
+  const stopBtn = document.getElementById('autostart-stop-btn');
 
+  const staggerOn = workspace.autoStart?.staggerEnabled !== false;
   if (enabled) enabled.checked = !!workspace.autoStart?.enabled;
-  if (stagger) stagger.value = workspace.autoStart?.staggerMinutes ?? 10;
+  if (staggerEnabled) staggerEnabled.checked = staggerOn;
+  if (stagger) {
+    stagger.value = workspace.autoStart?.staggerMinutes ?? 10;
+    stagger.disabled = !staggerOn;
+  }
+  if (staggerField) staggerField.classList.toggle('is-disabled', !staggerOn);
   if (daily) daily.value = workspace.autoStart?.dailyAt || '';
 
   if (status) {
     if (workspace.autoStartRunning) {
       status.hidden = false;
-      status.textContent = 'Staggered start in progress…';
+      status.textContent = staggerOn
+        ? 'Staggered start in progress…'
+        : 'Starting all accounts (no delay)…';
     } else if (workspace.autoStart?.enabled && workspace.autoStart?.dailyAt) {
       status.hidden = false;
       status.textContent = `Daily at ${workspace.autoStart.dailyAt}`;
@@ -370,18 +410,26 @@ function renderAutoStartPanel() {
 
   if (runBtn) {
     runBtn.disabled = readyCount < 1 || !!workspace.autoStartRunning;
+    runBtn.hidden = !!workspace.autoStartRunning;
     runBtn.title = readyCount < 1
       ? 'Each account needs login, post link, and target groups'
       : '';
   }
+  if (stopBtn) stopBtn.hidden = !workspace.autoStartRunning;
 }
 
-async function saveAutoStartSettings() {
-  const payload = {
+function readAutoStartForm() {
+  const staggerEnabled = !!document.getElementById('autostart-stagger-enabled')?.checked;
+  return {
     enabled: !!document.getElementById('autostart-enabled')?.checked,
+    staggerEnabled,
     staggerMinutes: Number(document.getElementById('autostart-stagger')?.value) || 0,
     dailyAt: document.getElementById('autostart-daily')?.value || ''
   };
+}
+
+async function saveAutoStartSettings() {
+  const payload = readAutoStartForm();
   const data = await api('/api/plugging/workspace/auto-start', {
     method: 'PUT',
     body: JSON.stringify(payload)
@@ -393,18 +441,32 @@ async function saveAutoStartSettings() {
 }
 
 async function runAutoStartAll() {
-  const staggerMinutes = Number(document.getElementById('autostart-stagger')?.value) || 0;
+  const form = readAutoStartForm();
   const data = await api('/api/plugging/workspace/auto-start/run', {
     method: 'POST',
-    body: JSON.stringify({ staggerMinutes })
+    body: JSON.stringify({
+      staggerEnabled: form.staggerEnabled,
+      staggerMinutes: form.staggerMinutes
+    })
   });
   workspace.autoStartRunning = true;
   renderAutoStartPanel();
   const count = data.queued || data.accountIds?.length || 0;
-  const delay = data.staggerMinutes ?? staggerMinutes;
-  setAutoStartMessage(`Starting ${count} account(s) — ${delay} min between each.`);
+  const delay = data.staggerEnabled === false ? 0 : (data.staggerMinutes ?? form.staggerMinutes);
+  setAutoStartMessage(
+    delay > 0
+      ? `Starting ${count} account(s) — ${delay} min between each.`
+      : `Starting ${count} account(s) — no delay between accounts.`
+  );
   if (selectedId) startActivityPoll(selectedId);
   setTimeout(() => refreshWorkspace({ soft: true }).then(renderAutoStartPanel), 4000);
+}
+
+async function stopAutoStartAll() {
+  const data = await api('/api/plugging/workspace/auto-start/stop', { method: 'POST' });
+  workspace.autoStartRunning = data.autoStartRunning;
+  renderAutoStartPanel();
+  setAutoStartMessage(data.stopped ? 'Start-all batch stopped.' : 'No start-all batch was running.');
 }
 
 function setConfigSaveMessage(text, isError = false) {
@@ -749,6 +811,42 @@ document.getElementById('logout-btn').addEventListener('click', async () => {
   if (window.clearStoredPlugKey) clearStoredPlugKey();
   await api('/api/plugging/workspace/logout', { method: 'POST' });
   location.reload();
+});
+
+document.getElementById('join-groups-stop-btn')?.addEventListener('click', async () => {
+  setJoinGroupsMessage('');
+  const btn = document.getElementById('join-groups-stop-btn');
+  try {
+    if (btn) btn.disabled = true;
+    await stopJoinGroupsAll();
+  } catch (e) {
+    setJoinGroupsMessage(e.message, true);
+  } finally {
+    if (btn) btn.disabled = false;
+    renderJoinGroupsPanel();
+  }
+});
+
+document.getElementById('join-groups-copy-btn')?.addEventListener('click', () => {
+  copyCompletedJoinGroups().catch((e) => setJoinGroupsMessage(e.message, true));
+});
+
+document.getElementById('autostart-stagger-enabled')?.addEventListener('change', () => {
+  renderAutoStartPanel();
+});
+
+document.getElementById('autostart-stop-btn')?.addEventListener('click', async () => {
+  setAutoStartMessage('');
+  const btn = document.getElementById('autostart-stop-btn');
+  try {
+    if (btn) btn.disabled = true;
+    await stopAutoStartAll();
+  } catch (e) {
+    setAutoStartMessage(e.message, true);
+  } finally {
+    if (btn) btn.disabled = false;
+    renderAutoStartPanel();
+  }
 });
 
 document.getElementById('join-groups-save-btn')?.addEventListener('click', async () => {

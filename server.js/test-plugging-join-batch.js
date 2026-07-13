@@ -63,6 +63,7 @@ function testBuildJoinGroupsStatus() {
 
   const status = buildJoinGroupsStatus(db, 1, '@g1\n@g2');
   assert.deepStrictEqual(status.completed, ['@g1']);
+  assert.strictEqual(status.completedText, '@g1');
   assert(status.pending.includes('@g2'));
   assert.strictEqual(status.errors.length, 1);
   assert.strictEqual(status.errors[0].groupRef, '@g2');

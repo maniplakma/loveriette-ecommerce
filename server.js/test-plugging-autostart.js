@@ -13,6 +13,7 @@ function testStaggerMs() {
   assert.strictEqual(staggerMs(10), 10 * 60 * 1000);
   assert.strictEqual(staggerMs(0), 0);
   assert.strictEqual(staggerMs(-3), 10 * 60 * 1000);
+  assert.strictEqual(staggerMs(20, { enabled: false }), 0);
 }
 
 function testParseDailyAt() {
@@ -30,10 +31,12 @@ function testMsUntilNextDailyRun() {
 function testReadAutoStartSettings() {
   const settings = readAutoStartSettings({
     auto_start_enabled: 1,
+    auto_start_stagger_enabled: 0,
     auto_start_stagger_minutes: 15,
     auto_start_daily_at: '08:00'
   });
   assert.strictEqual(settings.enabled, true);
+  assert.strictEqual(settings.staggerEnabled, false);
   assert.strictEqual(settings.staggerMinutes, 15);
   assert.strictEqual(settings.dailyAt, '08:00');
 }

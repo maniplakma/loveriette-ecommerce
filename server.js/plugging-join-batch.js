@@ -141,6 +141,7 @@ function buildJoinGroupsStatus(db, orderId, groupsText) {
   return {
     configured: groups,
     completed,
+    completedText: completed.join('\n'),
     pending,
     errors,
     accountCount: accounts.length,
@@ -301,12 +302,13 @@ async function runJoinGroupsBatch(db, orderId, getSettings, { source = 'manual' 
 
   (async () => {
     try {
-      for (let i = 0; i < accounts.length; i += 1) {
-        if (!queue.running) break;
-        logPlugActivity(db, accounts[i].id, 'started', '[Join groups] Batch started for this account');
-        await runAccountJoinBatch(db, accounts[i], groups, getSettings);
-        logPlugActivity(db, accounts[i].id, 'complete', '[Join groups] Batch finished for this account');
-      }
+      await Promise.all(accounts.map(async (account) => {
+        if (!queue.running) return;
+        logPlugActivity(db, account.id, 'started', '[Join groups] Batch started for this account');
+        await runAccountJoinBatch(db, account, groups, getSettings);
+        if (!queue.running) return;
+        logPlugActivity(db, account.id, 'complete', '[Join groups] Batch finished for this account');
+      }));
     } finally {
       orderQueues.delete(orderId);
     }

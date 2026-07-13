@@ -14,7 +14,8 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-function staggerMs(minutes) {
+function staggerMs(minutes, { enabled = true } = {}) {
+  if (!enabled) return 0;
   const n = Number(minutes);
   if (!Number.isFinite(n) || n < 0) return 10 * 60 * 1000;
   return Math.round(n * 60 * 1000);
@@ -72,7 +73,7 @@ async function startAccountSafe(db, account, getSettings) {
   }
 }
 
-async function runStaggeredStart(db, orderId, getSettings, { staggerMinutes = 10, source = 'manual' } = {}) {
+async function runStaggeredStart(db, orderId, getSettings, { staggerMinutes = 10, staggerEnabled = true, source = 'manual' } = {}) {
   if (orderQueues.get(orderId)) {
     return { ok: false, error: 'A staggered start is already running for this workspace' };
   }
@@ -82,7 +83,7 @@ async function runStaggeredStart(db, orderId, getSettings, { staggerMinutes = 10
     return { ok: false, error: 'No accounts ready — each needs login, post link, and target groups' };
   }
 
-  const delayMs = staggerMs(staggerMinutes);
+  const delayMs = staggerMs(staggerMinutes, { enabled: staggerEnabled });
   const queue = { running: true, startedAt: Date.now() };
   orderQueues.set(orderId, queue);
 
@@ -91,7 +92,7 @@ async function runStaggeredStart(db, orderId, getSettings, { staggerMinutes = 10
     try {
       for (let i = 0; i < accounts.length; i += 1) {
         if (!queue.running) break;
-        if (i > 0) await sleep(delayMs);
+        if (i > 0 && delayMs > 0) await sleep(delayMs);
         if (!queue.running) break;
         const result = await startAccountSafe(db, accounts[i], getSettings);
         results.push(result);
@@ -105,7 +106,8 @@ async function runStaggeredStart(db, orderId, getSettings, { staggerMinutes = 10
     ok: true,
     source,
     queued: accounts.length,
-    staggerMinutes: Number(staggerMinutes) || 10,
+    staggerEnabled: !!staggerEnabled,
+    staggerMinutes: staggerEnabled ? (Number(staggerMinutes) || 10) : 0,
     accountIds: accounts.map((a) => a.id)
   };
 }
@@ -124,6 +126,9 @@ function isStaggeredStartRunning(orderId) {
 function readAutoStartSettings(orderRow) {
   return {
     enabled: !!orderRow.auto_start_enabled,
+    staggerEnabled: orderRow.auto_start_stagger_enabled == null
+      ? true
+      : !!orderRow.auto_start_stagger_enabled,
     staggerMinutes: Number(orderRow.auto_start_stagger_minutes) || 10,
     dailyAt: String(orderRow.auto_start_daily_at || '').trim()
   };
@@ -153,6 +158,7 @@ function scheduleDailyAutoStart(db, orderId, getSettings) {
     try {
       await runStaggeredStart(db, orderId, getSettings, {
         staggerMinutes: settings.staggerMinutes,
+        staggerEnabled: settings.staggerEnabled,
         source: 'daily'
       });
     } catch (err) {

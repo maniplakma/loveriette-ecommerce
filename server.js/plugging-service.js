@@ -10,6 +10,7 @@ const { sendLoginCode, verifyLoginCode } = require('./plugging-telegram');
 const { startRunner, stopRunner, stopRunnerGracefully, isRunning, resumeRunnersOnBoot, watchPluggingRunners } = require('./plugging-runner');
 const {
   runStaggeredStart,
+  stopStaggeredStart,
   isStaggeredStartRunning,
   readAutoStartSettings,
   initAutoStartSchedulers,
@@ -17,6 +18,7 @@ const {
 } = require('./plugging-autostart');
 const {
   runJoinGroupsBatch,
+  stopJoinBatch,
   isJoinBatchRunning,
   buildJoinGroupsStatus,
   pruneJoinResults,
@@ -559,6 +561,7 @@ function mountPluggingService(app, db, deps) {
   app.put('/api/plugging/workspace/auto-start', requirePlugWorkspace, (req, res) => {
     const body = req.body || {};
     const enabled = body.enabled != null ? (body.enabled ? 1 : 0) : undefined;
+    const staggerEnabled = body.staggerEnabled != null ? (body.staggerEnabled ? 1 : 0) : undefined;
     const staggerMinutes = body.staggerMinutes != null ? Math.max(0, Math.round(Number(body.staggerMinutes) || 0)) : undefined;
     const dailyAt = body.dailyAt != null ? String(body.dailyAt || '').trim() : undefined;
 
@@ -568,11 +571,12 @@ function mountPluggingService(app, db, deps) {
     db.prepare(`
       UPDATE plugging_orders SET
         auto_start_enabled = COALESCE(?, auto_start_enabled),
+        auto_start_stagger_enabled = COALESCE(?, auto_start_stagger_enabled),
         auto_start_stagger_minutes = COALESCE(?, auto_start_stagger_minutes),
         auto_start_daily_at = COALESCE(?, auto_start_daily_at),
         updated_at = datetime('now')
       WHERE id = ?
-    `).run(enabled, staggerMinutes, dailyAt, order.id);
+    `).run(enabled, staggerEnabled, staggerMinutes, dailyAt, order.id);
 
     const updated = db.prepare('SELECT * FROM plugging_orders WHERE id = ?').get(order.id);
     refreshAutoStartSchedule(db, order.id, getPluggingSettings);
@@ -588,6 +592,9 @@ function mountPluggingService(app, db, deps) {
     if (!order) return res.status(404).json({ error: 'Order not found' });
 
     const settings = readAutoStartSettings(order);
+    const staggerEnabled = req.body?.staggerEnabled != null
+      ? !!req.body.staggerEnabled
+      : settings.staggerEnabled;
     const staggerMinutes = req.body?.staggerMinutes != null
       ? Math.max(0, Math.round(Number(req.body.staggerMinutes) || 0))
       : settings.staggerMinutes;
@@ -595,6 +602,7 @@ function mountPluggingService(app, db, deps) {
     try {
       const result = await runStaggeredStart(db, order.id, getPluggingSettings, {
         staggerMinutes,
+        staggerEnabled,
         source: 'manual'
       });
       if (!result.ok) return res.status(400).json({ error: result.error || 'Could not start accounts' });
@@ -602,6 +610,15 @@ function mountPluggingService(app, db, deps) {
     } catch (err) {
       res.status(500).json({ error: err.message || 'Could not start accounts' });
     }
+  });
+
+  app.post('/api/plugging/workspace/auto-start/stop', requirePlugWorkspace, (req, res) => {
+    const stopped = stopStaggeredStart(req.plugOrder.id);
+    res.json({
+      ok: true,
+      stopped,
+      autoStartRunning: isStaggeredStartRunning(req.plugOrder.id)
+    });
   });
 
   app.put('/api/plugging/workspace/join-groups', requirePlugWorkspace, (req, res) => {
@@ -645,6 +662,17 @@ function mountPluggingService(app, db, deps) {
     } catch (err) {
       res.status(500).json({ error: err.message || 'Could not start join batch' });
     }
+  });
+
+  app.post('/api/plugging/workspace/join-groups/stop', requirePlugWorkspace, (req, res) => {
+    const order = db.prepare('SELECT * FROM plugging_orders WHERE id = ?').get(req.plugOrder.id);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    const stopped = stopJoinBatch(order.id);
+    res.json({
+      ok: true,
+      stopped,
+      joinGroups: readJoinGroupsPayload(order)
+    });
   });
 
   app.get('/api/plugging/workspace/join-groups/status', requirePlugWorkspace, (req, res) => {

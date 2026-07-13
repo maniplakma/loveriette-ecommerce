@@ -473,6 +473,31 @@ body.plug-body {
   color: #fff;
 }
 
+.plug-join-completed-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 0.45rem;
+}
+
+.plug-join-completed-text {
+  min-height: 110px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.8rem;
+  resize: vertical;
+}
+
+.plug-btn-danger-outline {
+  border-color: rgba(255, 120, 120, 0.45) !important;
+  color: #ff9b9b !important;
+}
+
+.plug-form-field.is-disabled label,
+.plug-form-field.is-disabled input {
+  opacity: 0.55;
+}
+
 .plug-join-groups-panel {
   margin-top: 0.85rem;
 }
