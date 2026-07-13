@@ -2,7 +2,12 @@
  * Plugging verification solver tests (no Telegram network).
  */
 const assert = require('assert');
-const { solveVerificationText, extractButtonAnswer } = require('./plugging-verify');
+const {
+  solveVerificationText,
+  extractButtonAnswer,
+  isKnownVerificationButton,
+  looksLikeVerificationMessage
+} = require('./plugging-verify');
 
 function testMathSolver() {
   assert.strictEqual(solveVerificationText('What is 1+1?'), '2');
@@ -34,10 +39,49 @@ function testButtonAnswerHuman() {
   assert.strictEqual(answer?.text, 'I am human');
 }
 
+function testUnmuteButtons() {
+  assert.strictEqual(isKnownVerificationButton('Unmute me'), true);
+  assert.strictEqual(isKnownVerificationButton('Tap to unmute'), true);
+  assert.strictEqual(isKnownVerificationButton('✅ Verify'), true);
+  assert.strictEqual(isKnownVerificationButton('Hello everyone'), false);
+
+  const unmute = extractButtonAnswer(
+    { rows: [{ buttons: [{ text: 'Unmute me' }] }] },
+    'Welcome! Tap the button below to unmute yourself.'
+  );
+  assert.strictEqual(unmute?.text, 'Unmute me');
+
+  const tapUnmute = extractButtonAnswer(
+    { rows: [{ buttons: [{ text: 'Tap to unmute' }] }] },
+    ''
+  );
+  assert.strictEqual(tapUnmute?.text, 'Tap to unmute');
+
+  const verify = extractButtonAnswer(
+    { rows: [{ buttons: [{ text: '✅ Verify' }, { text: 'Cancel' }] }] },
+    'Please verify to join'
+  );
+  assert.strictEqual(verify?.text, '✅ Verify');
+}
+
+function testVerificationContext() {
+  assert.strictEqual(looksLikeVerificationMessage('Welcome! Unmute to speak'), true);
+  assert.strictEqual(looksLikeVerificationMessage(''), true);
+  assert.strictEqual(looksLikeVerificationMessage('Check out our sale today only'), false);
+
+  const skip = extractButtonAnswer(
+    { rows: [{ buttons: [{ text: 'Buy now' }] }] },
+    'Check out our sale today only'
+  );
+  assert.strictEqual(skip, null);
+}
+
 function main() {
   testMathSolver();
   testButtonAnswerMatchesMath();
   testButtonAnswerHuman();
+  testUnmuteButtons();
+  testVerificationContext();
   console.log('plugging-verify tests: OK');
 }
 

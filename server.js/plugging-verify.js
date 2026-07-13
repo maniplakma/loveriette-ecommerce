@@ -1,8 +1,58 @@
 /**
- * Answer simple join-verification prompts in groups (math, bot checks).
+ * Answer join-verification prompts in groups (math, bot checks, unmute buttons).
  */
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+const VERIFICATION_BUTTON_PATTERNS = [
+  /unmute\s*me/i,
+  /tap\s+to\s+unmute/i,
+  /^unmute$/i,
+  /^verify$/i,
+  /^✅\s*verify/i,
+  /^✅$/,
+  /press\s+to\s+(verify|continue|join|unlock)/i,
+  /click\s+to\s+(verify|join|continue|unlock)/i,
+  /tap\s+to\s+(verify|join|continue|unlock)/i,
+  /i\s*'?m\s+not\s+a\s+robot/i,
+  /i\s*am\s+human/i,
+  /not\s+a\s+bot/i,
+  /^human$/i,
+  /^yes,?\s*i\s*'?m\s+human/i,
+  /^no,?\s*i\s*'?m\s+not\s+a\s+bot/i,
+  /confirm\s+(join|entry|access)/i,
+  /^accept$/i,
+  /^continue$/i,
+  /^start$/i,
+  /^let\s+me\s+in$/i,
+  /^enter$/i,
+  /complete\s+verification/i,
+  /solve\s+to\s+join/i
+];
+
+function isKnownVerificationButton(label) {
+  const text = String(label || '').trim();
+  if (!text) return false;
+  return VERIFICATION_BUTTON_PATTERNS.some((re) => re.test(text));
+}
+
+function looksLikeVerificationMessage(text) {
+  const lower = String(text || '').trim().toLowerCase();
+  if (!lower) return true;
+  return /verif|unmute|captcha|bot|human|welcome|joined|join|spam|click|press|tap|solve|math|mute|robot|access|unlock|\+|\-|×|\*|answer|question|prove|anti/i.test(lower);
+}
+
+function iterMarkupButtons(markup) {
+  if (!markup?.rows) return [];
+  const out = [];
+  for (const row of markup.rows) {
+    for (const btn of row.buttons || []) {
+      const text = String(btn.text || '').trim();
+      if (text) out.push({ text, button: btn, row });
+    }
+  }
+  return out;
 }
 
 function solveVerificationText(text) {
@@ -28,30 +78,36 @@ function solveVerificationText(text) {
 }
 
 function extractButtonAnswer(markup, messageText) {
-  if (!markup || !markup.rows) return null;
+  if (!markup?.rows) return null;
   const solved = solveVerificationText(messageText);
+  const buttons = iterMarkupButtons(markup);
 
   if (solved) {
-    for (const row of markup.rows) {
-      for (const btn of row.buttons || []) {
-        const label = String(btn.text || '').trim();
-        if (label === solved) return { type: 'button', text: btn.text };
-      }
+    for (const { text } of buttons) {
+      if (text === solved) return { type: 'button', text };
     }
   }
 
-  for (const row of markup.rows) {
-    for (const btn of row.buttons || []) {
-      const label = String(btn.text || '').toLowerCase();
-      if (label.includes('not a bot') || label === 'human' || label.includes('i am human')) {
-        return { type: 'button', text: btn.text };
-      }
-      if (label.includes('yes') && /human/.test(label)) {
-        return { type: 'button', text: btn.text };
-      }
-      if (label.includes('no') && /bot/.test(label)) {
-        return { type: 'button', text: btn.text };
-      }
+  for (const { text } of buttons) {
+    const label = text.toLowerCase();
+    if (label.includes('not a bot') || label === 'human' || label.includes('i am human')) {
+      return { type: 'button', text };
+    }
+    if (label.includes('yes') && /human/.test(label)) {
+      return { type: 'button', text };
+    }
+    if (label.includes('no') && /bot/.test(label)) {
+      return { type: 'button', text };
+    }
+  }
+
+  const contextOk = looksLikeVerificationMessage(messageText)
+    || buttons.some(({ text }) => isKnownVerificationButton(text));
+  if (!contextOk) return null;
+
+  for (const { text } of buttons) {
+    if (isKnownVerificationButton(text)) {
+      return { type: 'button', text };
     }
   }
 
@@ -86,56 +142,80 @@ async function clickInlineButton(client, message, buttonText) {
   return false;
 }
 
-async function handlePostJoinVerification(client, peer, refLabel, logFn, { maxWaitMs = 12000 } = {}) {
+async function pressVerificationButton(client, peer, message, buttonText, logFn, refLabel) {
+  const label = String(buttonText || '').trim();
+  if (!label) return false;
+
+  const clicked = await clickInlineButton(client, message, label);
+  if (clicked) {
+    if (logFn) logFn(`Pressed verification button in ${refLabel}: ${label}`);
+    return true;
+  }
+
+  try {
+    await client.sendMessage(peer, { message: label });
+    if (logFn) logFn(`Sent verification reply in ${refLabel}: ${label}`);
+    return true;
+  } catch (err) {
+    if (logFn) {
+      logFn(`Could not press verification in ${refLabel}: ${String(err.message || err).slice(0, 120)}`);
+    }
+    return false;
+  }
+}
+
+async function tryAnswerMessage(client, peer, msg, refLabel, logFn) {
+  const textAnswer = solveVerificationText(msg.message);
+  if (textAnswer) {
+    const button = extractButtonAnswer(msg.replyMarkup, msg.message);
+    if (button?.type === 'button') {
+      const pressed = await pressVerificationButton(client, peer, msg, button.text, logFn, refLabel);
+      if (pressed) return true;
+    }
+    try {
+      await client.sendMessage(peer, { message: textAnswer });
+      if (logFn) logFn(`Answered verification in ${refLabel}: ${textAnswer}`);
+      return true;
+    } catch (err) {
+      if (logFn) {
+        logFn(`Could not send verification answer in ${refLabel}: ${String(err.message || err).slice(0, 120)}`);
+      }
+    }
+  }
+
+  const buttonOnly = extractButtonAnswer(msg.replyMarkup, msg.message);
+  if (buttonOnly?.type === 'button') {
+    return pressVerificationButton(client, peer, msg, buttonOnly.text, logFn, refLabel);
+  }
+
+  return false;
+}
+
+async function handlePostJoinVerification(client, peer, refLabel, logFn, { maxWaitMs = 22000 } = {}) {
   const started = Date.now();
   let answered = false;
   let firstPass = true;
 
   while (Date.now() - started < maxWaitMs) {
-    if (!firstPass) await sleep(800);
+    if (!firstPass) await sleep(900);
     firstPass = false;
     let messages = [];
     try {
-      messages = await client.getMessages(peer, { limit: 8 });
+      messages = await client.getMessages(peer, { limit: 12 });
     } catch (_) {
       continue;
     }
 
     for (const msg of messages) {
-      const textAnswer = solveVerificationText(msg.message);
-      if (textAnswer) {
-        const button = extractButtonAnswer(msg.replyMarkup, msg.message);
-        if (button?.type === 'button') {
-          const clicked = await clickInlineButton(client, msg, button.text);
-          if (clicked) {
-            if (logFn) logFn(`Pressed verification button in ${refLabel}: ${button.text}`);
-            answered = true;
-            break;
-          }
-        }
-        try {
-          await client.sendMessage(peer, { message: textAnswer });
-          if (logFn) logFn(`Answered verification in ${refLabel}: ${textAnswer}`);
-          answered = true;
-          break;
-        } catch (err) {
-          if (logFn) logFn(`Could not send verification answer in ${refLabel}: ${String(err.message || err).slice(0, 120)}`);
-        }
-      }
-
-      const buttonOnly = extractButtonAnswer(msg.replyMarkup, msg.message);
-      if (buttonOnly?.type === 'button') {
-        const clicked = await clickInlineButton(client, msg, buttonOnly.text);
-        if (clicked) {
-          if (logFn) logFn(`Pressed verification button in ${refLabel}: ${buttonOnly.text}`);
-          answered = true;
-          break;
-        }
+      const ok = await tryAnswerMessage(client, peer, msg, refLabel, logFn);
+      if (ok) {
+        answered = true;
+        break;
       }
     }
 
     if (answered) {
-      await sleep(500);
+      await sleep(800);
       return true;
     }
   }
@@ -146,5 +226,7 @@ async function handlePostJoinVerification(client, peer, refLabel, logFn, { maxWa
 module.exports = {
   solveVerificationText,
   extractButtonAnswer,
+  isKnownVerificationButton,
+  looksLikeVerificationMessage,
   handlePostJoinVerification
 };
