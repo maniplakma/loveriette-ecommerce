@@ -930,6 +930,15 @@ function mountPlatformRoutes(app, db, deps) {
   });
 
   // ── Admin plugging ──
+  function bindSql(value) {
+    return value === undefined ? null : value;
+  }
+
+  function bool01(value) {
+    if (value == null) return null;
+    return value ? 1 : 0;
+  }
+
   app.get('/admin/plugging', requireAdmin, (req, res) => {
     res.json({
       settings: getPluggingSettings(),
@@ -965,15 +974,29 @@ function mountPlatformRoutes(app, db, deps) {
 
   app.put('/admin/plugging/products/:id', requireAdmin, (req, res) => {
     const b = req.body || {};
-    db.prepare(`
-      UPDATE plugging_products SET name = COALESCE(?, name), description = COALESCE(?, description),
-        icon = COALESCE(?, icon), category = COALESCE(?, category),
-        features = COALESCE(?, features), sort_order = COALESCE(?, sort_order),
-        is_enabled = COALESCE(?, is_enabled) WHERE id = ?
-    `).run(b.name, b.description, b.icon, b.category,
-      b.features != null ? JSON.stringify(b.features) : null, b.sortOrder,
-      b.isEnabled != null ? (b.isEnabled ? 1 : 0) : null, req.params.id);
-    res.json({ ok: true });
+    const productId = Number(req.params.id);
+    const product = db.prepare('SELECT id FROM plugging_products WHERE id = ?').get(productId);
+    if (!product) return res.status(404).json({ error: 'Product not found' });
+    try {
+      db.prepare(`
+        UPDATE plugging_products SET name = COALESCE(?, name), description = COALESCE(?, description),
+          icon = COALESCE(?, icon), category = COALESCE(?, category),
+          features = COALESCE(?, features), sort_order = COALESCE(?, sort_order),
+          is_enabled = COALESCE(?, is_enabled) WHERE id = ?
+      `).run(
+        bindSql(b.name),
+        bindSql(b.description),
+        bindSql(b.icon),
+        bindSql(b.category),
+        b.features != null ? JSON.stringify(b.features) : null,
+        bindSql(b.sortOrder),
+        bool01(b.isEnabled),
+        productId
+      );
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message || 'Could not save product' });
+    }
   });
 
   function countPlugOrdersForPlan(planId) {
@@ -1033,17 +1056,36 @@ function mountPlatformRoutes(app, db, deps) {
 
   app.put('/admin/plugging/plans/:id', requireAdmin, (req, res) => {
     const b = req.body || {};
-    db.prepare(`
-      UPDATE plugging_plans SET product_id = COALESCE(?, product_id), name = COALESCE(?, name),
-        description = COALESCE(?, description), price = COALESCE(?, price),
-        price_label = COALESCE(?, price_label), duration = COALESCE(?, duration),
-        max_sources = COALESCE(?, max_sources), max_destinations = COALESCE(?, max_destinations),
-        features = COALESCE(?, features), sort_order = COALESCE(?, sort_order),
-        is_enabled = COALESCE(?, is_enabled), priority = COALESCE(?, priority) WHERE id = ?
-    `).run(b.productId, b.name, b.description, b.price, b.priceLabel, b.duration, b.maxSources, b.maxDestinations,
-      b.features != null ? JSON.stringify(b.features) : null, b.sortOrder,
-      b.isEnabled != null ? (b.isEnabled ? 1 : 0) : null, b.priority != null ? (b.priority ? 1 : 0) : null, req.params.id);
-    res.json({ ok: true });
+    const planId = Number(req.params.id);
+    const plan = db.prepare('SELECT id FROM plugging_plans WHERE id = ?').get(planId);
+    if (!plan) return res.status(404).json({ error: 'Variant not found' });
+    try {
+      db.prepare(`
+        UPDATE plugging_plans SET product_id = COALESCE(?, product_id), name = COALESCE(?, name),
+          description = COALESCE(?, description), price = COALESCE(?, price),
+          price_label = COALESCE(?, price_label), duration = COALESCE(?, duration),
+          max_sources = COALESCE(?, max_sources), max_destinations = COALESCE(?, max_destinations),
+          features = COALESCE(?, features), sort_order = COALESCE(?, sort_order),
+          is_enabled = COALESCE(?, is_enabled), priority = COALESCE(?, priority) WHERE id = ?
+      `).run(
+        bindSql(b.productId),
+        bindSql(b.name),
+        bindSql(b.description),
+        bindSql(b.price),
+        bindSql(b.priceLabel),
+        bindSql(b.duration),
+        bindSql(b.maxSources),
+        bindSql(b.maxDestinations),
+        b.features != null ? JSON.stringify(b.features) : null,
+        bindSql(b.sortOrder),
+        bool01(b.isEnabled),
+        bool01(b.priority),
+        planId
+      );
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message || 'Could not save variant' });
+    }
   });
 
   app.delete('/admin/plugging/plans/:id', requireAdmin, (req, res) => {
