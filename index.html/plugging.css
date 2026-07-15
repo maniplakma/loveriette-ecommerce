@@ -129,6 +129,8 @@
 .plugging-share-section {
   text-align: center;
   padding: 1.5rem 1rem 2.5rem;
+  position: relative;
+  z-index: 2;
 }
 
 .plugging-share-section .share-actions {

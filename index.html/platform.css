@@ -1348,6 +1348,9 @@ body.page-loading { opacity: 0.98; }
   font-size: 0.82rem;
   font-style: italic;
   cursor: pointer;
+  pointer-events: auto;
+  position: relative;
+  z-index: 2;
   transition: background 0.15s, border-color 0.15s;
 }
 

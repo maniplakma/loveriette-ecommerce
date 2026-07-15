@@ -75,13 +75,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (e.key === 'Enter') heroEnterWorkspace();
   });
 
+  if (window.renderShareButtons) {
+    renderShareButtons(document.getElementById('plugging-share'), '/plugging', 'Plugging Service');
+  }
+
   try {
     const data = await fetchPluggingData();
     if (window.applySeoMeta) {
       applySeoMeta({ title: `${data.heroTitle || 'Plugging'} — loveriette`, description: data.heroSubtitle, url: '/plugging' });
-    }
-    if (window.renderShareButtons) {
-      renderShareButtons(document.getElementById('plugging-share'), '/plugging', 'Plugging Service');
     }
 
     const subEl = document.getElementById('plugging-hero-sub');

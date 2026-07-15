@@ -18,6 +18,15 @@ async function load() {
     document.getElementById('plug-product-error').hidden = false;
     return;
   }
+
+  if (window.renderShareButtons) {
+    renderShareButtons(
+      document.getElementById('plug-product-share'),
+      `/plugging/plan/${slug}`,
+      'Plugging Plan'
+    );
+  }
+
   try {
     const { product, related } = await fetchPlugProduct(slug);
     document.title = `${product.name} — Plugging — loveriette`;
