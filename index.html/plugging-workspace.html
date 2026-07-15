@@ -123,7 +123,7 @@
         <div class="plug-join-groups-head">
           <div>
             <h3>Join groups (all accounts)</h3>
-            <p class="plug-panel-desc">Join every logged-in account to these channels first — no forwarding, no delay between accounts. Run this before <strong>Start all</strong>. Each group is retried up to 3 times per account.</p>
+            <p class="plug-panel-desc">Join each logged-in account to your group list with safe delays (8s between groups, 20s between accounts) to avoid Telegram flood errors. Turn ON only when you want to run — completed groups are skipped on re-run.</p>
           </div>
           <span class="plug-join-groups-status" id="plug-join-groups-status" hidden></span>
           <span class="plug-state-badge plug-state-off" id="join-groups-state-badge">JOIN: OFF</span>
@@ -131,7 +131,7 @@
         <div class="plug-join-groups-layout">
           <div class="plug-join-groups-col">
             <label class="plug-checkbox-field plug-join-groups-enabled-field">
-              <input type="checkbox" id="join-groups-enabled" checked>
+              <input type="checkbox" id="join-groups-enabled">
               <span>Enable join groups</span>
             </label>
             <label for="join-groups-input">Groups / channels to join</label>

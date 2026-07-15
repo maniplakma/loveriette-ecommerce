@@ -289,7 +289,7 @@ function mountPluggingService(app, db, deps) {
     const groupsText = String(orderRow.join_groups_text || '');
     const status = buildJoinGroupsStatus(db, orderRow.id, groupsText);
     return {
-      enabled: orderRow.join_groups_enabled == null ? true : !!orderRow.join_groups_enabled,
+      enabled: Number(orderRow.join_groups_enabled) === 1,
       groupsText,
       running: isJoinBatchRunning(orderRow.id),
       ...status

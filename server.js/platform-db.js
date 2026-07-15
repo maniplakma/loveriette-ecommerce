@@ -311,7 +311,7 @@ function initPlatformDb(db) {
   try { db.exec(`ALTER TABLE plugging_orders ADD COLUMN auto_start_daily_at TEXT NOT NULL DEFAULT ''`); } catch (_) { /* exists */ }
   try { db.exec(`ALTER TABLE plugging_orders ADD COLUMN join_groups_text TEXT NOT NULL DEFAULT ''`); } catch (_) { /* exists */ }
   try { db.exec(`ALTER TABLE plugging_orders ADD COLUMN auto_start_stagger_enabled INTEGER NOT NULL DEFAULT 1`); } catch (_) { /* exists */ }
-  try { db.exec(`ALTER TABLE plugging_orders ADD COLUMN join_groups_enabled INTEGER NOT NULL DEFAULT 1`); } catch (_) { /* exists */ }
+  try { db.exec(`ALTER TABLE plugging_orders ADD COLUMN join_groups_enabled INTEGER NOT NULL DEFAULT 0`); } catch (_) { /* exists */ }
   try { db.exec(`ALTER TABLE plugging_orders ADD COLUMN send_queue_next_account_id INTEGER`); } catch (_) { /* exists */ }
   try { db.exec(`ALTER TABLE plugging_orders ADD COLUMN send_queue_last_send_at INTEGER NOT NULL DEFAULT 0`); } catch (_) { /* exists */ }
   try { db.exec(`ALTER TABLE plugging_accounts ADD COLUMN last_cycle_ended_at INTEGER NOT NULL DEFAULT 0`); } catch (_) { /* exists */ }

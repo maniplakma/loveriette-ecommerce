@@ -8,6 +8,11 @@ const {
   buildJoinGroupsStatus,
   pruneJoinResults,
   isJoinBatchRunning,
+  parseFloodWaitMs,
+  isAlreadyJoinedError,
+  isPermanentJoinError,
+  joinGroupDelayMs,
+  joinAccountDelayMs,
   MAX_JOIN_ATTEMPTS
 } = require('./plugging-join-batch');
 
@@ -87,11 +92,25 @@ function testIsJoinBatchRunning() {
   assert.strictEqual(isJoinBatchRunning(999), false);
 }
 
+function testJoinDelays() {
+  assert.ok(joinGroupDelayMs() >= 3000);
+  assert.ok(joinAccountDelayMs() >= 5000);
+}
+
+function testFloodAndJoinErrors() {
+  assert.strictEqual(parseFloodWaitMs(new Error('A wait of 12 seconds is required')), 14000);
+  assert.strictEqual(parseFloodWaitMs(new Error('FLOOD_WAIT_30')), 32000);
+  assert.strictEqual(isAlreadyJoinedError(new Error('USER_ALREADY_PARTICIPANT')), true);
+  assert.strictEqual(isPermanentJoinError(new Error('INVITE_HASH_EXPIRED')), true);
+}
+
 function main() {
   testParseJoinGroups();
   testBuildJoinGroupsStatus();
   testPruneJoinResults();
   testIsJoinBatchRunning();
+  testJoinDelays();
+  testFloodAndJoinErrors();
   console.log('plugging-join-batch tests: OK');
 }
 

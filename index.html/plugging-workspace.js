@@ -328,7 +328,7 @@ function renderJoinGroupsPanel() {
   const completedEl = document.getElementById('join-groups-completed');
   const copyBtn = document.getElementById('join-groups-copy-btn');
   const jg = workspace.joinGroups || {};
-  const joinEnabled = jg.enabled !== false;
+  const joinEnabled = jg.enabled === true;
 
   if (enabledEl) enabledEl.checked = joinEnabled;
   if (input && document.activeElement !== input) {
@@ -454,7 +454,10 @@ async function runJoinGroupsAll() {
   workspace.joinGroups = { ...workspace.joinGroups, ...data.joinGroups, running: true };
   renderJoinGroupsPanel();
   const count = data.queued || data.accountIds?.length || 0;
-  setJoinGroupsMessage(`All ${count} account(s) started — joining ${data.groupCount || 0} group(s) in parallel.`);
+  const delayNote = data.groupDelaySec
+    ? ` (${data.groupDelaySec}s between groups, ${data.accountDelaySec || 20}s between accounts)`
+    : '';
+  setJoinGroupsMessage(`All ${count} account(s) started — joining ${data.groupCount || 0} group(s) safely${delayNote}.`);
   showPlugToast('Join groups: RUNNING', 'running');
   startJoinGroupsPoll();
 }

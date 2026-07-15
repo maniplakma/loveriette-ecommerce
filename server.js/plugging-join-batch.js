@@ -12,6 +12,45 @@ const { handlePostJoinVerification } = require('./plugging-verify');
 const MAX_JOIN_ATTEMPTS = 3;
 const orderQueues = new Map();
 
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+function joinGroupDelayMs() {
+  return Math.max(3000, Number(process.env.PLUG_JOIN_GROUP_DELAY_SEC) || 8) * 1000;
+}
+
+function joinAccountDelayMs() {
+  return Math.max(5000, Number(process.env.PLUG_JOIN_ACCOUNT_DELAY_SEC) || 20) * 1000;
+}
+
+function parseFloodWaitMs(err) {
+  const msg = String(err?.message || err || '');
+  const match = msg.match(/FLOOD_WAIT[_ ]?(\d+)/i) || msg.match(/wait of (\d+) seconds/i);
+  if (!match) return 0;
+  return (Number(match[1]) + 2) * 1000;
+}
+
+function isAlreadyJoinedError(err) {
+  const msg = String(err?.message || err || '').toUpperCase();
+  return msg.includes('USER_ALREADY_PARTICIPANT')
+    || msg.includes('ALREADY_PARTICIPANT')
+    || msg.includes('ALREADY_IN_CHAT')
+    || msg.includes('ALREADY A PARTICIPANT');
+}
+
+function isPermanentJoinError(err) {
+  const msg = String(err?.message || err || '').toUpperCase();
+  return msg.includes('INVITE_HASH_EXPIRED')
+    || msg.includes('INVITE_REQUEST_SENT')
+    || msg.includes('CHANNEL_PRIVATE')
+    || msg.includes('USERNAME_NOT_OCCUPIED')
+    || msg.includes('USERNAME_INVALID')
+    || msg.includes('CHAT_INVALID')
+    || msg.includes('PEER_ID_INVALID')
+    || msg.includes('USER_BANNED_IN_CHANNEL');
+}
+
 function entityLabel(entity) {
   if (!entity) return '';
   if (entity.username) return `@${entity.username}`;
@@ -186,12 +225,12 @@ async function joinGroupOnce(client, db, account, groupRef) {
     const beforeJoin = entity;
     const joined = await joinTarget(client, key, entity, (msg) => {
       logPlugActivity(db, account.id, 'info', `[Join groups] ${msg}`, key);
-    }, { skipMemberCheck: true });
+    });
     entity = joined || beforeJoin || entity;
     if (entity) {
       await handlePostJoinVerification(client, entity, entityLabel(entity) || key, (msg) => {
         logPlugActivity(db, account.id, 'info', `[Join groups] ${msg}`, key);
-      });
+      }, { maxWaitMs: 12000 });
     }
   }
 
@@ -263,7 +302,43 @@ async function joinGroupForAccount(db, account, groupRef, getSettings, queue) {
       });
       return { ok: true, groupRef: key };
     } catch (err) {
+      if (isAlreadyJoinedError(err)) {
+        upsertJoinResult(db, orderId, account.id, key, {
+          status: 'completed',
+          attempts: attemptNum,
+          lastError: ''
+        });
+        logPlugActivity(db, account.id, 'info', `[Join groups] Already in ${key}`, key);
+        return { ok: true, groupRef: key };
+      }
+
       lastError = String(err.message || err).slice(0, 500);
+
+      if (isPermanentJoinError(err)) {
+        upsertJoinResult(db, orderId, account.id, key, {
+          status: 'error',
+          attempts: MAX_JOIN_ATTEMPTS,
+          lastError
+        });
+        logPlugActivity(
+          db, account.id, 'error',
+          `[Join groups] ${key} skipped (invalid or expired): ${lastError}`,
+          key
+        );
+        return { ok: false, groupRef: key, error: lastError, attempts: MAX_JOIN_ATTEMPTS };
+      }
+
+      const floodMs = parseFloodWaitMs(err);
+      if (floodMs > 0 && attemptNum < MAX_JOIN_ATTEMPTS) {
+        logPlugActivity(
+          db, account.id, 'info',
+          `[Join groups] Telegram rate limit — waiting ${Math.round(floodMs / 1000)}s before retry`,
+          key
+        );
+        await sleep(floodMs);
+        continue;
+      }
+
       const finalStatus = attemptNum >= MAX_JOIN_ATTEMPTS ? 'error' : 'pending';
       upsertJoinResult(db, orderId, account.id, key, {
         status: finalStatus,
@@ -284,12 +359,16 @@ async function joinGroupForAccount(db, account, groupRef, getSettings, queue) {
   return { ok: false, groupRef: key, error: lastError || 'Max attempts reached', attempts: attemptNum };
 }
 
-async function runAccountJoinBatch(db, account, groups, getSettings, queue) {
+async function runAccountJoinBatch(db, account, groups, getSettings, queue, { groupDelayMs = 0 } = {}) {
   const outcomes = [];
-  for (const groupRef of groups) {
+  for (let i = 0; i < groups.length; i += 1) {
+    const groupRef = groups[i];
     if (queue && !queue.running) break;
     outcomes.push(await joinGroupForAccount(db, account, groupRef, getSettings, queue));
     if (queue && !queue.running) break;
+    if (groupDelayMs > 0 && i < groups.length - 1) {
+      await sleep(groupDelayMs);
+    }
   }
   return outcomes;
 }
@@ -317,19 +396,29 @@ async function runJoinGroupsBatch(db, orderId, getSettings, { source = 'manual' 
 
   const queue = { running: true, startedAt: Date.now() };
   orderQueues.set(orderId, queue);
+  const groupDelay = joinGroupDelayMs();
+  const accountDelay = joinAccountDelayMs();
 
   (async () => {
     try {
-      await Promise.all(accounts.map(async (account) => {
-        if (!queue.running) return;
+      for (let i = 0; i < accounts.length; i += 1) {
+        if (!queue.running) break;
+        const account = accounts[i];
         logPlugActivity(db, account.id, 'started', '[Join groups] Batch started for this account');
-        await runAccountJoinBatch(db, account, groups, getSettings, queue);
+        await runAccountJoinBatch(db, account, groups, getSettings, queue, { groupDelayMs: groupDelay });
         if (!queue.running) {
           logPlugActivity(db, account.id, 'stopped', '[Join groups] Stopped by user');
-          return;
+          break;
         }
         logPlugActivity(db, account.id, 'complete', '[Join groups] Batch finished for this account');
-      }));
+        if (i < accounts.length - 1) {
+          logPlugActivity(
+            db, account.id, 'info',
+            `[Join groups] Waiting ${Math.round(accountDelay / 1000)}s before next account (anti-spam)`
+          );
+          await sleep(accountDelay);
+        }
+      }
     } finally {
       orderQueues.delete(orderId);
     }
@@ -340,7 +429,9 @@ async function runJoinGroupsBatch(db, orderId, getSettings, { source = 'manual' 
     source,
     queued: accounts.length,
     groupCount: groups.length,
-    accountIds: accounts.map((a) => a.id)
+    accountIds: accounts.map((a) => a.id),
+    groupDelaySec: Math.round(groupDelay / 1000),
+    accountDelaySec: Math.round(accountDelay / 1000)
   };
 }
 
@@ -374,6 +465,11 @@ function isJoinBatchRunning(orderId) {
 module.exports = {
   MAX_JOIN_ATTEMPTS,
   parseJoinGroups,
+  parseFloodWaitMs,
+  isAlreadyJoinedError,
+  isPermanentJoinError,
+  joinGroupDelayMs,
+  joinAccountDelayMs,
   getJoinableAccounts,
   buildJoinGroupsStatus,
   pruneJoinResults,
