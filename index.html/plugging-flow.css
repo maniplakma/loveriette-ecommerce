@@ -97,7 +97,15 @@ body.plug-flow-body {
   color: var(--plug-accent);
   font-size: 0.82rem;
   font-weight: 600;
-  margin-bottom: 1.25rem;
+  margin-bottom: 0.65rem;
+}
+
+.plug-flow-plan-desc {
+  margin: 0 0 1.25rem;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: var(--plug-muted, rgba(255, 255, 255, 0.72));
+  max-width: 36rem;
 }
 
 .plug-flow-steps {

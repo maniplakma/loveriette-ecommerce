@@ -568,26 +568,26 @@ function ensurePluggingExamples(db) {
           name: '7 Days',
           slug: 'vip-7d',
           duration: '7 Days',
-          description: 'VIP access for one week.',
+          description: '10 Telegram accounts, 50 groups each for one week. Manual per-account forwarding in your workspace.',
           price: 499,
           priceLabel: '₱499',
           maxSources: 10,
           maxDestinations: 50,
           priority: 0,
-          features: ['10 accounts', '50 groups each', '7-day access'],
+          features: ['10 accounts', '50 groups each', '7-day access', 'Manual start per account'],
           sortOrder: 0
         },
         {
           name: '30 Days',
           slug: 'vip-30d',
           duration: '30 Days',
-          description: 'VIP access for one month.',
+          description: '10 Telegram accounts, 50 groups each for one month. Manual per-account forwarding in your workspace.',
           price: 1499,
           priceLabel: '₱1,499',
           maxSources: 10,
           maxDestinations: 50,
           priority: 0,
-          features: ['10 accounts', '50 groups each', '30-day access'],
+          features: ['10 accounts', '50 groups each', '30-day access', 'Manual start per account'],
           sortOrder: 1
         }
       ]
@@ -595,36 +595,36 @@ function ensurePluggingExamples(db) {
     {
       name: 'VIP+ Plugging',
       slug: 'vip-plus',
-      description: 'Unlimited Telegram accounts and unlimited groups per account. Priority forwarding like master access with expiry.',
+      description: 'Unlimited Telegram accounts and groups. Priority forwarding with Auto join groups and Start all in your workspace.',
       icon: 'mdi:rocket-launch',
       category: 'Plugging',
-      features: ['Unlimited accounts', 'Unlimited groups', 'Priority forwarding', 'Expiry based on plan duration'],
+      features: ['Unlimited accounts', 'Unlimited groups', 'Auto join groups', 'Start all (staggered)', 'Priority forwarding'],
       sortOrder: 1,
       variants: [
         {
           name: '7 Days',
           slug: 'vip-plus-7d',
           duration: '7 Days',
-          description: 'VIP+ trial — full unlimited access for one week.',
+          description: 'Unlimited accounts and groups for one week. Includes Auto join groups and Start all (staggered delay) in your workspace.',
           price: 999,
           priceLabel: '₱999',
           maxSources: 999,
           maxDestinations: 999,
           priority: 1,
-          features: ['Unlimited accounts', 'Unlimited groups', 'Priority', '7-day access'],
+          features: ['Unlimited accounts', 'Unlimited groups', 'Auto join groups', 'Start all (staggered)', '7-day access'],
           sortOrder: 0
         },
         {
           name: '30 Days',
           slug: 'vip-plus-30d',
           duration: '30 Days',
-          description: 'VIP+ monthly — unlimited relay with priority.',
+          description: 'Unlimited accounts and groups for one month. Includes Auto join groups and Start all (staggered delay) in your workspace.',
           price: 2999,
           priceLabel: '₱2,999',
           maxSources: 999,
           maxDestinations: 999,
           priority: 1,
-          features: ['Unlimited accounts', 'Unlimited groups', 'Priority', '30-day access'],
+          features: ['Unlimited accounts', 'Unlimited groups', 'Auto join groups', 'Start all (staggered)', '30-day access'],
           sortOrder: 1
         }
       ]
@@ -701,7 +701,35 @@ function ensurePluggingExamples(db) {
     `).run();
   } catch (_) { /* ignore */ }
 
+  backfillPluggingVariantDescriptions(db);
+
   // Do not bulk-disable testimonials — lending rows are removed by scope filter only.
+}
+
+function backfillPluggingVariantDescriptions(db) {
+  const rows = db.prepare(`
+    SELECT id, name, duration, priority, max_sources, max_destinations, description
+    FROM plugging_plans
+    WHERE description IS NULL OR TRIM(description) = ''
+  `).all();
+  if (!rows.length) return;
+
+  const upd = db.prepare('UPDATE plugging_plans SET description = ? WHERE id = ?');
+  for (const row of rows) {
+    const dur = String(row.duration || row.name || 'this plan').trim();
+    const durLabel = dur.toLowerCase();
+    let desc;
+    if (Number(row.priority) >= 1) {
+      desc = `Unlimited accounts and groups for ${durLabel}. Includes Auto join groups and Start all (staggered delay) in your workspace.`;
+    } else if (Number(row.max_sources) >= 999) {
+      desc = `Unlimited access for ${durLabel}. Includes Auto join groups and Start all (staggered delay) in your workspace.`;
+    } else {
+      const accounts = Number(row.max_sources) || 10;
+      const groups = Number(row.max_destinations) || 50;
+      desc = `Up to ${accounts} accounts, ${groups} groups each for ${durLabel}. Manual per-account forwarding in your workspace.`;
+    }
+    upd.run(desc, row.id);
+  }
 }
 
 function migrateWebsiteInquiryChat(db) {

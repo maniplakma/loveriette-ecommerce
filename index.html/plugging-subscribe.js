@@ -14,6 +14,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('plan-id').value = plan.id;
     document.getElementById('plan-summary').textContent =
       `${plan.productName ? plan.productName + ' · ' : ''}${plan.name}${plan.duration ? ' (' + plan.duration + ')' : ''} — ${plan.priceLabel || '₱' + Number(plan.price).toLocaleString()}`;
+    const descEl = document.getElementById('plan-description');
+    if (descEl) {
+      const desc = String(plan.description || '').trim();
+      descEl.hidden = !desc;
+      descEl.textContent = desc;
+    }
   } catch (e) {
     document.getElementById('plan-summary').textContent = 'Could not load plan.';
   }

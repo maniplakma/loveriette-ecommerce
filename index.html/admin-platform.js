@@ -312,6 +312,7 @@
             <div>
               <strong>${esc(v.name)}</strong>${v.duration ? ` · ${esc(v.duration)}` : ''} — ${peso(v.price)} · ${ms}→${md}${pri ? ' · Priority' : ''}
               ${!enabled ? ' · <em>disabled</em>' : ''}
+              <br><small class="admin-card-meta">${v.description ? esc(v.description) : '<em>No description — click Edit to add</em>'}</small>
             </div>
             <div style="display:flex;gap:0.35rem;flex-wrap:wrap">
               <button type="button" class="admin-btn admin-btn-ghost admin-btn-sm" data-edit-plug-plan="${v.id}">Edit</button>
@@ -567,12 +568,17 @@
           const maxSources = prompt('Max Telegram accounts (VIP=10, VIP+=999 unlimited):', '10') || '10';
           const maxDestinations = prompt('Max groups per account (VIP=50, VIP+=999 unlimited):', '50') || '50';
           const priority = confirm('Priority plan (VIP+)? OK = yes, Cancel = no');
+          const defaultDesc = priority
+            ? `Unlimited accounts and groups for ${duration.toLowerCase()}. Includes Auto join groups and Start all (staggered delay) in your workspace.`
+            : `Up to ${maxSources} accounts, ${maxDestinations} groups each for ${duration.toLowerCase()}. Manual per-account forwarding in your workspace.`;
+          const description = prompt('Variant description (shown on plan page):', defaultDesc) || defaultDesc;
           await plugApiAction(() => api('/admin/plugging/plans', {
             method: 'POST',
             body: {
               productId,
               name,
               duration,
+              description,
               price: Number(price) || 0,
               priceLabel: `₱${Number(price || 0).toLocaleString()}`,
               maxSources: Number(maxSources) || 1,

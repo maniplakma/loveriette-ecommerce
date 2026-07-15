@@ -57,17 +57,26 @@
       </article>`;
   }
 
+  function variantFeatures(product, variant) {
+    if (variant.features?.length) return variant.features;
+    const base = [
+      `${variant.maxSources >= 999 ? 'Unlimited' : variant.maxSources} account(s) → ${variant.maxDestinations >= 999 ? 'Unlimited' : variant.maxDestinations} destination(s)`,
+      variant.duration ? `${variant.duration} access` : null,
+      'Self-service workspace'
+    ].filter(Boolean);
+    if (variant.priority) {
+      base.push('Auto join groups', 'Start all (staggered)');
+    } else {
+      base.push('Manual start per account');
+    }
+    return base;
+  }
+
   function renderNfVariantCard(product, variant, index) {
     const tier = TIERS[index % TIERS.length];
     const popular = index === 1 || String(variant.duration || '').includes('30');
     const price = variant.priceLabel || peso(variant.price);
-    const features = variant.features?.length
-      ? variant.features
-      : [
-        `${variant.maxSources} account(s) → ${variant.maxDestinations} destination(s)`,
-        variant.duration ? `${variant.duration} access` : null,
-        'Self-service workspace'
-      ].filter(Boolean);
+    const features = variantFeatures(product, variant);
 
     return `
       <article class="nf-plan-card ${tier}${popular ? ' is-popular' : ''}">
