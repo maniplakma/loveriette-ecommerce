@@ -548,8 +548,9 @@ function mountPlatformRoutes(app, db, deps) {
 
   app.get('/api/plugging/products/:slug', (req, res) => {
     res.set('Cache-Control', 'public, max-age=30');
+    const slug = String(req.params.slug || '').trim().toLowerCase();
     const all = mapPluggingProducts(db, true);
-    const product = all.find((p) => p.slug === req.params.slug);
+    const product = all.find((p) => String(p.slug || '').toLowerCase() === slug);
     if (!product) return res.status(404).json({ error: 'Product not found' });
     const others = all.filter((p) => p.slug !== product.slug).slice(0, 3);
     res.json({ product, related: others });

@@ -4,13 +4,22 @@ function esc(s) {
   return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+async function fetchPlugProduct(slug) {
+  const url = `/api/plugging/products/${encodeURIComponent(slug)}`;
+  if (window.ApiCache?.fetchJson) return ApiCache.fetchJson(url);
+  const res = await fetch(url, { credentials: 'include' });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Product not found');
+  return data;
+}
+
 async function load() {
   if (!slug) {
     document.getElementById('plug-product-error').hidden = false;
     return;
   }
   try {
-    const { product, related } = await ApiCache.fetchJson(`/api/plugging/products/${encodeURIComponent(slug)}`);
+    const { product, related } = await fetchPlugProduct(slug);
     document.title = `${product.name} — Plugging — loveriette`;
     if (window.applySeoMeta) {
       applySeoMeta({ title: document.title, description: product.description, url: `/plugging/plan/${product.slug}` });
