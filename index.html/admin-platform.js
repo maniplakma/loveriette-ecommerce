@@ -300,6 +300,97 @@
     loadPlatformWebsite();
   });
 
+  function renderPlugVariantRow(v) {
+    const ms = v.max_sources ?? v.maxSources ?? 1;
+    const md = v.max_destinations ?? v.maxDestinations ?? 3;
+    const pri = v.priority ? 1 : 0;
+    const enabled = v.is_enabled !== 0;
+    return `
+      <div class="admin-card plug-variant-row" data-variant-id="${v.id}" style="margin:0.35rem 0 0.35rem 1rem;padding:0.65rem 0.85rem">
+        <div class="plug-variant-view" data-variant-view="${v.id}">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem">
+            <div>
+              <strong>${esc(v.name)}</strong>${v.duration ? ` · ${esc(v.duration)}` : ''} — ${peso(v.price)} · ${ms}→${md}${pri ? ' · Priority' : ''}
+              ${!enabled ? ' · <em>disabled</em>' : ''}
+            </div>
+            <div style="display:flex;gap:0.35rem;flex-wrap:wrap">
+              <button type="button" class="admin-btn admin-btn-ghost admin-btn-sm" data-edit-plug-plan="${v.id}">Edit</button>
+              <button type="button" class="admin-btn admin-btn-danger admin-btn-sm" data-del-plug-plan="${v.id}">Delete</button>
+            </div>
+          </div>
+        </div>
+        <form class="plug-variant-edit" data-variant-edit="${v.id}" hidden style="margin-top:0.65rem">
+          <div class="admin-field-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:0.5rem">
+            <div class="admin-field"><label>Name</label><input class="admin-input-sm" name="name" value="${esc(v.name)}" required></div>
+            <div class="admin-field"><label>Duration</label><input class="admin-input-sm" name="duration" value="${esc(v.duration || '')}" placeholder="7 Days"></div>
+            <div class="admin-field"><label>Price (₱)</label><input class="admin-input-sm" name="price" type="number" min="0" value="${Number(v.price || 0)}"></div>
+            <div class="admin-field"><label>Max accounts</label><input class="admin-input-sm" name="maxSources" type="number" min="1" value="${ms}"></div>
+            <div class="admin-field"><label>Max groups</label><input class="admin-input-sm" name="maxDestinations" type="number" min="1" value="${md}"></div>
+            <div class="admin-field"><label>Sort</label><input class="admin-input-sm" name="sortOrder" type="number" value="${Number(v.sort_order || 0)}"></div>
+          </div>
+          <div class="admin-field" style="margin-top:0.45rem"><label>Description</label><textarea class="admin-input-sm" name="description" rows="2">${esc(v.description || '')}</textarea></div>
+          <label class="admin-checkbox" style="display:inline-flex;align-items:center;gap:0.35rem;margin:0.5rem 0.65rem 0 0">
+            <input type="checkbox" name="priority" ${pri ? 'checked' : ''}> VIP+ priority
+          </label>
+          <label class="admin-checkbox" style="display:inline-flex;align-items:center;gap:0.35rem;margin-top:0.5rem">
+            <input type="checkbox" name="isEnabled" ${enabled ? 'checked' : ''}> Enabled
+          </label>
+          <div style="margin-top:0.65rem;display:flex;gap:0.45rem;flex-wrap:wrap">
+            <button type="button" class="admin-btn admin-btn-primary admin-btn-sm" data-save-plug-plan="${v.id}">Save variant</button>
+            <button type="button" class="admin-btn admin-btn-ghost admin-btn-sm" data-cancel-plug-plan="${v.id}">Cancel</button>
+          </div>
+        </form>
+      </div>`;
+  }
+
+  function renderPlugProductCard(prod) {
+    const enabled = prod.is_enabled !== 0;
+    return `
+      <div class="admin-card plug-product-card" data-product-id="${prod.id}" style="margin-bottom:1rem">
+        <div class="plug-product-view" data-product-view="${prod.id}">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.75rem">
+            <div>
+              <strong>${esc(prod.name)}</strong> · /plugging/plan/${esc(prod.slug)} · ${enabled ? 'enabled' : 'disabled'}<br>
+              <small class="admin-card-meta">${esc(prod.description?.slice(0, 100))}</small>
+            </div>
+            <div style="display:flex;gap:0.35rem;flex-wrap:wrap">
+              <button type="button" class="admin-btn admin-btn-ghost admin-btn-sm" data-edit-plug-product="${prod.id}">Edit</button>
+              <button type="button" class="admin-btn admin-btn-ghost admin-btn-sm" data-add-variant="${prod.id}" data-product-name="${esc(prod.name)}">+ Variant</button>
+              <button type="button" class="admin-btn admin-btn-danger admin-btn-sm" data-del-plug-product="${prod.id}">Delete Product</button>
+            </div>
+          </div>
+        </div>
+        <form class="plug-product-edit" data-product-edit="${prod.id}" hidden style="margin-bottom:0.75rem">
+          <div class="admin-field"><label>Product name</label><input class="admin-input-sm" name="name" value="${esc(prod.name)}" required></div>
+          <div class="admin-field" style="margin-top:0.45rem"><label>Description</label><textarea class="admin-input-sm" name="description" rows="2">${esc(prod.description || '')}</textarea></div>
+          <label class="admin-checkbox" style="display:inline-flex;align-items:center;gap:0.35rem;margin-top:0.5rem">
+            <input type="checkbox" name="isEnabled" ${enabled ? 'checked' : ''}> Enabled
+          </label>
+          <div style="margin-top:0.65rem;display:flex;gap:0.45rem;flex-wrap:wrap">
+            <button type="button" class="admin-btn admin-btn-primary admin-btn-sm" data-save-plug-product="${prod.id}">Save product</button>
+            <button type="button" class="admin-btn admin-btn-ghost admin-btn-sm" data-cancel-plug-product="${prod.id}">Cancel</button>
+          </div>
+        </form>
+        ${(prod.variants || []).map((v) => renderPlugVariantRow(v)).join('') || '<p class="admin-empty" style="margin-left:1rem">No variants — add 7 Days, 30 Days, etc.</p>'}
+      </div>`;
+  }
+
+  async function plugApiAction(action) {
+    try {
+      return await action();
+    } catch (err) {
+      if (window.showToast) showToast(err.message || 'Request failed', 'error');
+      throw err;
+    }
+  }
+
+  function togglePlugEdit(viewSel, editSel, showEdit) {
+    const view = document.querySelector(viewSel);
+    const edit = document.querySelector(editSel);
+    if (view) view.hidden = showEdit;
+    if (edit) edit.hidden = !showEdit;
+  }
+
   /* ── Plugging ── */
   window.loadPlatformPlugging = async function loadPlatformPlugging() {
     const data = await api('/admin/plugging');
@@ -411,27 +502,8 @@
       loadPlatformPlugging();
     }));
 
-    document.getElementById('plugging-products-list').innerHTML = (data.products || []).map((prod) => `
-      <div class="admin-card" style="margin-bottom:1rem">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.75rem">
-          <div>
-            <strong>${esc(prod.name)}</strong> · /plugging/plan/${esc(prod.slug)} · ${prod.is_enabled ? 'enabled' : 'disabled'}<br>
-            <small class="admin-card-meta">${esc(prod.description?.slice(0, 100))}</small>
-          </div>
-          <div style="display:flex;gap:0.35rem;flex-wrap:wrap">
-            <button class="admin-btn admin-btn-ghost admin-btn-sm" data-add-variant="${prod.id}" data-product-name="${esc(prod.name)}">+ Variant</button>
-            <button class="admin-btn admin-btn-danger admin-btn-sm" data-del-plug-product="${prod.id}">Delete Product</button>
-          </div>
-        </div>
-        ${(prod.variants || []).map((v) => `
-          <div class="admin-card" style="margin:0.35rem 0 0.35rem 1rem;padding:0.65rem 0.85rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem">
-            <div>
-              <strong>${esc(v.name)}</strong>${v.duration ? ` · ${esc(v.duration)}` : ''} — ${peso(v.price)} · ${v.max_sources ?? v.maxSources}→${v.max_destinations ?? v.maxDestinations}${v.priority ? ' · Priority' : ''}
-              ${v.is_enabled === 0 ? ' · <em>disabled</em>' : ''}
-            </div>
-            <button class="admin-btn admin-btn-danger admin-btn-sm" data-del-plug-plan="${v.id}">Delete</button>
-          </div>`).join('') || '<p class="admin-empty" style="margin-left:1rem">No variants — add 7 Days, 30 Days, etc.</p>'}
-      </div>`).join('') || '<p class="admin-empty">No products yet. Add Standard Plugging, then add variants.</p>';
+    document.getElementById('plugging-products-list').innerHTML = (data.products || []).map((prod) => renderPlugProductCard(prod)).join('')
+      || '<p class="admin-empty">No products yet. Add Standard Plugging, then add variants.</p>';
 
     const statuses = ['pending', 'setting_up', 'active', 'paused', 'rejected'];
     document.getElementById('plugging-requests-list').innerHTML = (data.requests || []).map((r) => `
@@ -461,7 +533,7 @@
         e.preventDefault();
         const body = Object.fromEntries(new FormData(e.target));
         body.plugging_enabled = e.target.querySelector('[name="plugging_enabled"]').checked ? '1' : '0';
-        await api('/admin/plugging/settings', { method: 'PUT', body });
+        await plugApiAction(() => api('/admin/plugging/settings', { method: 'PUT', body }));
         if (window.showToast) showToast('Plugging settings saved');
       });
 
@@ -469,7 +541,7 @@
         e.preventDefault();
         const label = e.target.querySelector('[name="proxy_label"]').value;
         const url = e.target.querySelector('[name="proxy_url"]').value;
-        await api('/admin/plugging/proxies', { method: 'POST', body: { label, url } });
+        await plugApiAction(() => api('/admin/plugging/proxies', { method: 'POST', body: { label, url } }));
         e.target.reset();
         if (window.showToast) showToast('Proxy added');
         loadPlatformPlugging();
@@ -479,54 +551,137 @@
         const name = prompt('Product name (e.g. Standard Plugging):');
         if (!name) return;
         const description = prompt('Description:', '') || '';
-        await api('/admin/plugging/products', { method: 'POST', body: { name, description } });
+        await plugApiAction(() => api('/admin/plugging/products', { method: 'POST', body: { name, description } }));
         loadPlatformPlugging();
       });
-    }
 
-    document.querySelectorAll('[data-add-variant]').forEach((b) => b.addEventListener('click', async () => {
-      const productId = Number(b.dataset.addVariant);
-      const duration = prompt('Duration label (e.g. 7 Days, 30 Days):', '30 Days');
-      if (!duration) return;
-      const name = prompt('Variant name:', duration) || duration;
-      const price = prompt('Price (₱):', '599');
-      if (price == null) return;
-      const maxSources = prompt('Max Telegram accounts (VIP=10, VIP+=999 unlimited):', '10') || '10';
-      const maxDestinations = prompt('Max groups per account (VIP=50, VIP+=999 unlimited):', '50') || '50';
-      const priority = confirm('Priority plan (VIP+)? OK = yes, Cancel = no');
-      await api('/admin/plugging/plans', {
-        method: 'POST',
-        body: {
-          productId,
-          name,
-          duration,
-          price: Number(price) || 0,
-          priceLabel: `₱${Number(price || 0).toLocaleString()}`,
-          maxSources: Number(maxSources) || 1,
-          maxDestinations: Number(maxDestinations) || 3,
-          priority
+      document.getElementById('plugging-products-list')?.addEventListener('click', async (e) => {
+        const addBtn = e.target.closest('[data-add-variant]');
+        if (addBtn) {
+          const productId = Number(addBtn.dataset.addVariant);
+          const duration = prompt('Duration label (e.g. 7 Days, 30 Days):', '30 Days');
+          if (!duration) return;
+          const name = prompt('Variant name:', duration) || duration;
+          const price = prompt('Price (₱):', '599');
+          if (price == null) return;
+          const maxSources = prompt('Max Telegram accounts (VIP=10, VIP+=999 unlimited):', '10') || '10';
+          const maxDestinations = prompt('Max groups per account (VIP=50, VIP+=999 unlimited):', '50') || '50';
+          const priority = confirm('Priority plan (VIP+)? OK = yes, Cancel = no');
+          await plugApiAction(() => api('/admin/plugging/plans', {
+            method: 'POST',
+            body: {
+              productId,
+              name,
+              duration,
+              price: Number(price) || 0,
+              priceLabel: `₱${Number(price || 0).toLocaleString()}`,
+              maxSources: Number(maxSources) || 1,
+              maxDestinations: Number(maxDestinations) || 3,
+              priority
+            }
+          }));
+          loadPlatformPlugging();
+          return;
+        }
+
+        const editProdBtn = e.target.closest('[data-edit-plug-product]');
+        if (editProdBtn) {
+          const id = editProdBtn.dataset.editPlugProduct;
+          togglePlugEdit(`[data-product-view="${id}"]`, `[data-product-edit="${id}"]`, true);
+          return;
+        }
+
+        const cancelProdBtn = e.target.closest('[data-cancel-plug-product]');
+        if (cancelProdBtn) {
+          const id = cancelProdBtn.dataset.cancelPlugProduct;
+          togglePlugEdit(`[data-product-view="${id}"]`, `[data-product-edit="${id}"]`, false);
+          return;
+        }
+
+        const saveProdBtn = e.target.closest('[data-save-plug-product]');
+        if (saveProdBtn) {
+          const id = saveProdBtn.dataset.savePlugProduct;
+          const form = document.querySelector(`[data-product-edit="${id}"]`);
+          if (!form) return;
+          const fd = new FormData(form);
+          await plugApiAction(() => api(`/admin/plugging/products/${id}`, {
+            method: 'PUT',
+            body: {
+              name: String(fd.get('name') || '').trim(),
+              description: String(fd.get('description') || '').trim(),
+              isEnabled: !!form.querySelector('[name="isEnabled"]')?.checked
+            }
+          }));
+          if (window.showToast) showToast('Product saved');
+          loadPlatformPlugging();
+          return;
+        }
+
+        const editPlanBtn = e.target.closest('[data-edit-plug-plan]');
+        if (editPlanBtn) {
+          const id = editPlanBtn.dataset.editPlugPlan;
+          togglePlugEdit(`[data-variant-view="${id}"]`, `[data-variant-edit="${id}"]`, true);
+          return;
+        }
+
+        const cancelPlanBtn = e.target.closest('[data-cancel-plug-plan]');
+        if (cancelPlanBtn) {
+          const id = cancelPlanBtn.dataset.cancelPlugPlan;
+          togglePlugEdit(`[data-variant-view="${id}"]`, `[data-variant-edit="${id}"]`, false);
+          return;
+        }
+
+        const savePlanBtn = e.target.closest('[data-save-plug-plan]');
+        if (savePlanBtn) {
+          const id = savePlanBtn.dataset.savePlugPlan;
+          const form = document.querySelector(`[data-variant-edit="${id}"]`);
+          if (!form) return;
+          const fd = new FormData(form);
+          const price = Number(fd.get('price')) || 0;
+          await plugApiAction(() => api(`/admin/plugging/plans/${id}`, {
+            method: 'PUT',
+            body: {
+              name: String(fd.get('name') || '').trim(),
+              duration: String(fd.get('duration') || '').trim(),
+              description: String(fd.get('description') || '').trim(),
+              price,
+              priceLabel: `₱${price.toLocaleString()}`,
+              maxSources: Number(fd.get('maxSources')) || 1,
+              maxDestinations: Number(fd.get('maxDestinations')) || 3,
+              sortOrder: Number(fd.get('sortOrder')) || 0,
+              priority: !!form.querySelector('[name="priority"]')?.checked,
+              isEnabled: !!form.querySelector('[name="isEnabled"]')?.checked
+            }
+          }));
+          if (window.showToast) showToast('Variant saved');
+          loadPlatformPlugging();
+          return;
+        }
+
+        const delProdBtn = e.target.closest('[data-del-plug-product]');
+        if (delProdBtn) {
+          if (!confirm('Delete this product and all its variants?')) return;
+          const r = await plugApiAction(() => api(`/admin/plugging/products/${delProdBtn.dataset.delPlugProduct}`, { method: 'DELETE' }));
+          if (window.showToast) showToast(r.message || (r.disabled ? 'Product disabled (has orders)' : 'Product deleted'));
+          loadPlatformPlugging();
+          return;
+        }
+
+        const delPlanBtn = e.target.closest('[data-del-plug-plan]');
+        if (delPlanBtn) {
+          if (!confirm('Delete this variant?')) return;
+          const r = await plugApiAction(() => api(`/admin/plugging/plans/${delPlanBtn.dataset.delPlugPlan}`, { method: 'DELETE' }));
+          if (window.showToast) showToast(r.message || (r.disabled ? 'Variant disabled (has orders)' : 'Variant deleted'));
+          loadPlatformPlugging();
         }
       });
-      loadPlatformPlugging();
-    }));
-
-    document.querySelectorAll('[data-del-plug-product]').forEach((b) => b.addEventListener('click', async () => {
-      if (!confirm('Delete this product and all its variants?')) return;
-      await api(`/admin/plugging/products/${b.dataset.delPlugProduct}`, { method: 'DELETE' });
-      loadPlatformPlugging();
-    }));
-
-    document.querySelectorAll('[data-del-plug-plan]').forEach((b) => b.addEventListener('click', async () => {
-      if (!confirm('Delete plan?')) return;
-      await api(`/admin/plugging/plans/${b.dataset.delPlugPlan}`, { method: 'DELETE' });
-      loadPlatformPlugging();
-    }));
+    }
 
     document.querySelectorAll('[data-save-plug-req]').forEach((b) => b.addEventListener('click', async () => {
       const id = b.dataset.savePlugReq;
       const status = document.querySelector(`[data-plug-status="${id}"]`)?.value;
       const adminNotes = document.querySelector(`[data-plug-notes="${id}"]`)?.value;
-      await api(`/admin/plugging/requests/${id}`, { method: 'PUT', body: { status, adminNotes } });
+      await plugApiAction(() => api(`/admin/plugging/requests/${id}`, { method: 'PUT', body: { status, adminNotes } }));
       if (window.showToast) showToast('Request updated');
       loadPlatformPlugging();
     }));

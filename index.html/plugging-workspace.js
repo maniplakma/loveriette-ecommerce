@@ -195,6 +195,7 @@ function showWorkspace() {
   }
 
   renderAccountList();
+  renderBatchUpgradeNotice();
   renderJoinGroupsPanel();
   renderAutoStartPanel();
   if (selectedId) renderAccountDetail(selectedId);
@@ -288,9 +289,32 @@ function renderJoinGroupList(el, items, { emptyText, showErrors = false } = {}) 
   el.innerHTML = items.map((item) => `<li>${esc(item)}</li>`).join('');
 }
 
+function renderBatchUpgradeNotice() {
+  let el = document.getElementById('plug-batch-upgrade');
+  if (!el) {
+    el = document.createElement('p');
+    el.id = 'plug-batch-upgrade';
+    el.className = 'plug-field-hint';
+    document.getElementById('plan-info')?.after(el);
+  }
+  if (!el) return;
+  if (workspace?.hasBatchWorkspace) {
+    el.hidden = true;
+    el.textContent = '';
+    return;
+  }
+  el.hidden = false;
+  el.textContent = 'Auto join groups and Start all are included on VIP+ and Master workspace only.';
+}
+
 function renderJoinGroupsPanel() {
   const panel = document.getElementById('plug-join-groups-panel');
   if (!panel || !workspace) return;
+
+  if (!workspace.hasBatchWorkspace) {
+    panel.hidden = true;
+    return;
+  }
 
   const authedCount = (workspace.accounts || []).filter((a) => a.authStatus === 'authenticated').length;
   panel.hidden = !(workspace.accounts || []).length;
@@ -477,6 +501,11 @@ function setAutoStartMessage(text, isError = false) {
 function renderAutoStartPanel() {
   const panel = document.getElementById('plug-autostart-panel');
   if (!panel || !workspace) return;
+
+  if (!workspace.hasBatchWorkspace) {
+    panel.hidden = true;
+    return;
+  }
 
   const authedCount = (workspace.accounts || []).filter((a) => a.authStatus === 'authenticated').length;
   const readyCount = (workspace.accounts || []).filter((a) =>

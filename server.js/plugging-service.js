@@ -34,6 +34,7 @@ const {
   computeExpiresAtFromDuration,
   isOrderExpired,
   formatLimitLabel,
+  hasBatchWorkspace,
   ORDER_SELECT
 } = require('./plugging-limits');
 
@@ -132,7 +133,15 @@ function mountPluggingService(app, db, deps) {
   }
 
   function genAccessKey() {
-    return `PLG-${crypto.randomBytes(4).toString('hex').toUpperCase()}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+    const masterKey = getPlugMasterKey();
+    for (let attempt = 0; attempt < 24; attempt += 1) {
+      const key = `PLG-${crypto.randomBytes(4).toString('hex').toUpperCase()}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+      if (key.startsWith('PLG-MASTER')) continue;
+      if (masterKey && key === masterKey) continue;
+      const taken = db.prepare('SELECT 1 FROM plugging_orders WHERE access_key = ?').get(key);
+      if (!taken) return key;
+    }
+    throw new Error('Could not generate a unique access key — try again');
   }
 
   function normalizePhone(phone) {
@@ -209,6 +218,15 @@ function mountPluggingService(app, db, deps) {
       return res.status(401).json({ error: 'Invalid, expired, or inactive access key. Enter your key at /plugging/workspace' });
     }
     req.plugOrder = order;
+    next();
+  }
+
+  function requireBatchWorkspace(req, res, next) {
+    if (!hasBatchWorkspace(req.plugOrder)) {
+      return res.status(403).json({
+        error: 'Auto join and Start all are available on VIP+ and Master workspace only.'
+      });
+    }
     next();
   }
 
@@ -446,6 +464,7 @@ function mountPluggingService(app, db, deps) {
       priority: !!req.plugOrder.planPriority,
       expiresAt: req.plugOrder.expiresAt || null,
       isMaster: !!req.plugOrder.isMaster,
+      hasBatchWorkspace: hasBatchWorkspace(req.plugOrder),
       loyalty,
       autoStart: readAutoStartSettings(req.plugOrder),
       autoStartRunning: isStaggeredStartRunning(req.plugOrder.id),
@@ -559,7 +578,7 @@ function mountPluggingService(app, db, deps) {
     res.json({ ok: true, runnerStatus: 'stopped' });
   });
 
-  app.put('/api/plugging/workspace/auto-start', requirePlugWorkspace, (req, res) => {
+  app.put('/api/plugging/workspace/auto-start', requirePlugWorkspace, requireBatchWorkspace, (req, res) => {
     const body = req.body || {};
     const enabled = body.enabled != null ? (body.enabled ? 1 : 0) : undefined;
     const staggerEnabled = body.staggerEnabled != null ? (body.staggerEnabled ? 1 : 0) : undefined;
@@ -588,7 +607,7 @@ function mountPluggingService(app, db, deps) {
     });
   });
 
-  app.post('/api/plugging/workspace/auto-start/run', requirePlugWorkspace, async (req, res) => {
+  app.post('/api/plugging/workspace/auto-start/run', requirePlugWorkspace, requireBatchWorkspace, async (req, res) => {
     const order = db.prepare('SELECT * FROM plugging_orders WHERE id = ?').get(req.plugOrder.id);
     if (!order) return res.status(404).json({ error: 'Order not found' });
 
@@ -613,7 +632,7 @@ function mountPluggingService(app, db, deps) {
     }
   });
 
-  app.post('/api/plugging/workspace/auto-start/stop', requirePlugWorkspace, (req, res) => {
+  app.post('/api/plugging/workspace/auto-start/stop', requirePlugWorkspace, requireBatchWorkspace, (req, res) => {
     const wasRunning = stopStaggeredStart(req.plugOrder.id);
     res.json({
       ok: true,
@@ -640,7 +659,7 @@ function mountPluggingService(app, db, deps) {
     res.json({ ok: true, stopped, accountCount: accounts.length });
   });
 
-  app.put('/api/plugging/workspace/join-groups', requirePlugWorkspace, (req, res) => {
+  app.put('/api/plugging/workspace/join-groups', requirePlugWorkspace, requireBatchWorkspace, (req, res) => {
     const order = db.prepare('SELECT * FROM plugging_orders WHERE id = ?').get(req.plugOrder.id);
     if (!order) return res.status(404).json({ error: 'Order not found' });
 
@@ -680,7 +699,7 @@ function mountPluggingService(app, db, deps) {
     });
   });
 
-  app.post('/api/plugging/workspace/join-groups/run', requirePlugWorkspace, async (req, res) => {
+  app.post('/api/plugging/workspace/join-groups/run', requirePlugWorkspace, requireBatchWorkspace, async (req, res) => {
     const order = db.prepare('SELECT * FROM plugging_orders WHERE id = ?').get(req.plugOrder.id);
     if (!order) return res.status(404).json({ error: 'Order not found' });
 
@@ -698,7 +717,7 @@ function mountPluggingService(app, db, deps) {
     }
   });
 
-  app.post('/api/plugging/workspace/join-groups/stop', requirePlugWorkspace, (req, res) => {
+  app.post('/api/plugging/workspace/join-groups/stop', requirePlugWorkspace, requireBatchWorkspace, (req, res) => {
     const order = db.prepare('SELECT * FROM plugging_orders WHERE id = ?').get(req.plugOrder.id);
     if (!order) return res.status(404).json({ error: 'Order not found' });
     const wasRunning = stopJoinBatch(db, order.id);
@@ -714,7 +733,7 @@ function mountPluggingService(app, db, deps) {
     });
   });
 
-  app.get('/api/plugging/workspace/join-groups/status', requirePlugWorkspace, (req, res) => {
+  app.get('/api/plugging/workspace/join-groups/status', requirePlugWorkspace, requireBatchWorkspace, (req, res) => {
     const order = db.prepare('SELECT * FROM plugging_orders WHERE id = ?').get(req.plugOrder.id);
     if (!order) return res.status(404).json({ error: 'Order not found' });
     res.json(readJoinGroupsPayload(order));
@@ -855,6 +874,9 @@ function mountPluggingService(app, db, deps) {
 
     if (status === 'approved' && order.status !== 'approved') {
       accessKey = genAccessKey();
+      if (isMasterAccessKey(accessKey)) {
+        return res.status(500).json({ error: 'Could not issue access key — regenerate and try again' });
+      }
       const plan = db.prepare('SELECT * FROM plugging_plans WHERE id = ?').get(order.plan_id);
       const expiresAt = computeExpiresAtFromDuration(plan?.duration, new Date());
       db.prepare(`

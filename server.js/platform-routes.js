@@ -976,10 +976,44 @@ function mountPlatformRoutes(app, db, deps) {
     res.json({ ok: true });
   });
 
+  function countPlugOrdersForPlan(planId) {
+    return db.prepare('SELECT COUNT(*) AS c FROM plugging_orders WHERE plan_id = ?').get(planId).c;
+  }
+
+  function countPlugOrdersForProduct(productId) {
+    return db.prepare(`
+      SELECT COUNT(*) AS c FROM plugging_orders po
+      INNER JOIN plugging_plans pp ON pp.id = po.plan_id
+      WHERE pp.product_id = ?
+    `).get(productId).c;
+  }
+
   app.delete('/admin/plugging/products/:id', requireAdmin, (req, res) => {
-    db.prepare('DELETE FROM plugging_plans WHERE product_id = ?').run(req.params.id);
-    db.prepare('DELETE FROM plugging_products WHERE id = ?').run(req.params.id);
-    res.json({ ok: true });
+    const productId = Number(req.params.id);
+    const product = db.prepare('SELECT id FROM plugging_products WHERE id = ?').get(productId);
+    if (!product) return res.status(404).json({ error: 'Product not found' });
+
+    const orderCount = countPlugOrdersForProduct(productId);
+    if (orderCount > 0) {
+      db.prepare('UPDATE plugging_products SET is_enabled = 0 WHERE id = ?').run(productId);
+      db.prepare('UPDATE plugging_plans SET is_enabled = 0 WHERE product_id = ?').run(productId);
+      return res.json({
+        ok: true,
+        disabled: true,
+        message: `Product has ${orderCount} order(s) linked to its variants — disabled instead of deleted.`
+      });
+    }
+
+    try {
+      db.exec('BEGIN');
+      db.prepare('DELETE FROM plugging_plans WHERE product_id = ?').run(productId);
+      db.prepare('DELETE FROM plugging_products WHERE id = ?').run(productId);
+      db.exec('COMMIT');
+      res.json({ ok: true, deleted: true });
+    } catch (err) {
+      try { db.exec('ROLLBACK'); } catch (_) { /* ignore */ }
+      res.status(409).json({ error: err.message || 'Could not delete product' });
+    }
   });
 
   app.post('/admin/plugging/plans', requireAdmin, (req, res) => {
@@ -1013,8 +1047,26 @@ function mountPlatformRoutes(app, db, deps) {
   });
 
   app.delete('/admin/plugging/plans/:id', requireAdmin, (req, res) => {
-    db.prepare('DELETE FROM plugging_plans WHERE id = ?').run(req.params.id);
-    res.json({ ok: true });
+    const planId = Number(req.params.id);
+    const plan = db.prepare('SELECT id FROM plugging_plans WHERE id = ?').get(planId);
+    if (!plan) return res.status(404).json({ error: 'Variant not found' });
+
+    const orderCount = countPlugOrdersForPlan(planId);
+    if (orderCount > 0) {
+      db.prepare('UPDATE plugging_plans SET is_enabled = 0 WHERE id = ?').run(planId);
+      return res.json({
+        ok: true,
+        disabled: true,
+        message: `Variant has ${orderCount} order(s) — disabled instead of deleted.`
+      });
+    }
+
+    try {
+      db.prepare('DELETE FROM plugging_plans WHERE id = ?').run(planId);
+      res.json({ ok: true, deleted: true });
+    } catch (err) {
+      res.status(409).json({ error: err.message || 'Could not delete variant' });
+    }
   });
 
   app.put('/admin/plugging/requests/:id', requireAdmin, (req, res) => {

@@ -68,6 +68,13 @@ function formatLimitLabel(value) {
   return isUnlimited(value) ? 'Unlimited' : String(normalizeLimit(value));
 }
 
+/** VIP+ (priority) and master workspace — auto join + start all batch tools. */
+function hasBatchWorkspace(order) {
+  const o = normalizePlugOrder(order);
+  if (!o) return false;
+  return !!(o.isMaster || Number(o.planPriority) >= 1);
+}
+
 const ORDER_SELECT = `
   SELECT po.*,
     pp.name AS plan_name,
@@ -87,5 +94,6 @@ module.exports = {
   computeExpiresAtFromDuration,
   isOrderExpired,
   formatLimitLabel,
+  hasBatchWorkspace,
   ORDER_SELECT
 };
