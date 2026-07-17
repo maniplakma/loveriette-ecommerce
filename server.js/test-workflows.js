@@ -769,10 +769,18 @@ async function runInventoryCheck(adminCookie) {
     variant_id: variant.variantId,
     email: 'stock@test.local',
     password: 'pass123',
-    profiles: ['Profile 1']
+    profiles: ['Profile 1'],
+    emailfetcher_access_code: 'EF-TEST-CODE'
   }, adminCookie);
   if (add.status === 201 && add.json.created >= 1) ok('POST /admin/inventory');
   else { fail('POST /admin/inventory', add.status); return; }
+
+  const stockRow = db.prepare(`
+    SELECT emailfetcher_access_code FROM stock_items
+    WHERE variant_id = ? ORDER BY id DESC LIMIT 1
+  `).get(variant.variantId);
+  if (stockRow?.emailfetcher_access_code === 'EF-TEST-CODE') ok('inventory stores emailfetcher access code');
+  else fail('inventory emailfetcher access code', stockRow?.emailfetcher_access_code || 'missing');
 
   const after = await request('GET', `/products/${variant.productId}`, null, adminCookie);
   const vAfter = (after.json?.variants || []).find((v) => v.id === variant.variantId);

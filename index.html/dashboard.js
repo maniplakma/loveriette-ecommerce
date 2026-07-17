@@ -850,6 +850,7 @@ function renderPurchaseAccountsHtml(data) {
           ${credField('Email', acc.email)}
           ${credField('Password', acc.password)}
           ${credField('Profile', acc.profile, false)}
+          ${acc.emailfetcherAccessCode ? credField('Email Fetcher code', acc.emailfetcherAccessCode) : ''}
         </div>
         ${accessHtml}
       </section>
@@ -1425,6 +1426,45 @@ function renderEmailAccountSelect() {
   }
   const noAccountsEl = document.getElementById('email-fetcher-no-accounts');
   if (noAccountsEl) noAccountsEl.hidden = purchaseAccounts.length > 0;
+  updateTempEmailFetcherCode();
+}
+
+function updateTempEmailFetcherCode() {
+  const select = document.getElementById('email-account-select');
+  const codeEl = document.getElementById('temp-email-fetcher-code');
+  const copyBtn = document.getElementById('temp-email-fetcher-copy');
+  const hintEl = document.getElementById('temp-email-fetcher-hint');
+  if (!codeEl) return;
+
+  const stockItemId = Number(select?.value);
+  const account = purchaseAccounts.find((a) => Number(a.id) === stockItemId);
+  const code = String(account?.emailfetcherAccessCode || '').trim();
+
+  if (!stockItemId) {
+    codeEl.textContent = '—';
+    if (copyBtn) copyBtn.hidden = true;
+    if (hintEl) {
+      hintEl.hidden = false;
+      hintEl.textContent = purchaseAccounts.length
+        ? 'Select an account below to show its access code.'
+        : 'No purchased accounts yet. Complete a purchase and wait for admin approval.';
+    }
+    return;
+  }
+
+  if (!code) {
+    codeEl.textContent = '—';
+    if (copyBtn) copyBtn.hidden = true;
+    if (hintEl) {
+      hintEl.hidden = false;
+      hintEl.textContent = 'No access code set for this account. Contact support if you need one.';
+    }
+    return;
+  }
+
+  codeEl.textContent = code;
+  if (copyBtn) copyBtn.hidden = false;
+  if (hintEl) hintEl.hidden = true;
 }
 
 function resolveEmailLinkHref(rawHref) {
@@ -1853,6 +1893,17 @@ function bindNav() {
   document.getElementById('email-fetch-btn')?.addEventListener('click', fetchEmailForAccount);
   document.getElementById('email-account-select')?.addEventListener('change', () => {
     resetEmailInboxView();
+    updateTempEmailFetcherCode();
+  });
+  document.getElementById('temp-email-fetcher-copy')?.addEventListener('click', async () => {
+    const code = document.getElementById('temp-email-fetcher-code')?.textContent?.trim();
+    if (!code || code === '—') return;
+    try {
+      await navigator.clipboard.writeText(code);
+      showToast('Access code copied');
+    } catch {
+      showToast('Could not copy', 'info');
+    }
   });
   document.getElementById('email-body')?.addEventListener('click', (e) => {
     const link = e.target.closest('a[href]');

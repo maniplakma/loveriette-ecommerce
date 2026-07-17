@@ -1167,6 +1167,7 @@ function getUserPurchasedAccounts(userId, email) {
   const emailLower = String(email || '').toLowerCase();
   const rows = db.prepare(`
     SELECT s.id, s.service_name AS serviceName, s.email, s.password, s.profiles, s.rules,
+           s.emailfetcher_access_code AS emailfetcherAccessCode,
            s.valid_start AS validStart, s.valid_end AS validEnd,
            o.order_number AS orderNumber, o.order_seq AS orderId, f.created_at AS deliveredAt,
            p.name AS productName, v.name AS variantName,
@@ -1193,6 +1194,7 @@ function getUserPurchasedAccounts(userId, email) {
       password: r.password,
       profiles,
       emailAccess,
+      emailfetcherAccessCode: String(r.emailfetcherAccessCode || '').trim(),
       rules: r.rules || '',
       validStart: r.validStart,
       validEnd: r.validEnd,
@@ -1237,6 +1239,7 @@ function getOrderCredentialsForUser(orderRef, userId, email) {
   const accounts = isPaid ? db.prepare(`
     SELECT f.id AS fulfillmentId, f.order_item_id AS orderItemId,
            s.id AS stockItemId, s.service_name AS serviceName, s.email, s.password, s.profiles, s.rules,
+           s.emailfetcher_access_code AS emailfetcherAccessCode,
            s.product_id AS productId, s.variant_id AS variantId, s.credential_report_status AS credentialReportStatus,
            p.name AS productName, v.name AS variantName, v.rules AS variantRules,
            f.created_at AS deliveredAt,
@@ -1264,6 +1267,7 @@ function getOrderCredentialsForUser(orderRef, userId, email) {
       profileEntries: profileState,
       profile: profiles.length ? profiles.join(', ') : '—',
       emailAccess,
+      emailfetcherAccessCode: String(r.emailfetcherAccessCode || '').trim(),
       credentialReportStatus: r.credentialReportStatus || 'ok',
       rules: String(r.rules || r.variantRules || '').trim(),
       serviceName: r.serviceName || `${r.productName || 'Account'}${r.variantName ? ` — ${r.variantName}` : ''}`,
@@ -5001,7 +5005,7 @@ app.get('/admin/inventory/sold', requireAdmin, (req, res) => {
 });
 
 app.post('/admin/inventory', requireAdmin, (req, res) => {
-  const { variant_id, service_name, email, password, profiles, cost, price, valid_start, valid_end, rules } = req.body;
+  const { variant_id, service_name, email, password, profiles, cost, price, valid_start, valid_end, rules, emailfetcher_access_code } = req.body;
   if (!variant_id) return res.status(400).json({ error: 'Please select a variant' });
   const variant = db.prepare('SELECT v.*, p.name AS product_name FROM product_variants v JOIN products p ON p.id = v.product_id WHERE v.id = ?').get(Number(variant_id));
   if (!variant) return res.status(404).json({ error: 'Variant not found' });
@@ -5013,8 +5017,8 @@ app.post('/admin/inventory', requireAdmin, (req, res) => {
   const svc = service_name || `${variant.product_name} ${variant.name}`.trim();
   const stockRules = rules != null ? String(rules).trim() : String(variant.rules || '').trim();
   const insert = db.prepare(`
-    INSERT INTO stock_items (product_id, variant_id, service_name, email, password, profiles, cost, price, valid_start, valid_end, rules)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO stock_items (product_id, variant_id, service_name, email, password, profiles, cost, price, valid_start, valid_end, rules, emailfetcher_access_code)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const created = [];
   db.exec('BEGIN');
@@ -5026,7 +5030,8 @@ app.post('/admin/inventory', requireAdmin, (req, res) => {
         JSON.stringify(slot ? [slot] : []),
         Number(cost) || 0, Number(price) || 0,
         valid_start || null, valid_end || null,
-        stockRules
+        stockRules,
+        String(emailfetcher_access_code || '').trim()
       );
       const stockId = r.lastInsertRowid;
       upsertEmailAccess(stockId, {
@@ -5086,9 +5091,9 @@ app.put('/admin/inventory/:id', requireAdmin, (req, res) => {
   const id = Number(req.params.id);
   const existing = db.prepare('SELECT * FROM stock_items WHERE id = ?').get(id);
   if (!existing) return res.status(404).json({ error: 'Stock item not found' });
-  const { service_name, email, password, profiles, cost, price, valid_start, valid_end, rules } = req.body;
+  const { service_name, email, password, profiles, cost, price, valid_start, valid_end, rules, emailfetcher_access_code } = req.body;
   db.prepare(`
-    UPDATE stock_items SET service_name=?, email=?, password=?, profiles=?, cost=?, price=?, valid_start=?, valid_end=?, rules=?
+    UPDATE stock_items SET service_name=?, email=?, password=?, profiles=?, cost=?, price=?, valid_start=?, valid_end=?, rules=?, emailfetcher_access_code=?
     WHERE id = ?
   `).run(
     service_name ?? existing.service_name,
@@ -5100,6 +5105,7 @@ app.put('/admin/inventory/:id', requireAdmin, (req, res) => {
     valid_start ?? existing.valid_start,
     valid_end ?? existing.valid_end,
     rules != null ? String(rules).trim() : existing.rules,
+    emailfetcher_access_code != null ? String(emailfetcher_access_code).trim() : existing.emailfetcher_access_code,
     id
   );
   const updated = db.prepare('SELECT * FROM stock_items WHERE id = ?').get(id);

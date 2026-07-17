@@ -339,6 +339,76 @@
   margin-top: 0.75rem;
 }
 
+.buyer-temp-email-fetcher {
+  margin-bottom: 1rem;
+}
+
+.buyer-temp-email-fetcher h2 {
+  margin: 0 0 0.35rem;
+  font-family: 'Syne', system-ui, sans-serif;
+  font-size: 1rem;
+  text-transform: lowercase;
+  color: #fff0f0;
+}
+
+.buyer-temp-email-desc {
+  margin: 0 0 0.85rem;
+  font-size: 0.84rem;
+  line-height: 1.5;
+  color: #c89898;
+}
+
+.buyer-temp-email-link-wrap,
+.buyer-temp-email-code-wrap {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+}
+
+.buyer-temp-email-link {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 0.55rem 0.8rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #ffe4e4;
+  text-decoration: none;
+  background: rgba(229, 9, 20, 0.18);
+  border: 1px solid rgba(255, 140, 140, 0.28);
+  border-radius: 10px;
+}
+
+.buyer-temp-email-link:hover {
+  color: #fff;
+  border-color: rgba(255, 140, 140, 0.45);
+}
+
+.buyer-temp-email-code-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.buyer-temp-email-code {
+  display: inline-block;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.95rem;
+  letter-spacing: 0.04em;
+  color: #fff0f0;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 140, 140, 0.2);
+  border-radius: 10px;
+  word-break: break-all;
+}
+
+.buyer-temp-email-hint {
+  margin: 0;
+  font-size: 0.82rem;
+  color: #a87878;
+}
+
 @media (max-width: 640px) {
   .buyer-inbox-toolbar {
     flex-direction: column;
