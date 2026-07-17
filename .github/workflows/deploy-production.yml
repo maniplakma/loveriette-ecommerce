@@ -25,8 +25,8 @@ jobs:
 
       - name: Deploy via SSH
         env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_HOST: '161.97.78.192'
+          VPS_USER: 'root'
           VPS_PASSWORD: ${{ secrets.VPS_PASSWORD }}
           APP: /var/www/ecommerce
           BRANCH: main
