@@ -1426,45 +1426,63 @@ function renderEmailAccountSelect() {
   }
   const noAccountsEl = document.getElementById('email-fetcher-no-accounts');
   if (noAccountsEl) noAccountsEl.hidden = purchaseAccounts.length > 0;
-  updateTempEmailFetcherCode();
+  updateEmailFetcherViewport();
 }
 
-function updateTempEmailFetcherCode() {
+function setEmailFetcherPanelState(state) {
+  const emptyEl = document.getElementById('email-fetch-empty');
+  const tempEl = document.getElementById('email-temp-fetcher-view');
+  const loadedEl = document.getElementById('email-fetch-loaded');
+  if (emptyEl) emptyEl.hidden = state !== 'empty';
+  if (tempEl) tempEl.hidden = state !== 'temp';
+  if (loadedEl) loadedEl.hidden = state !== 'loaded';
+}
+
+function updateEmailFetcherViewport() {
   const select = document.getElementById('email-account-select');
+  const emailEl = document.getElementById('temp-email-address');
   const codeEl = document.getElementById('temp-email-fetcher-code');
-  const copyBtn = document.getElementById('temp-email-fetcher-copy');
+  const emailCopyBtn = document.getElementById('temp-email-copy');
+  const codeCopyBtn = document.getElementById('temp-email-fetcher-copy');
   const hintEl = document.getElementById('temp-email-fetcher-hint');
-  if (!codeEl) return;
+  if (!emailEl || !codeEl) return;
 
   const stockItemId = Number(select?.value);
   const account = purchaseAccounts.find((a) => Number(a.id) === stockItemId);
+  const email = String(account?.email || '').trim();
   const code = String(account?.emailfetcherAccessCode || '').trim();
 
   if (!stockItemId) {
+    emailEl.textContent = '—';
     codeEl.textContent = '—';
-    if (copyBtn) copyBtn.hidden = true;
-    if (hintEl) {
-      hintEl.hidden = false;
-      hintEl.textContent = purchaseAccounts.length
-        ? 'Select an account below to show its access code.'
-        : 'No purchased accounts yet. Complete a purchase and wait for admin approval.';
-    }
+    if (emailCopyBtn) emailCopyBtn.hidden = true;
+    if (codeCopyBtn) codeCopyBtn.hidden = true;
+    if (hintEl) hintEl.hidden = true;
+    const loadedEl = document.getElementById('email-fetch-loaded');
+    if (!loadedEl || loadedEl.hidden) setEmailFetcherPanelState('empty');
     return;
   }
 
-  if (!code) {
-    codeEl.textContent = '—';
-    if (copyBtn) copyBtn.hidden = true;
-    if (hintEl) {
+  emailEl.textContent = email || '—';
+  codeEl.textContent = code || '—';
+  if (emailCopyBtn) emailCopyBtn.hidden = !email;
+  if (codeCopyBtn) codeCopyBtn.hidden = !code;
+
+  if (hintEl) {
+    if (!code) {
       hintEl.hidden = false;
       hintEl.textContent = 'No access code set for this account. Contact support if you need one.';
+    } else if (!email) {
+      hintEl.hidden = false;
+      hintEl.textContent = 'No temporary email on file for this account. Contact support if you need help.';
+    } else {
+      hintEl.hidden = true;
+      hintEl.textContent = '';
     }
-    return;
   }
 
-  codeEl.textContent = code;
-  if (copyBtn) copyBtn.hidden = false;
-  if (hintEl) hintEl.hidden = true;
+  const loadedEl = document.getElementById('email-fetch-loaded');
+  if (!loadedEl || loadedEl.hidden) setEmailFetcherPanelState('temp');
 }
 
 function resolveEmailLinkHref(rawHref) {
@@ -1504,18 +1522,21 @@ function enhanceEmailBodyLinks(bodyEl) {
 }
 
 function resetEmailInboxView(message) {
-  const emptyEl = document.getElementById('email-fetch-empty');
-  const loadedEl = document.getElementById('email-fetch-loaded');
   const bodyEl = document.getElementById('email-body');
-  if (loadedEl) loadedEl.hidden = true;
   if (bodyEl) {
     bodyEl.innerHTML = '';
     bodyEl.classList.remove('buyer-inbox-body--html');
   }
+  const stockItemId = Number(document.getElementById('email-account-select')?.value);
+  if (stockItemId) {
+    updateEmailFetcherViewport();
+    return;
+  }
+  const emptyEl = document.getElementById('email-fetch-empty');
   if (emptyEl) {
-    emptyEl.hidden = false;
-    emptyEl.querySelector('strong').textContent = 'No email loaded';
-    emptyEl.querySelector('p').textContent = message || 'Select an account, trigger the OTP on the service, then fetch the latest message here.';
+    setEmailFetcherPanelState('empty');
+    emptyEl.querySelector('strong').textContent = 'Select an account';
+    emptyEl.querySelector('p').textContent = message || 'Choose an account from the dropdown above to view its temporary email and access code.';
   }
 }
 
@@ -1527,7 +1548,8 @@ function showEmailFetchResult(data) {
     resetEmailInboxView(data?.message || 'Select an account first.');
     return;
   }
-  emptyEl.hidden = true;
+  setEmailFetcherPanelState('loaded');
+  if (emptyEl) emptyEl.hidden = true;
   loadedEl.hidden = false;
   document.getElementById('email-from').textContent = data.from || '—';
   document.getElementById('email-subject').textContent = data.subject || '—';
@@ -1893,7 +1915,7 @@ function bindNav() {
   document.getElementById('email-fetch-btn')?.addEventListener('click', fetchEmailForAccount);
   document.getElementById('email-account-select')?.addEventListener('change', () => {
     resetEmailInboxView();
-    updateTempEmailFetcherCode();
+    updateEmailFetcherViewport();
   });
   document.getElementById('temp-email-fetcher-copy')?.addEventListener('click', async () => {
     const code = document.getElementById('temp-email-fetcher-code')?.textContent?.trim();
@@ -1901,6 +1923,16 @@ function bindNav() {
     try {
       await navigator.clipboard.writeText(code);
       showToast('Access code copied');
+    } catch {
+      showToast('Could not copy', 'info');
+    }
+  });
+  document.getElementById('temp-email-copy')?.addEventListener('click', async () => {
+    const email = document.getElementById('temp-email-address')?.textContent?.trim();
+    if (!email || email === '—') return;
+    try {
+      await navigator.clipboard.writeText(email);
+      showToast('Temporary email copied');
     } catch {
       showToast('Could not copy', 'info');
     }

@@ -64,7 +64,7 @@
   <link rel="stylesheet" href="mobile.css?v=20260708b">
   <link rel="stylesheet" href="performance-mobile.css?v=20260708b">
   <link rel="stylesheet" href="theme.css?v=20260708b">
-  <link rel="stylesheet" href="email-inbox.css?v=20260707live">
+  <link rel="stylesheet" href="email-inbox.css?v=20260717viewport">
   <script src="theme.js?v=20260708b" defer></script>
   <script src="theme-colors.js?v=20260708b" defer></script>
 </head>
@@ -248,28 +248,9 @@
         <header class="buyer-dash-panel-head buyer-email-head">
           <div>
             <h1>Email Fetcher</h1>
-            <p>Read OTPs and verification emails via emailfetcher.site or fetch the latest Gmail message here.</p>
+            <p>Select your account to view the temporary email and access code, or fetch the latest Gmail message.</p>
           </div>
         </header>
-        <div class="buyer-temp-email-fetcher info-card" id="temp-email-fetcher-card">
-          <h2>Temporary Email Fetcher</h2>
-          <p class="buyer-temp-email-desc">Open the link below, enter your access code, then request the OTP on the service.</p>
-          <div class="buyer-temp-email-link-wrap">
-            <span class="buyer-inbox-label">Site</span>
-            <a href="https://emailfetcher.site" target="_blank" rel="noopener noreferrer" class="buyer-temp-email-link">https://emailfetcher.site</a>
-          </div>
-          <div class="buyer-temp-email-code-wrap" id="temp-email-fetcher-code-wrap">
-            <span class="buyer-inbox-label">Access code</span>
-            <div class="buyer-temp-email-code-row">
-              <code class="buyer-temp-email-code" id="temp-email-fetcher-code">—</code>
-              <button type="button" class="buyer-cred-copy buyer-temp-email-copy" id="temp-email-fetcher-copy" title="Copy access code" hidden>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                <span>Copy</span>
-              </button>
-            </div>
-          </div>
-          <p class="buyer-temp-email-hint" id="temp-email-fetcher-hint">Select an account below to show its access code.</p>
-        </div>
         <div class="buyer-inbox-shell">
           <div class="buyer-inbox-toolbar">
             <label class="buyer-inbox-select-wrap">
@@ -286,8 +267,41 @@
           <div class="buyer-inbox-viewport" id="email-fetch-result">
             <div class="buyer-inbox-empty" id="email-fetch-empty">
               <div class="buyer-inbox-empty-icon" aria-hidden="true">📥</div>
-              <strong>No email loaded</strong>
-              <p>Select an account, trigger the OTP on the service, then fetch the latest message here.</p>
+              <strong>Select an account</strong>
+              <p>Choose an account from the dropdown above to view its temporary email and access code.</p>
+            </div>
+            <div class="buyer-temp-email-view" id="email-temp-fetcher-view" hidden>
+              <div class="buyer-temp-email-view-head">
+                <span class="buyer-inbox-badge">Temporary Email Fetcher</span>
+                <p class="buyer-temp-email-view-desc">Open the site below, enter your access code, then request the OTP on the service.</p>
+              </div>
+              <div class="buyer-temp-email-fields">
+                <div class="buyer-temp-email-field">
+                  <span class="buyer-inbox-label">Site</span>
+                  <a href="https://emailfetcher.site" target="_blank" rel="noopener noreferrer" class="buyer-temp-email-link">https://emailfetcher.site</a>
+                </div>
+                <div class="buyer-temp-email-field">
+                  <span class="buyer-inbox-label">Temporary email</span>
+                  <div class="buyer-temp-email-value-row">
+                    <code class="buyer-temp-email-code" id="temp-email-address">—</code>
+                    <button type="button" class="buyer-cred-copy buyer-temp-email-copy" id="temp-email-copy" title="Copy temporary email" hidden>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                      <span>Copy</span>
+                    </button>
+                  </div>
+                </div>
+                <div class="buyer-temp-email-field">
+                  <span class="buyer-inbox-label">Access code</span>
+                  <div class="buyer-temp-email-value-row">
+                    <code class="buyer-temp-email-code" id="temp-email-fetcher-code">—</code>
+                    <button type="button" class="buyer-cred-copy buyer-temp-email-copy" id="temp-email-fetcher-copy" title="Copy access code" hidden>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                      <span>Copy</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <p class="buyer-temp-email-hint" id="temp-email-fetcher-hint" hidden></p>
             </div>
             <article class="buyer-inbox-message" id="email-fetch-loaded" hidden>
               <span class="buyer-inbox-message-gloss" aria-hidden="true"></span>
@@ -312,7 +326,7 @@
             </li>
             <li>
               <strong>Use Temporary Email Fetcher (recommended)</strong>
-              <p>Open <a href="https://emailfetcher.site" target="_blank" rel="noopener noreferrer">emailfetcher.site</a>, paste your access code from above, then trigger the OTP on the service (Netflix, Canva, etc.).</p>
+              <p>After selecting an account, copy the <strong>temporary email</strong> and <strong>access code</strong> shown above. Open <a href="https://emailfetcher.site" target="_blank" rel="noopener noreferrer">emailfetcher.site</a>, enter the code, then trigger the OTP on the service (Netflix, Canva, etc.).</p>
             </li>
             <li>
               <strong>Or fetch via Gmail</strong>
@@ -586,7 +600,7 @@
   <script src="toast.js"></script>
   <script src="branding.js?v=20260703audit" defer></script>
   <script src="badges.js"></script>
-  <script src="dashboard.js?v=20260709games"></script>
+  <script src="dashboard.js?v=20260717viewport"></script>
   <script src="mobile.js?v=20260615vouch"></script>
   <script src="settings.js"></script>
 </body>
