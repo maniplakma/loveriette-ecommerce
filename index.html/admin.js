@@ -87,10 +87,55 @@ document.getElementById('admin-logout').addEventListener('click', async () => {
 const $ = (id) => document.getElementById(id);
 const on = (id, evt, fn) => { const el = $(id); if (el) el.addEventListener(evt, fn); };
 
+function debounce(fn, ms = 300) {
+  let timer = null;
+  const debounced = (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), ms);
+  };
+  debounced.cancel = () => { clearTimeout(timer); };
+  debounced.flush = (...args) => {
+    clearTimeout(timer);
+    fn(...args);
+  };
+  return debounced;
+}
+
+function runAsyncAction(action, { busyEl = null, busyLabel = 'Loading…', errorMessage = 'Action failed' } = {}) {
+  return (async (...args) => {
+    if (busyEl?.dataset?.busy === '1') return;
+    const prevText = busyEl?.textContent;
+    if (busyEl) {
+      busyEl.dataset.busy = '1';
+      busyEl.disabled = true;
+      if (busyLabel) busyEl.textContent = busyLabel;
+    }
+    try {
+      await action(...args);
+    } catch (err) {
+      showToast(err?.message || errorMessage, 'error');
+    } finally {
+      if (busyEl) {
+        delete busyEl.dataset.busy;
+        busyEl.disabled = false;
+        if (prevText != null) busyEl.textContent = prevText;
+      }
+    }
+  })();
+}
+
+function ensureAdminModalsClosed() {
+  document.querySelectorAll('.admin-modal, .admin-report-resolve-modal').forEach((el) => {
+    el.hidden = true;
+  });
+  shell?.classList.remove('menu-open');
+}
+
 let dashboardReady = false;
 function initDashboard() {
   initAdminNavIcons();
   window.reapplySidebarTheme?.();
+  ensureAdminModalsClosed();
   if (dashboardReady) { loadOverview(); return; }
   dashboardReady = true;
 
@@ -112,6 +157,12 @@ function initDashboard() {
   on('admin-modal', 'click', (e) => { if (e.target.id === 'admin-modal') closeModal(); });
   on('report-resolve-close', 'click', closeReportResolveModal);
   on('report-resolve-modal', 'click', (e) => { if (e.target.id === 'report-resolve-modal') closeReportResolveModal(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (modal && !modal.hidden) closeModal();
+    else if ($('report-resolve-modal') && !$('report-resolve-modal').hidden) closeReportResolveModal();
+    else shell?.classList.remove('menu-open');
+  });
 
   // All Orders
   on('orders-tabs', 'click', (e) => {
@@ -170,29 +221,39 @@ function initDashboard() {
     b.classList.add('active');
     switchCatalogTab(b.dataset.ctab);
   });
-  on('catalog-add', 'click', () => openProductModal());
+  on('catalog-add', 'click', () => runAsyncAction(() => openProductModal(), { errorMessage: 'Could not open product form' }));
   on('catalog-search', 'keydown', (e) => { if (e.key === 'Enter') loadCatalog(); });
   on('catalog-category', 'change', loadCatalog);
-  on('category-add', 'click', () => openCategoryModal());
+  on('category-add', 'click', () => runAsyncAction(() => openCategoryModal(), { errorMessage: 'Could not open category form' }));
 
   // Inventory
+  const scheduleInventoryLoad = debounce(() => loadInventory(), 320);
   on('inv-tabs', 'click', (e) => {
     const b = e.target.closest('.admin-subtab'); if (!b) return;
     document.querySelectorAll('#inv-tabs .admin-subtab').forEach((x) => x.classList.remove('active'));
     b.classList.add('active');
     loadInventory();
   });
-  on('inv-add', 'click', () => openStockModal());
-  on('inv-search', 'keydown', (e) => { if (e.key === 'Enter') loadInventory(); });
-  on('inv-search', 'input', loadInventory);
+  on('inv-add', 'click', () => runAsyncAction(
+    () => openStockModal(),
+    { busyEl: $('inv-add'), busyLabel: 'Opening…', errorMessage: 'Could not open Add Stock' }
+  ));
+  on('inv-search', 'keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      scheduleInventoryLoad.cancel();
+      loadInventory();
+    }
+  });
+  on('inv-search', 'input', scheduleInventoryLoad);
 
   // Users
   on('users-search-btn', 'click', loadUsers);
   on('users-search', 'keydown', (e) => { if (e.key === 'Enter') loadUsers(); });
 
   // Redeem
-  on('redeem-add', 'click', () => openRedeemModal());
-  on('redeem-bulk', 'click', openBulkModal);
+  on('redeem-add', 'click', () => runAsyncAction(() => openRedeemModal(), { errorMessage: 'Could not open redeem form' }));
+  on('redeem-bulk', 'click', () => runAsyncAction(() => openBulkModal(), { errorMessage: 'Could not open bulk generator' }));
   on('redeem-search', 'keydown', (e) => { if (e.key === 'Enter') loadRedeem(); });
 
   // Notifications
@@ -285,6 +346,7 @@ function switchTab(tab, force = false) {
   document.querySelectorAll('.admin-tab').forEach((s) => { s.hidden = s.id !== `tab-${tab}`; });
   document.getElementById('admin-title').textContent = TAB_TITLES[tab] || 'Dashboard';
   shell.classList.remove('menu-open');
+  ensureAdminModalsClosed();
 
   const loaders = {
     overview: loadOverview,
@@ -1121,6 +1183,25 @@ async function loadTransactions() {
 }
 
 /* ---------------- Inventory ---------------- */
+let invLoadGen = 0;
+let stockVariantsCache = null;
+let stockVariantsCacheAt = 0;
+const STOCK_VARIANTS_CACHE_MS = 60_000;
+
+function invalidateStockVariantsCache() {
+  stockVariantsCache = null;
+  stockVariantsCacheAt = 0;
+}
+
+async function getStockVariants() {
+  if (stockVariantsCache && Date.now() - stockVariantsCacheAt < STOCK_VARIANTS_CACHE_MS) {
+    return stockVariantsCache;
+  }
+  stockVariantsCache = await api('/admin/variants');
+  stockVariantsCacheAt = Date.now();
+  return stockVariantsCache;
+}
+
 function activeInvTab() {
   return document.querySelector('#inv-tabs .admin-subtab.active')?.dataset.itab || 'stocks';
 }
@@ -1362,7 +1443,10 @@ function bindInventoryTree(root, tree, sold) {
     });
   });
   root.querySelectorAll('[data-edit]').forEach((b) =>
-    b.addEventListener('click', () => openStockModal(items.find((s) => s.id == b.dataset.edit))));
+    b.addEventListener('click', () => runAsyncAction(
+      () => openStockModal(items.find((s) => s.id == b.dataset.edit)),
+      { errorMessage: 'Could not open stock editor' }
+    )));
   root.querySelectorAll('[data-del]').forEach((b) =>
     b.addEventListener('click', async () => {
       if (!confirm('Delete this stock item?')) return;
@@ -1371,7 +1455,10 @@ function bindInventoryTree(root, tree, sold) {
       if (!document.getElementById('tab-all-orders')?.hidden) loadAllOrders();
     }));
   root.querySelectorAll('[data-add-variant]').forEach((b) =>
-    b.addEventListener('click', () => openStockModal(null, Number(b.dataset.addVariant))));
+    b.addEventListener('click', () => runAsyncAction(
+      () => openStockModal(null, Number(b.dataset.addVariant)),
+      { errorMessage: 'Could not open Add Stock' }
+    )));
 }
 
 async function loadInventory() {
@@ -1379,18 +1466,24 @@ async function loadInventory() {
   const search = $('inv-search')?.value?.trim() || '';
   const list = $('inv-list');
   const empty = $('inv-empty');
+  const gen = ++invLoadGen;
+  list?.classList.add('is-loading');
   try {
     const tree = await fetchInventoryTree(sold, search);
+    if (gen !== invLoadGen) return;
     $('inv-add').style.display = sold ? 'none' : '';
     empty.hidden = tree.length > 0;
     empty.textContent = sold ? 'No sold stock yet.' : 'No catalog categories yet. Add categories and products in Catalog.';
     list.innerHTML = renderInventoryTree(tree, sold);
     bindInventoryTree(list, tree, sold);
   } catch (err) {
+    if (gen !== invLoadGen) return;
     list.innerHTML = '';
     empty.hidden = false;
     empty.textContent = err.message || 'Could not load inventory.';
     showToast(err.message || 'Could not load inventory', 'error');
+  } finally {
+    if (gen === invLoadGen) list?.classList.remove('is-loading');
   }
 }
 
@@ -1412,7 +1505,7 @@ function renumberProfiles() {
 
 async function openStockModal(stock = null, prefillVariantId = null) {
   const s = stock || {};
-  const variants = await api('/admin/variants');
+  const variants = await getStockVariants();
   const initialProfiles = (s.profiles && s.profiles.length) ? s.profiles : (stock ? [''] : ['']);
   openModal(stock ? 'Edit Stock' : 'Add Stock', `
     <div class="admin-field"><label>Select Variant</label>
@@ -1473,6 +1566,7 @@ async function openStockModal(stock = null, prefillVariantId = null) {
       const r = await api('/admin/inventory', { method: 'POST', body: JSON.stringify(body) });
       showToast(`${r.created} stock slot${r.created > 1 ? 's' : ''} added`);
     }
+    invalidateStockVariantsCache();
     closeModal(); loadInventory(); loadCatalog();
     if (!document.getElementById('tab-all-orders')?.hidden) loadAllOrders();
   });
@@ -3110,6 +3204,7 @@ const modal = document.getElementById('admin-modal');
 const modalForm = document.getElementById('admin-modal-form');
 
 function openModal(title, html, isForm, onSubmit) {
+  ensureAdminModalsClosed();
   document.getElementById('admin-modal-title').textContent = title;
   modalForm.innerHTML = html;
   modalForm.onsubmit = null;
@@ -3118,6 +3213,7 @@ function openModal(title, html, isForm, onSubmit) {
     modalForm.onsubmit = async (e) => {
       e.preventDefault();
       const submitBtn = modalForm.querySelector('button[type="submit"]');
+      if (submitBtn?.dataset?.busy === '1') return;
       if (submitBtn) submitBtn.disabled = true;
       try {
         await onSubmit(modalForm);
@@ -3130,12 +3226,14 @@ function openModal(title, html, isForm, onSubmit) {
 
   modalForm.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', closeModal));
   modal.hidden = false;
+  document.body.style.overflow = 'hidden';
 }
 
 function closeModal() {
   modal.hidden = true;
   modalForm.innerHTML = '';
   modalForm.onsubmit = null;
+  document.body.style.overflow = '';
 }
 
 checkAdmin();
