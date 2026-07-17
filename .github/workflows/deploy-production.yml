@@ -1,0 +1,35 @@
+name: Deploy production
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'index.html/**'
+      - 'server.js/**'
+      - 'scripts/**'
+      - 'package.json'
+      - 'ecosystem.config.cjs'
+      - '.github/workflows/deploy-production.yml'
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: github.repository == 'maniplakma/loveriette-ecommerce'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PASSWORD: ${{ secrets.VPS_PASSWORD }}
+          APP: /var/www/ecommerce
+          BRANCH: main
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+          bash scripts/vps-deploy-remote.sh
