@@ -248,9 +248,28 @@
         <header class="buyer-dash-panel-head buyer-email-head">
           <div>
             <h1>Email Fetcher</h1>
-            <p>One latest matching message per fetch — OTPs, verification codes, and login emails only.</p>
+            <p>Read OTPs and verification emails via emailfetcher.site or fetch the latest Gmail message here.</p>
           </div>
         </header>
+        <div class="buyer-temp-email-fetcher info-card" id="temp-email-fetcher-card">
+          <h2>Temporary Email Fetcher</h2>
+          <p class="buyer-temp-email-desc">Open the link below, enter your access code, then request the OTP on the service.</p>
+          <div class="buyer-temp-email-link-wrap">
+            <span class="buyer-inbox-label">Site</span>
+            <a href="https://emailfetcher.site" target="_blank" rel="noopener noreferrer" class="buyer-temp-email-link">https://emailfetcher.site</a>
+          </div>
+          <div class="buyer-temp-email-code-wrap" id="temp-email-fetcher-code-wrap">
+            <span class="buyer-inbox-label">Access code</span>
+            <div class="buyer-temp-email-code-row">
+              <code class="buyer-temp-email-code" id="temp-email-fetcher-code">—</code>
+              <button type="button" class="buyer-cred-copy buyer-temp-email-copy" id="temp-email-fetcher-copy" title="Copy access code" hidden>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+          </div>
+          <p class="buyer-temp-email-hint" id="temp-email-fetcher-hint">Select an account below to show its access code.</p>
+        </div>
         <div class="buyer-inbox-shell">
           <div class="buyer-inbox-toolbar">
             <label class="buyer-inbox-select-wrap">
@@ -292,12 +311,12 @@
               <p>Choose the email/account you want to fetch from the dropdown above.</p>
             </li>
             <li>
-              <strong>Trigger the email first</strong>
-              <p>Before fetching, open the service (Netflix, Canva, etc.) and sign in with your purchased account. If you need a verification code, OTP, or login link, request it on that site first — this sends the email to the inbox.</p>
+              <strong>Use Temporary Email Fetcher (recommended)</strong>
+              <p>Open <a href="https://emailfetcher.site" target="_blank" rel="noopener noreferrer">emailfetcher.site</a>, paste your access code from above, then trigger the OTP on the service (Netflix, Canva, etc.).</p>
             </li>
             <li>
-              <strong>Fetch the email</strong>
-              <p>Return here and click <strong>Fetch</strong>. The latest message for that account will appear below (verification codes, login links, etc.).</p>
+              <strong>Or fetch via Gmail</strong>
+              <p>Click <strong>Fetch latest</strong> to load the most recent matching message for the selected account (verification codes, login links, etc.).</p>
             </li>
             <li>
               <strong>Changing password</strong>

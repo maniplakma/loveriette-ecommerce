@@ -638,7 +638,8 @@ const reportItemMigrations = [
   'ALTER TABLE product_reports ADD COLUMN report_quantity INTEGER NOT NULL DEFAULT 1',
   'ALTER TABLE product_reports ADD COLUMN reported_profiles TEXT',
   "ALTER TABLE stock_items ADD COLUMN credential_report_status TEXT NOT NULL DEFAULT 'ok'",
-  'ALTER TABLE product_reports ADD COLUMN admin_note TEXT'
+  'ALTER TABLE product_reports ADD COLUMN admin_note TEXT',
+  "ALTER TABLE stock_items ADD COLUMN emailfetcher_access_code TEXT NOT NULL DEFAULT ''"
 ];
 for (const sql of reportItemMigrations) {
   try { db.exec(sql); } catch (_) { /* column already exists */ }

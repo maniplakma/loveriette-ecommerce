@@ -1427,6 +1427,8 @@ async function openStockModal(stock = null, prefillVariantId = null) {
       <div class="admin-field"><label>Email</label><input name="email" value="${(s.email || '').replace(/"/g, '&quot;')}" placeholder="email@example.com"></div>
       <div class="admin-field"><label>Password</label><input name="password" value="${(s.password || '').replace(/"/g, '&quot;')}" placeholder="password123"></div>
     </div>
+    <div class="admin-field"><label>Email Fetcher access code</label><input name="emailfetcher_access_code" value="${(s.emailfetcher_access_code || '').replace(/"/g, '&quot;')}" placeholder="Access code for emailfetcher.site"></div>
+    <p class="admin-field-hint">Shown to buyers on Email Fetcher — they open <a href="https://emailfetcher.site" target="_blank" rel="noopener noreferrer">emailfetcher.site</a> and enter this code.</p>
     <div class="admin-profiles">
       <div class="admin-profiles-head">
         <label>Profiles${stock ? '' : ' — each becomes one sellable slot'}</label>
@@ -1456,6 +1458,7 @@ async function openStockModal(stock = null, prefillVariantId = null) {
       rules: fd.get('rules') || '',
       email: fd.get('email'),
       password: fd.get('password'),
+      emailfetcher_access_code: fd.get('emailfetcher_access_code') || '',
       profiles,
       cost: Number(fd.get('cost')) || 0,
       price: Number(fd.get('price')) || 0,
