@@ -64,6 +64,15 @@ function isOrderExpired(order) {
   return new Date(exp).getTime() <= Date.now();
 }
 
+/** True when approved but customer has not unlocked workspace yet (no expiry clock). */
+function isOrderAwaitingActivation(order) {
+  if (!order || order.order_ref === 'PLG-MASTER' || order.isMaster) return false;
+  if (order.status && order.status !== 'approved') return false;
+  const activated = order.activated_at || order.activatedAt;
+  const exp = order.expires_at || order.expiresAt;
+  return !activated && !exp;
+}
+
 function formatLimitLabel(value) {
   return isUnlimited(value) ? 'Unlimited' : String(normalizeLimit(value));
 }
@@ -93,6 +102,7 @@ module.exports = {
   normalizePlugOrder,
   computeExpiresAtFromDuration,
   isOrderExpired,
+  isOrderAwaitingActivation,
   formatLimitLabel,
   hasBatchWorkspace,
   ORDER_SELECT

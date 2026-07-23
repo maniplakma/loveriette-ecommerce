@@ -99,7 +99,7 @@
         <span class="admin-nav-group">Platform</span>
         <button class="admin-nav-btn" data-tab="cms"><span class="admin-nav-icon" data-icon="catalog"></span> Content (CMS)</button>
         <button class="admin-nav-btn" data-tab="website-making"><span class="admin-nav-icon" data-icon="store"></span> Website Making <span class="admin-nav-badge" id="website-badge" hidden></span></button>
-        <button class="admin-nav-btn" data-tab="plugging"><span class="admin-nav-icon" data-icon="message"></span> Plugging</button>
+        <button class="admin-nav-btn" data-tab="plugging"><span class="admin-nav-icon" data-icon="message"></span> Plugging <span class="admin-nav-badge" id="plugging-badge" hidden></span></button>
         <button class="admin-nav-btn" data-tab="games"><span class="admin-nav-icon" data-icon="redeem"></span> Shop Games</button>
         <button class="admin-nav-btn" data-tab="platform-analytics"><span class="admin-nav-icon" data-icon="chart-bar"></span> Platform Analytics</button>
       </nav>
@@ -855,6 +855,27 @@
           </div>
         </div>
         <div class="admin-panel" style="margin-top:1rem">
+          <div class="admin-panel-head"><h2>Access Key Stock</h2></div>
+          <p class="admin-card-meta">Pre-create access keys per plan variant. Keys do not expire until the customer first opens the workspace. Assign one automatically when you approve an order.</p>
+          <form id="plugging-access-key-form" class="admin-modal-body" style="padding:0;display:grid;gap:0.65rem;margin-bottom:1rem">
+            <div class="admin-field">
+              <label>Plan variant</label>
+              <select name="planId" id="plugging-access-key-plan" class="admin-select-sm" required>
+                <option value="">Select plan…</option>
+              </select>
+            </div>
+            <div class="admin-field">
+              <label>Access key (optional — auto-generate if blank)</label>
+              <input name="accessKey" placeholder="PLG-XXXX-XXXX" class="admin-input-sm">
+            </div>
+            <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+              <button type="submit" class="admin-btn admin-btn-primary admin-btn-sm">+ Add Key</button>
+              <button type="button" class="admin-btn admin-btn-ghost admin-btn-sm" id="plugging-access-key-batch">Generate 5</button>
+            </div>
+          </form>
+          <div class="admin-order-list" id="plugging-access-keys-list"></div>
+        </div>
+        <div class="admin-panel" style="margin-top:1rem">
           <div class="admin-panel-head"><h2>Subscription Orders</h2></div>
           <div class="admin-order-list" id="plugging-orders-list"></div>
         </div>
@@ -1044,8 +1065,8 @@
   <script src="admin-nav-icons.js?v=20260707ui"></script>
   <script src="branding.js?v=20260703audit" defer></script>
   <script src="badges.js?v=20260614tabs"></script>
-  <script src="admin.js?v=20260717adminfix"></script>
-  <script src="admin-platform.js?v=20260707deploy"></script>
+  <script src="admin.js?v=20260723plugfix"></script>
+  <script src="admin-platform.js?v=20260723plugfix"></script>
   <script src="admin-games.js?v=20260710gameenable"></script>
   <script src="mobile.js?v=20260614mobile"></script>
 </body>

@@ -348,6 +348,10 @@ async function runPluggingOrderFlow(adminCookie) {
   else fail('plugging pending status', pending.json?.status || pending.status);
 
   const row = db.prepare('SELECT id FROM plugging_orders WHERE order_ref = ?').get(orderRef);
+  db.prepare(`
+    INSERT INTO plugging_access_keys (plan_id, access_key, status)
+    VALUES (?, ?, 'available')
+  `).run(plan.id, `PLG-TEST-${Date.now().toString(36).toUpperCase()}-QA`);
   const approve = await request('PUT', `/admin/plugging/orders/${row.id}`, { status: 'approved' }, adminCookie);
   if (approve.status === 200 && approve.json.accessKey?.startsWith('PLG-')) ok('admin approve → access key');
   else fail('plugging approve', approve.json?.error || approve.status);

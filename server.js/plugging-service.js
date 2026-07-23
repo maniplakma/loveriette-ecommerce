@@ -33,6 +33,7 @@ const {
   normalizePlugOrder,
   computeExpiresAtFromDuration,
   isOrderExpired,
+  isOrderAwaitingActivation,
   formatLimitLabel,
   hasBatchWorkspace,
   ORDER_SELECT
@@ -132,16 +133,61 @@ function mountPluggingService(app, db, deps) {
     return `PLG-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
   }
 
+  function isAccessKeyTaken(key) {
+    const trimmed = String(key || '').trim();
+    if (!trimmed) return true;
+    if (db.prepare('SELECT 1 FROM plugging_orders WHERE access_key = ?').get(trimmed)) return true;
+    if (db.prepare('SELECT 1 FROM plugging_access_keys WHERE access_key = ?').get(trimmed)) return true;
+    return false;
+  }
+
   function genAccessKey() {
     const masterKey = getPlugMasterKey();
     for (let attempt = 0; attempt < 24; attempt += 1) {
       const key = `PLG-${crypto.randomBytes(4).toString('hex').toUpperCase()}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
       if (key.startsWith('PLG-MASTER')) continue;
       if (masterKey && key === masterKey) continue;
-      const taken = db.prepare('SELECT 1 FROM plugging_orders WHERE access_key = ?').get(key);
-      if (!taken) return key;
+      if (!isAccessKeyTaken(key)) return key;
     }
     throw new Error('Could not generate a unique access key — try again');
+  }
+
+  function assignStockAccessKey(planId, orderId) {
+    const stock = db.prepare(`
+      SELECT id, access_key FROM plugging_access_keys
+      WHERE plan_id = ? AND status = 'available'
+      ORDER BY id ASC LIMIT 1
+    `).get(Number(planId));
+    if (!stock) return null;
+    db.prepare(`
+      UPDATE plugging_access_keys
+      SET status = 'assigned', order_id = ?, activated_at = NULL
+      WHERE id = ? AND status = 'available'
+    `).run(orderId, stock.id);
+    return stock.access_key;
+  }
+
+  function activateOrderOnFirstUse(order) {
+    if (!order || order.order_ref === 'PLG-MASTER' || order.isMaster) return order;
+    if (!isOrderAwaitingActivation(order)) return order;
+
+    const activatedAt = new Date().toISOString();
+    const duration = order.planDuration || order.plan_duration;
+    const expiresAt = computeExpiresAtFromDuration(duration, new Date(activatedAt));
+
+    db.prepare(`
+      UPDATE plugging_orders
+      SET activated_at = ?, expires_at = ?, updated_at = datetime('now')
+      WHERE id = ? AND activated_at IS NULL
+    `).run(activatedAt, expiresAt, order.id);
+
+    db.prepare(`
+      UPDATE plugging_access_keys
+      SET activated_at = ?
+      WHERE order_id = ? AND status = 'assigned' AND activated_at IS NULL
+    `).run(activatedAt, order.id);
+
+    return loadNormalizedOrder('WHERE po.id = ?', order.id);
   }
 
   function normalizePhone(phone) {
@@ -213,10 +259,11 @@ function mountPluggingService(app, db, deps) {
 
   function requirePlugWorkspace(req, res, next) {
     const key = getCookie(req, COOKIE) || req.headers['x-plug-access-key'];
-    const order = resolvePlugAccessKey(key);
+    let order = resolvePlugAccessKey(key);
     if (!order) {
       return res.status(401).json({ error: 'Invalid, expired, or inactive access key. Enter your key at /plugging/workspace' });
     }
+    order = activateOrderOnFirstUse(order) || order;
     req.plugOrder = order;
     next();
   }
@@ -395,6 +442,8 @@ function mountPluggingService(app, db, deps) {
       accessKey: order.status === 'approved' ? order.access_key : null,
       workspaceUrl: order.status === 'approved' ? '/plugging/workspace' : null,
       expiresAt: order.expires_at || order.expiresAt || null,
+      activatedAt: order.activated_at || order.activatedAt || null,
+      awaitingActivation: isOrderAwaitingActivation(order),
       createdAt: order.created_at,
       approvedAt: order.approved_at
     });
@@ -418,9 +467,11 @@ function mountPluggingService(app, db, deps) {
     `).run(paymentMethodId, receiptUrl, order.id);
 
     try {
-      db.prepare(`INSERT INTO admin_notifications (type, title, body) VALUES ('plugging', 'Plugging Payment', ?)`)
+      db.prepare(`INSERT INTO admin_notifications (type, title, body, is_read) VALUES ('plugging', 'Plugging Payment', ?, 0)`)
         .run(`${order.customer_name} — ${order.order_ref} awaiting approval`);
-    } catch (_) { /* ignore */ }
+    } catch (err) {
+      console.error('[plugging] admin notification failed:', err.message);
+    }
 
     res.json({
       ok: true,
@@ -432,15 +483,18 @@ function mountPluggingService(app, db, deps) {
   // ── Workspace auth ──
   app.post('/api/plugging/workspace/unlock', (req, res) => {
     const key = String(req.body?.accessKey || '').trim();
-    const order = resolvePlugAccessKey(key);
+    let order = resolvePlugAccessKey(key);
     if (!order) return res.status(401).json({ error: 'Invalid access key, payment not approved yet, or subscription expired' });
+    order = activateOrderOnFirstUse(order) || order;
     res.cookie(COOKIE, key, cookieOptsForOrder(order, key));
     res.json({
       ok: true,
       orderRef: order.order_ref,
       planName: order.plan_name,
       lifetime: isMasterAccessKey(key),
-      remember: true
+      remember: true,
+      expiresAt: order.expiresAt || order.expires_at || null,
+      activated: !!(order.activated_at || order.activatedAt || order.expiresAt || order.expires_at)
     });
   });
 
@@ -862,8 +916,91 @@ function mountPluggingService(app, db, deps) {
       FROM plugging_orders po
       LEFT JOIN plugging_plans pp ON pp.id = po.plan_id
       LEFT JOIN payment_methods pm ON pm.id = po.payment_method_id
-      ORDER BY po.id DESC LIMIT 200
+      ORDER BY
+        CASE po.status
+          WHEN 'pending_approval' THEN 0
+          WHEN 'pending_payment' THEN 1
+          ELSE 2
+        END,
+        po.id DESC
+      LIMIT 200
     `).all());
+  });
+
+  app.get('/admin/plugging/access-keys', requireAdmin, (req, res) => {
+    const planId = req.query.planId ? Number(req.query.planId) : null;
+    const rows = planId
+      ? db.prepare(`
+          SELECT pak.*, pp.name AS plan_name
+          FROM plugging_access_keys pak
+          LEFT JOIN plugging_plans pp ON pp.id = pak.plan_id
+          WHERE pak.plan_id = ?
+          ORDER BY pak.id DESC LIMIT 500
+        `).all(planId)
+      : db.prepare(`
+          SELECT pak.*, pp.name AS plan_name
+          FROM plugging_access_keys pak
+          LEFT JOIN plugging_plans pp ON pp.id = pak.plan_id
+          ORDER BY pak.id DESC LIMIT 500
+        `).all();
+    const counts = db.prepare(`
+      SELECT plan_id, status, COUNT(*) AS c
+      FROM plugging_access_keys
+      GROUP BY plan_id, status
+    `).all();
+    res.json({ keys: rows, counts });
+  });
+
+  app.post('/admin/plugging/access-keys', requireAdmin, (req, res) => {
+    const planId = Number(req.body?.planId);
+    if (!planId) return res.status(400).json({ error: 'planId is required' });
+    const plan = db.prepare('SELECT id, name FROM plugging_plans WHERE id = ?').get(planId);
+    if (!plan) return res.status(404).json({ error: 'Plan not found' });
+
+    let accessKey = String(req.body?.accessKey || '').trim().toUpperCase();
+    if (accessKey) {
+      if (!/^PLG-[A-Z0-9]{4,}-[A-Z0-9]{4,}$/.test(accessKey) || accessKey.startsWith('PLG-MASTER')) {
+        return res.status(400).json({ error: 'Use format PLG-XXXX-XXXX (not a master key)' });
+      }
+      if (isAccessKeyTaken(accessKey)) return res.status(409).json({ error: 'Access key already exists' });
+    } else {
+      accessKey = genAccessKey();
+    }
+
+    const r = db.prepare(`
+      INSERT INTO plugging_access_keys (plan_id, access_key, status)
+      VALUES (?, ?, 'available')
+    `).run(planId, accessKey);
+    res.status(201).json({ id: r.lastInsertRowid, planId, accessKey, status: 'available' });
+  });
+
+  app.post('/admin/plugging/access-keys/batch', requireAdmin, (req, res) => {
+    const planId = Number(req.body?.planId);
+    const count = Math.min(100, Math.max(1, Number(req.body?.count) || 1));
+    if (!planId) return res.status(400).json({ error: 'planId is required' });
+    const plan = db.prepare('SELECT id FROM plugging_plans WHERE id = ?').get(planId);
+    if (!plan) return res.status(404).json({ error: 'Plan not found' });
+
+    const ins = db.prepare(`
+      INSERT INTO plugging_access_keys (plan_id, access_key, status) VALUES (?, ?, 'available')
+    `);
+    const created = [];
+    for (let i = 0; i < count; i += 1) {
+      const accessKey = genAccessKey();
+      const r = ins.run(planId, accessKey);
+      created.push({ id: r.lastInsertRowid, accessKey });
+    }
+    res.status(201).json({ created, count: created.length });
+  });
+
+  app.delete('/admin/plugging/access-keys/:id', requireAdmin, (req, res) => {
+    const row = db.prepare('SELECT * FROM plugging_access_keys WHERE id = ?').get(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Access key not found' });
+    if (row.status !== 'available') {
+      return res.status(400).json({ error: 'Only unused stock keys can be deleted' });
+    }
+    db.prepare('DELETE FROM plugging_access_keys WHERE id = ?').run(row.id);
+    res.json({ ok: true });
   });
 
   app.put('/admin/plugging/orders/:id', requireAdmin, (req, res) => {
@@ -873,18 +1010,21 @@ function mountPluggingService(app, db, deps) {
     let accessKey = order.access_key;
 
     if (status === 'approved' && order.status !== 'approved') {
-      accessKey = genAccessKey();
-      if (isMasterAccessKey(accessKey)) {
-        return res.status(500).json({ error: 'Could not issue access key — regenerate and try again' });
+      accessKey = assignStockAccessKey(order.plan_id, order.id);
+      if (!accessKey) {
+        return res.status(400).json({
+          error: 'No access keys in stock for this plan. Add keys under Access Key Stock first.'
+        });
       }
-      const plan = db.prepare('SELECT * FROM plugging_plans WHERE id = ?').get(order.plan_id);
-      const expiresAt = computeExpiresAtFromDuration(plan?.duration, new Date());
+      if (isMasterAccessKey(accessKey)) {
+        return res.status(500).json({ error: 'Could not issue access key — regenerate stock key and try again' });
+      }
       db.prepare(`
         UPDATE plugging_orders
         SET status = 'approved', access_key = ?, approved_at = datetime('now'),
-            expires_at = ?, updated_at = datetime('now')
+            expires_at = NULL, activated_at = NULL, updated_at = datetime('now')
         WHERE id = ?
-      `).run(accessKey, expiresAt, order.id);
+      `).run(accessKey, order.id);
 
       const approvedOrder = db.prepare('SELECT * FROM plugging_orders WHERE id = ?').get(order.id);
       if (approvedOrder.order_ref !== 'PLG-MASTER' && Number(approvedOrder.total) >= 200) {
