@@ -433,6 +433,13 @@ function mountPluggingService(app, db, deps) {
   app.get('/api/plugging/orders/:ref', (req, res) => {
     const order = getOrderByRef(req.params.ref);
     if (!order) return res.status(404).json({ error: 'Order not found' });
+    const awaitingActivation = isOrderAwaitingActivation(order);
+    const expired = isOrderExpired(order);
+    let accessState = 'active';
+    if (order.status === 'approved') {
+      if (expired) accessState = 'expired';
+      else if (awaitingActivation) accessState = 'inactive';
+    }
     res.json({
       orderRef: order.order_ref,
       status: order.status,
@@ -443,7 +450,9 @@ function mountPluggingService(app, db, deps) {
       workspaceUrl: order.status === 'approved' ? '/plugging/workspace' : null,
       expiresAt: order.expires_at || order.expiresAt || null,
       activatedAt: order.activated_at || order.activatedAt || null,
-      awaitingActivation: isOrderAwaitingActivation(order),
+      awaitingActivation,
+      accessState: order.status === 'approved' ? accessState : null,
+      isActive: order.status === 'approved' && accessState === 'active',
       createdAt: order.created_at,
       approvedAt: order.approved_at
     });

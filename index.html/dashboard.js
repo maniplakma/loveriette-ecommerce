@@ -247,9 +247,58 @@ let servicesLoadPromise = null;
 const PLUGGING_STATUS = {
   pending_payment: 'Awaiting payment',
   pending_approval: 'Pending approval',
-  approved: 'Active',
+  approved: 'Approved',
   rejected: 'Rejected'
 };
+
+const PLUGGING_ACCESS_STATE = {
+  active: { label: 'Active', cls: 'buyer-service-status-ok' },
+  inactive: { label: 'Inactive', cls: 'buyer-service-status-idle' },
+  expired: { label: 'Expired', cls: 'buyer-service-status-bad' }
+};
+
+function pluggingAccessBadge(order) {
+  if (order.status === 'approved') {
+    const state = PLUGGING_ACCESS_STATE[order.accessState] || PLUGGING_ACCESS_STATE.inactive;
+    return `<span class="buyer-service-status ${state.cls}">${escapeHtml(state.label)}</span>`;
+  }
+  return serviceStatusBadge(order.status, PLUGGING_STATUS);
+}
+
+function formatPluggingExpiry(order) {
+  if (order.status !== 'approved') return '';
+  if (order.awaitingActivation) {
+    return 'Expiry starts when you first open the workspace';
+  }
+  if (order.expiresAt) {
+    return `Expires ${formatDate(order.expiresAt)}`;
+  }
+  if (order.accessState === 'active') return 'No expiry';
+  return '';
+}
+
+function renderPluggingAccessKey(order) {
+  if (!order.accessKey) return '';
+  const expiryLine = formatPluggingExpiry(order);
+  return `
+    <div class="buyer-plug-access">
+      <div class="buyer-cred-field">
+        <span class="buyer-cred-label">Access Key</span>
+        <div class="buyer-cred-value-row">
+          <code class="buyer-cred-value buyer-plug-key-value">${escapeHtml(order.accessKey)}</code>
+          <button type="button" class="buyer-cred-copy" title="Copy access key" aria-label="Copy access key">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            <span>Copy</span>
+          </button>
+        </div>
+      </div>
+      ${expiryLine ? `<p class="buyer-plug-expiry">${escapeHtml(expiryLine)}</p>` : ''}
+    </div>`;
+}
+
+function bindPluggingCopy(root) {
+  bindCredCopy(root);
+}
 
 const WEBTECH_STATUS = {
   new: 'New inquiry',
@@ -300,21 +349,21 @@ function renderPluggingServices(items) {
     } else if (o.status === 'pending_approval') {
       actions = `<a href="/plugging/status?order=${encodeURIComponent(o.orderRef)}" class="btn-view">View Status</a>`;
     } else if (o.status === 'approved') {
+      const workspaceDisabled = o.accessState === 'expired' ? ' aria-disabled="true" tabindex="-1"' : '';
       actions = `
-        <a href="/plugging/workspace" class="btn-primary">Open Workspace</a>
-        <a href="/plugging/status?order=${encodeURIComponent(o.orderRef)}" class="btn-view">View Key</a>`;
+        <a href="/plugging/workspace" class="btn-primary"${workspaceDisabled}>Open Workspace</a>
+        <a href="/plugging/status?order=${encodeURIComponent(o.orderRef)}" class="btn-view">Order Status</a>`;
     }
-    const keyLine = o.accessKey
-      ? `<p class="buyer-service-key">Access key: <code>${escapeHtml(o.accessKey)}</code></p>`
-      : '';
+    const accessBlock = o.status === 'approved' ? renderPluggingAccessKey(o) : '';
     return renderServiceCard({
       icon: '⚡',
       title: o.planName || 'Plugging Plan',
       meta: `${o.orderRef} · ${formatDate(o.createdAt)} · ${formatMoney(o.total)}`,
-      statusHtml: serviceStatusBadge(o.status, PLUGGING_STATUS),
-      actions: `${keyLine}${actions}`
+      statusHtml: pluggingAccessBadge(o),
+      actions: `${accessBlock}${actions}`
     });
   }).join('');
+  bindPluggingCopy(list);
 }
 
 function renderWebtechServices(items) {

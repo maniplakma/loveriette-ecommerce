@@ -66,6 +66,7 @@ const {
   buildOrderActivityMeta,
   mapActivityFeedRow
 } = require('./activity-feed');
+const { isOrderExpired, isOrderAwaitingActivation } = require('./plugging-limits');
 
 appConfig.ensurePortableDirs();
 
@@ -2871,21 +2872,48 @@ app.get('/account/services', requireAuth, (req, res) => {
   const userId = req.session.userId;
   const email = req.authUser.email.toLowerCase();
 
-  const plugging = db.prepare(`
+  const pluggingRows = db.prepare(`
     SELECT po.order_ref AS orderRef, po.status, po.total, po.access_key AS accessKey,
-           po.created_at AS createdAt, pp.name AS planName
+           po.created_at AS createdAt, po.expires_at AS expiresAt, po.activated_at AS activatedAt,
+           pp.name AS planName, pp.duration AS planDuration
     FROM plugging_orders po
     LEFT JOIN plugging_plans pp ON pp.id = po.plan_id
-    WHERE LOWER(po.email) = ?
+    WHERE po.user_id = ? OR LOWER(po.email) = ?
     ORDER BY po.created_at DESC
-  `).all(email).map((row) => ({
-    orderRef: row.orderRef,
-    status: row.status,
-    total: row.total,
-    planName: row.planName,
-    createdAt: row.createdAt,
-    accessKey: row.status === 'approved' ? row.accessKey : null
-  }));
+  `).all(userId, email);
+
+  const plugging = pluggingRows.map((row) => {
+    const base = {
+      orderRef: row.orderRef,
+      status: row.status,
+      total: row.total,
+      planName: row.planName,
+      planDuration: row.planDuration,
+      createdAt: row.createdAt,
+      expiresAt: row.expiresAt || null,
+      activatedAt: row.activatedAt || null,
+      accessKey: row.status === 'approved' ? row.accessKey : null
+    };
+    if (row.status !== 'approved') {
+      return { ...base, accessState: row.status, isActive: false, awaitingActivation: false };
+    }
+    const orderLike = {
+      status: row.status,
+      expires_at: row.expiresAt,
+      activated_at: row.activatedAt
+    };
+    const awaitingActivation = isOrderAwaitingActivation(orderLike);
+    const expired = isOrderExpired(orderLike);
+    let accessState = 'active';
+    if (expired) accessState = 'expired';
+    else if (awaitingActivation) accessState = 'inactive';
+    return {
+      ...base,
+      accessState,
+      isActive: accessState === 'active',
+      awaitingActivation
+    };
+  });
 
   const webtech = db.prepare(`
     SELECT wi.id, wi.inquiry_ref AS inquiryRef, wi.status, wi.name, wi.message,

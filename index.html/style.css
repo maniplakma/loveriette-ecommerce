@@ -7678,6 +7678,32 @@ a.buyer-dash-nav-link {
   color: #dc2626;
 }
 
+.buyer-service-status-idle {
+  background: color-mix(in srgb, var(--text-muted) 14%, transparent);
+  color: var(--text-muted);
+}
+
+.buyer-plug-access {
+  width: 100%;
+  margin: 0 0 0.65rem;
+}
+
+.buyer-plug-key-value {
+  font-family: 'Consolas', monospace;
+  font-size: 0.9rem;
+  word-break: break-all;
+}
+
+.buyer-plug-expiry {
+  margin: 0.35rem 0 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.buyer-service-card-actions .buyer-cred-field {
+  margin-bottom: 0.35rem;
+}
+
 .buyer-service-card-actions {
   display: flex;
   flex-wrap: wrap;
