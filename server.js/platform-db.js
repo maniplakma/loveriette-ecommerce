@@ -315,6 +315,26 @@ function initPlatformDb(db) {
   try { db.exec(`ALTER TABLE plugging_orders ADD COLUMN send_queue_next_account_id INTEGER`); } catch (_) { /* exists */ }
   try { db.exec(`ALTER TABLE plugging_orders ADD COLUMN send_queue_last_send_at INTEGER NOT NULL DEFAULT 0`); } catch (_) { /* exists */ }
   try { db.exec(`ALTER TABLE plugging_accounts ADD COLUMN last_cycle_ended_at INTEGER NOT NULL DEFAULT 0`); } catch (_) { /* exists */ }
+  try { db.exec(`ALTER TABLE plugging_orders ADD COLUMN activated_at TEXT`); } catch (_) { /* exists */ }
+
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS plugging_access_keys (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        plan_id INTEGER NOT NULL,
+        access_key TEXT NOT NULL UNIQUE,
+        status TEXT NOT NULL DEFAULT 'available',
+        order_id INTEGER,
+        activated_at TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (plan_id) REFERENCES plugging_plans(id) ON DELETE CASCADE,
+        FOREIGN KEY (order_id) REFERENCES plugging_orders(id) ON DELETE SET NULL
+      )
+    `);
+  } catch (_) { /* ignore */ }
+  try {
+    db.exec('CREATE INDEX IF NOT EXISTS idx_plugging_access_keys_plan_status ON plugging_access_keys(plan_id, status)');
+  } catch (_) { /* ignore */ }
 
   try {
     db.exec(`
@@ -394,11 +414,6 @@ function initPlatformDb(db) {
   for (const [k, v] of Object.entries(defaultPlugging)) {
     try { upsertPlugging.run(k, v); } catch (_) { /* ignore */ }
   }
-  try {
-    db.prepare(`UPDATE plugging_content SET value = ? WHERE key = 'plugging_hero_subtitle'`)
-      .run(defaultPlugging.plugging_hero_subtitle);
-  } catch (_) { /* ignore */ }
-
   const defaultFooter = {
     footer_tagline: 'Premium digital services for everyone.',
     footer_copyright: '© 2026 LOVERIETTE. ALL RIGHTS RESERVED.'
@@ -636,21 +651,11 @@ function ensurePluggingExamples(db) {
     INSERT INTO plugging_products (name, slug, description, icon, category, features, sort_order, is_enabled)
     VALUES (?, ?, ?, ?, ?, ?, ?, 1)
   `);
-  const updProduct = db.prepare(`
-    UPDATE plugging_products SET name = ?, description = ?, icon = ?, category = ?, features = ?, sort_order = ?
-    WHERE slug = ?
-  `);
   const getPlan = db.prepare('SELECT id FROM plugging_plans WHERE slug = ?');
   const insPlan = db.prepare(`
     INSERT INTO plugging_plans (product_id, name, slug, description, price, price_label, duration,
       max_sources, max_destinations, features, sort_order, is_enabled, priority)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
-  `);
-  const updPlan = db.prepare(`
-    UPDATE plugging_plans SET product_id = ?, name = ?, description = ?, price = ?, price_label = ?,
-      duration = ?, max_sources = ?, max_destinations = ?, features = ?, sort_order = ?, is_enabled = 1,
-      priority = ?
-    WHERE slug = ?
   `);
 
   for (const ex of examples) {
@@ -658,10 +663,6 @@ function ensurePluggingExamples(db) {
     const existing = getProduct.get(ex.slug);
     if (existing) {
       productId = existing.id;
-      updProduct.run(
-        ex.name, ex.description, ex.icon, ex.category,
-        JSON.stringify(ex.features), ex.sortOrder, ex.slug
-      );
     } else {
       productId = insProduct.run(
         ex.name, ex.slug, ex.description, ex.icon, ex.category,
@@ -672,12 +673,7 @@ function ensurePluggingExamples(db) {
     for (const v of ex.variants) {
       const planRow = getPlan.get(v.slug);
       const featJson = JSON.stringify(v.features || []);
-      if (planRow) {
-        updPlan.run(
-          productId, v.name, v.description, v.price, v.priceLabel, v.duration,
-          v.maxSources, v.maxDestinations, featJson, v.sortOrder, v.priority || 0, v.slug
-        );
-      } else {
+      if (!planRow) {
         insPlan.run(
           productId, v.name, v.slug, v.description, v.price, v.priceLabel, v.duration,
           v.maxSources, v.maxDestinations, featJson, v.sortOrder, v.priority || 0

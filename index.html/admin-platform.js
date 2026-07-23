@@ -480,11 +480,54 @@
       }
     }
 
+    const planSelect = document.getElementById('plugging-access-key-plan');
+    const allPlans = (data.products || []).flatMap((prod) =>
+      (prod.variants || []).map((v) => ({
+        id: v.id,
+        label: `${prod.name} — ${v.name}${v.duration ? ` (${v.duration})` : ''}`
+      }))
+    );
+    if (planSelect) {
+      const prev = planSelect.value;
+      planSelect.innerHTML = '<option value="">Select plan…</option>' + allPlans.map((p) =>
+        `<option value="${p.id}">${esc(p.label)}</option>`
+      ).join('');
+      if (prev && allPlans.some((p) => String(p.id) === prev)) planSelect.value = prev;
+      else if (allPlans.length === 1) planSelect.value = String(allPlans[0].id);
+    }
+
+    const stock = await api('/admin/plugging/access-keys');
+    const stockCounts = {};
+    (stock.counts || []).forEach((c) => {
+      const key = `${c.plan_id}:${c.status}`;
+      stockCounts[key] = c.c;
+    });
+    const availableTotal = (stock.keys || []).filter((k) => k.status === 'available').length;
+    document.getElementById('plugging-access-keys-list').innerHTML = (stock.keys || []).length
+      ? `<p class="admin-card-meta" style="margin-bottom:0.5rem"><strong>${availableTotal}</strong> key(s) available in stock</p>` + (stock.keys || []).map((k) => `
+        <div class="admin-card" style="margin-bottom:0.5rem">
+          <code style="font-size:0.85rem">${esc(k.access_key)}</code>
+          · ${esc(k.plan_name || `Plan #${k.plan_id}`)}
+          · <span class="admin-card-meta">${esc(k.status)}</span>
+          ${k.activated_at ? ` · activated ${esc(String(k.activated_at).slice(0, 10))}` : ''}
+          ${k.order_id ? ` · order #${k.order_id}` : ''}
+          ${k.status === 'available' ? `<div style="margin-top:0.35rem"><button type="button" class="admin-btn admin-btn-danger admin-btn-sm" data-del-access-key="${k.id}">Delete</button></div>` : ''}
+        </div>`).join('')
+      : '<p class="admin-empty">No access keys in stock yet. Add keys above before approving orders.</p>';
+
+    document.querySelectorAll('[data-del-access-key]').forEach((b) => b.addEventListener('click', async () => {
+      if (!confirm('Delete this unused access key?')) return;
+      await plugApiAction(() => api(`/admin/plugging/access-keys/${b.dataset.delAccessKey}`, { method: 'DELETE' }));
+      if (window.showToast) showToast('Access key removed');
+      loadPlatformPlugging();
+    }));
+
     const orders = await api('/admin/plugging/orders');
     document.getElementById('plugging-orders-list').innerHTML = (orders || []).map((o) => `
-      <div class="admin-card" style="margin-bottom:0.75rem">
-        <strong>${esc(o.order_ref)}</strong> — ${esc(o.customer_name)} · ${esc(o.status)}<br>
-        <small class="admin-card-meta">${esc(o.plan_name)} · ${peso(o.total)}${o.expires_at ? ` · expires ${esc(String(o.expires_at).slice(0, 10))}` : ''}</small>
+      <div class="admin-card" style="margin-bottom:0.75rem${o.status === 'pending_approval' ? ';border-left:3px solid var(--admin-orange,#f59e0b)' : ''}">
+        <strong>${esc(o.order_ref)}</strong> — ${esc(o.customer_name)} · <strong>${esc(o.status)}</strong><br>
+        <small class="admin-card-meta">${esc(o.plan_name)} · ${peso(o.total)}${o.expires_at ? ` · expires ${esc(String(o.expires_at).slice(0, 10))}` : (o.status === 'approved' ? ' · not activated yet (no expiry)' : '')}</small>
+        ${o.email ? `<br><small class="admin-card-meta">${esc(o.email)}</small>` : ''}
         ${o.access_key ? `<br><code style="font-size:0.85rem">Key: ${esc(o.access_key)}</code>` : ''}
         ${o.receipt_path ? `<br><a href="${esc(o.receipt_path)}" target="_blank">View receipt</a>` : ''}
         <div style="margin-top:0.5rem;display:flex;gap:0.5rem;flex-wrap:wrap">
@@ -494,9 +537,13 @@
       </div>`).join('') || '<p class="admin-empty">No subscription orders yet.</p>';
 
     document.querySelectorAll('[data-approve-order]').forEach((b) => b.addEventListener('click', async () => {
-      const r = await api(`/admin/plugging/orders/${b.dataset.approveOrder}`, { method: 'PUT', body: { status: 'approved' } });
-      if (window.showToast) showToast(`Approved — Key: ${r.accessKey}`);
-      loadPlatformPlugging();
+      try {
+        const r = await api(`/admin/plugging/orders/${b.dataset.approveOrder}`, { method: 'PUT', body: { status: 'approved' } });
+        if (window.showToast) showToast(`Approved — Key: ${r.accessKey}`);
+        loadPlatformPlugging();
+      } catch (err) {
+        if (window.showToast) showToast(err.message || 'Approval failed', 'error');
+      }
     }));
     document.querySelectorAll('[data-reject-order]').forEach((b) => b.addEventListener('click', async () => {
       await api(`/admin/plugging/orders/${b.dataset.rejectOrder}`, { method: 'PUT', body: { status: 'rejected' } });
@@ -545,6 +592,37 @@
         await plugApiAction(() => api('/admin/plugging/proxies', { method: 'POST', body: { label, url } }));
         e.target.reset();
         if (window.showToast) showToast('Proxy added');
+        loadPlatformPlugging();
+      });
+
+      document.getElementById('plugging-access-key-form')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const planId = Number(e.target.querySelector('[name="planId"]')?.value);
+        const accessKey = e.target.querySelector('[name="accessKey"]')?.value?.trim();
+        if (!planId) {
+          if (window.showToast) showToast('Select a plan variant', 'error');
+          return;
+        }
+        await plugApiAction(() => api('/admin/plugging/access-keys', {
+          method: 'POST',
+          body: { planId, accessKey: accessKey || undefined }
+        }));
+        e.target.querySelector('[name="accessKey"]').value = '';
+        if (window.showToast) showToast('Access key added to stock');
+        loadPlatformPlugging();
+      });
+
+      document.getElementById('plugging-access-key-batch')?.addEventListener('click', async () => {
+        const planId = Number(document.getElementById('plugging-access-key-plan')?.value);
+        if (!planId) {
+          if (window.showToast) showToast('Select a plan variant first', 'error');
+          return;
+        }
+        await plugApiAction(() => api('/admin/plugging/access-keys/batch', {
+          method: 'POST',
+          body: { planId, count: 5 }
+        }));
+        if (window.showToast) showToast('Generated 5 access keys');
         loadPlatformPlugging();
       });
 

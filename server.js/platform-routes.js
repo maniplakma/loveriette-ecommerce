@@ -586,7 +586,7 @@ function mountPlatformRoutes(app, db, deps) {
     logActivity('plugging', `New plugging request ${requestId} from @${String(telegramUsername).replace(/^@/, '')}`, { requestId });
     try {
       db.prepare(`
-        INSERT INTO admin_notifications (type, title, body) VALUES ('plugging', 'New Plugging Request', ?)
+        INSERT INTO admin_notifications (type, title, body, is_read) VALUES ('plugging', 'New Plugging Request', ?, 0)
       `).run(`${name} (@${String(telegramUsername).replace(/^@/, '')}) — ${requestId}`);
     } catch (_) { /* ignore */ }
     res.status(201).json({ requestId, shareUrl: `/plugging?ref=${requestId}` });

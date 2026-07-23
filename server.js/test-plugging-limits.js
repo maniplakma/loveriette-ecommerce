@@ -1,47 +1,49 @@
 /**
- * Plugging plan limits helpers.
+ * Plugging limits — expiry on first use.
+ * Run: node server.js/test-plugging-limits.js
  */
-const assert = require('assert');
 const {
-  normalizePlugOrder,
-  hasBatchWorkspace,
-  isUnlimited,
-  formatLimitLabel
+  isOrderExpired,
+  isOrderAwaitingActivation,
+  computeExpiresAtFromDuration
 } = require('./plugging-limits');
 
-function testHasBatchWorkspace() {
-  assert.strictEqual(hasBatchWorkspace({ order_ref: 'PLG-MASTER' }), true);
-  assert.strictEqual(hasBatchWorkspace({ planPriority: 1 }), true);
-  assert.strictEqual(hasBatchWorkspace({ priority: 1 }), true);
-  assert.strictEqual(hasBatchWorkspace({ planPriority: 0 }), false);
-  assert.strictEqual(hasBatchWorkspace(null), false);
+let passed = 0;
+let failed = 0;
+
+function ok(label) {
+  passed += 1;
+  console.log(`  OK ${label}`);
 }
 
-function testNormalizePlugOrder() {
-  const master = normalizePlugOrder({ order_ref: 'PLG-MASTER' });
-  assert.strictEqual(master.isMaster, true);
-  assert.strictEqual(master.planPriority, 1);
-  assert.strictEqual(hasBatchWorkspace(master), true);
-
-  const vip = normalizePlugOrder({ maxSources: 10, maxDestinations: 50, planPriority: 0 });
-  assert.strictEqual(vip.isMaster, false);
-  assert.strictEqual(hasBatchWorkspace(vip), false);
-
-  const vipPlus = normalizePlugOrder({ maxSources: 999, maxDestinations: 999, planPriority: 1 });
-  assert.strictEqual(hasBatchWorkspace(vipPlus), true);
-}
-
-function testUnlimitedLabels() {
-  assert.strictEqual(isUnlimited(999), true);
-  assert.strictEqual(formatLimitLabel(999), 'Unlimited');
-  assert.strictEqual(formatLimitLabel(10), '10');
+function fail(label, detail) {
+  failed += 1;
+  console.error(`  FAIL ${label}${detail ? `: ${detail}` : ''}`);
 }
 
 function main() {
-  testHasBatchWorkspace();
-  testNormalizePlugOrder();
-  testUnlimitedLabels();
-  console.log('plugging-limits tests: OK');
+  const awaiting = { status: 'approved', expires_at: null, activated_at: null };
+  if (!isOrderExpired(awaiting) && isOrderAwaitingActivation(awaiting)) ok('approved without activation is not expired');
+  else fail('awaiting activation');
+
+  const active = {
+    status: 'approved',
+    activated_at: new Date().toISOString(),
+    expires_at: computeExpiresAtFromDuration('7 Days', new Date())
+  };
+  if (!isOrderExpired(active) && !isOrderAwaitingActivation(active)) ok('activated order with future expiry is valid');
+  else fail('activated order');
+
+  const expired = {
+    status: 'approved',
+    activated_at: '2020-01-01T00:00:00.000Z',
+    expires_at: '2020-01-08T00:00:00.000Z'
+  };
+  if (isOrderExpired(expired)) ok('past expiry is expired');
+  else fail('past expiry');
+
+  console.log(`\n${passed} passed, ${failed} failed`);
+  process.exit(failed ? 1 : 0);
 }
 
 main();

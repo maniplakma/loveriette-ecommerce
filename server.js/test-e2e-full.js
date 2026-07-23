@@ -300,6 +300,10 @@ async function workflowPlugging(adminCookie) {
 
   const row = db.prepare('SELECT id FROM plugging_orders WHERE order_ref = ?').get(orderRef);
   if (!row) { fail(WF, 'admin approve', 'plugging order row missing'); return; }
+  db.prepare(`
+    INSERT INTO plugging_access_keys (plan_id, access_key, status)
+    VALUES (?, ?, 'available')
+  `).run(plan.id, `PLG-E2E-${Date.now().toString(36).toUpperCase()}-QA`);
   const approve = await request('PUT', `/admin/plugging/orders/${row.id}`, { status: 'approved' }, adminCookie);
   if (approve.status === 200 && approve.json.accessKey) ok(WF, `access key: ${approve.json.accessKey.slice(0, 8)}...`);
   else fail(WF, 'admin approve', approve.json?.error);

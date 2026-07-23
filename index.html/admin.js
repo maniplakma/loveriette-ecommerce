@@ -450,6 +450,16 @@ async function loadOverview() {
         webBadge.textContent = p.newWebsiteInquiries;
         webBadge.hidden = false;
       }
+      const plugBadge = document.getElementById('plugging-badge');
+      if (plugBadge) {
+        const pendingPlug = Number(p.pendingPluggingOrders) || 0;
+        if (pendingPlug > 0) {
+          plugBadge.textContent = pendingPlug;
+          plugBadge.hidden = false;
+        } else {
+          plugBadge.hidden = true;
+        }
+      }
     }
   } catch (_) { /* platform stats optional */ }
 
@@ -1997,7 +2007,7 @@ function renderConversation(wrap, title, messages, onSend) {
 }
 
 /* ---------------- Notifications ---------------- */
-const NOTIF_ICON = { chat: 'chat', order: 'receipt', message: 'updates', ticket: 'ticket', payout: 'dollar', report: 'flag', system: 'info' };
+const NOTIF_ICON = { chat: 'chat', order: 'receipt', message: 'updates', ticket: 'ticket', payout: 'dollar', report: 'flag', system: 'info', plugging: 'message', website: 'store' };
 async function loadNotifications() {
   const { notifications } = await api('/admin/notifications');
   $('notif-list').innerHTML = notifications.map((n) => {
